@@ -314,68 +314,49 @@ class QvdEditorProvider {
                     <table>
                         <thead>
                             <tr>
+                                <th>Field Property</th>
                                 ${metadata.fields.map(field => `<th>${this.escapeHtml(field.name)}</th>`).join('')}
                             </tr>
                         </thead>
                         <tbody>
-                            <tr class="field-metadata-row">
-                                <td colspan="${metadata.fields.length}"><strong>Type</strong></td>
-                            </tr>
                             <tr>
+                                <td class="field-metadata-row"><strong>Type</strong></td>
                                 ${metadata.fields.map(field => `<td>${this.escapeHtml(field.type) || '(empty)'}</td>`).join('')}
                             </tr>
-                            <tr class="field-metadata-row">
-                                <td colspan="${metadata.fields.length}"><strong>Extent</strong></td>
-                            </tr>
                             <tr>
+                                <td class="field-metadata-row"><strong>Extent</strong></td>
                                 ${metadata.fields.map(field => `<td>${this.escapeHtml(field.extent) || '(empty)'}</td>`).join('')}
                             </tr>
-                            <tr class="field-metadata-row">
-                                <td colspan="${metadata.fields.length}"><strong>Number of Symbols</strong></td>
-                            </tr>
                             <tr>
+                                <td class="field-metadata-row"><strong>Number of Symbols</strong></td>
                                 ${metadata.fields.map(field => `<td>${field.noOfSymbols}</td>`).join('')}
                             </tr>
-                            <tr class="field-metadata-row">
-                                <td colspan="${metadata.fields.length}"><strong>Offset</strong></td>
-                            </tr>
                             <tr>
+                                <td class="field-metadata-row"><strong>Offset</strong></td>
                                 ${metadata.fields.map(field => `<td>${field.offset}</td>`).join('')}
                             </tr>
-                            <tr class="field-metadata-row">
-                                <td colspan="${metadata.fields.length}"><strong>Length</strong></td>
-                            </tr>
                             <tr>
+                                <td class="field-metadata-row"><strong>Length</strong></td>
                                 ${metadata.fields.map(field => `<td>${field.length}</td>`).join('')}
                             </tr>
-                            <tr class="field-metadata-row">
-                                <td colspan="${metadata.fields.length}"><strong>Bit Offset</strong></td>
-                            </tr>
                             <tr>
+                                <td class="field-metadata-row"><strong>Bit Offset</strong></td>
                                 ${metadata.fields.map(field => `<td>${field.bitOffset}</td>`).join('')}
                             </tr>
-                            <tr class="field-metadata-row">
-                                <td colspan="${metadata.fields.length}"><strong>Bit Width</strong></td>
-                            </tr>
                             <tr>
+                                <td class="field-metadata-row"><strong>Bit Width</strong></td>
                                 ${metadata.fields.map(field => `<td>${field.bitWidth}</td>`).join('')}
                             </tr>
-                            <tr class="field-metadata-row">
-                                <td colspan="${metadata.fields.length}"><strong>Bias</strong></td>
-                            </tr>
                             <tr>
+                                <td class="field-metadata-row"><strong>Bias</strong></td>
                                 ${metadata.fields.map(field => `<td>${field.bias}</td>`).join('')}
                             </tr>
-                            <tr class="field-metadata-row">
-                                <td colspan="${metadata.fields.length}"><strong>Tags</strong></td>
-                            </tr>
                             <tr>
+                                <td class="field-metadata-row"><strong>Tags</strong></td>
                                 ${metadata.fields.map(field => `<td>${this.escapeHtml(field.tags) || '(empty)'}</td>`).join('')}
                             </tr>
-                            <tr class="field-metadata-row">
-                                <td colspan="${metadata.fields.length}"><strong>Comment</strong></td>
-                            </tr>
                             <tr>
+                                <td class="field-metadata-row"><strong>Comment</strong></td>
                                 ${metadata.fields.map(field => `<td>${this.escapeHtml(field.comment) || '(empty)'}</td>`).join('')}
                             </tr>
                         </tbody>
