@@ -1,0 +1,85 @@
+{
+  "name": "qvd-viewer",
+  "displayName": "QVD Viewer",
+  "description": "View QVD files created by Qlik Sense or QlikView",
+  "version": "0.0.1",
+  "publisher": "ptarmiganlabs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ptarmiganlabs/qvd4vscode.git"
+  },
+  "engines": {
+    "vscode": "^1.105.0"
+  },
+  "keywords": [
+    "qvd",
+    "qlik",
+    "qlikview",
+    "qlik sense",
+    "data viewer"
+  ],
+  "categories": [
+    "Data Science",
+    "Visualization"
+  ],
+  "activationEvents": [
+    "onCustomEditor:qvd-viewer.qvdEditor"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "qvd-viewer.qvdEditor",
+        "displayName": "QVD Viewer",
+        "selector": [
+          {
+            "filenamePattern": "*.qvd"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "configuration": {
+      "title": "QVD Viewer",
+      "properties": {
+        "qvd-viewer.previewRowCount": {
+          "type": "number",
+          "default": 25,
+          "minimum": 1,
+          "maximum": 10000,
+          "description": "Number of rows to display in the data preview"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@types/vscode": "^1.105.0",
+    "@typescript-eslint/eslint-plugin": "^8.45.0",
+    "@typescript-eslint/parser": "^8.45.0",
+    "@vscode/test-cli": "^0.0.11",
+    "@vscode/test-electron": "^2.5.2",
+    "esbuild": "^0.25.10",
+    "eslint": "^9.36.0",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "qvd4js": "^1.0.5"
+  }
+}
