@@ -1,65 +1,157 @@
-# qvd4vscode README
+# QVD Viewer for VS Code
 
-This is the README for your extension "qvd4vscode". After writing up a brief description, we recommend including the following sections.
+A Visual Studio Code extension for viewing Qlik Sense and QlikView QVD (QlikView Data) files directly within VS Code.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+- **View QVD Files**: Open and view QVD files created by Qlik Sense or QlikView
+- **Display Metadata**: View comprehensive metadata about QVD files including:
+  - File creation information
+  - Table creator details
+  - Total number of records
+  - Field definitions with types, symbols, and technical details
+- **Data Preview**: View sample data from QVD files in a formatted table
+- **Configurable Display**: Customize the number of rows displayed (default: 25)
+- **Read-Only Access**: Safe viewing without modifying original QVD files
 
-For example if there is an image subfolder under your extension project workspace:
+## Installation
 
-\!\[feature X\]\(images/feature-x.png\)
+### From VSIX (Local Installation)
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+1. Clone this repository
+2. Install dependencies: `npm install`
+3. Package the extension: `npm run package` (or use `vsce package`)
+4. Install in VS Code: Extensions → Install from VSIX
 
-## Requirements
+### From Source (Development)
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+See [Development](#development) section below.
+
+## Usage
+
+### Opening QVD Files
+
+There are two ways to open a QVD file:
+
+1. **From File Explorer**: Click on any `.qvd` or `.QVD` file in the VS Code Explorer sidebar
+2. **Using Command Palette**: 
+   - Press `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (Mac)
+   - Type "Open QVD File" and select the command
+   - Choose a QVD file from the file picker
+
+The extension will automatically display:
+- File metadata at the top
+- Field information with types and statistics
+- Data preview in a table format below
 
 ## Extension Settings
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
 This extension contributes the following settings:
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+* `qvd4vscode.maxPreviewRows`: Maximum number of rows to display in the QVD preview (default: 25, min: 1, max: 1000)
+
+To change this setting:
+1. Go to File → Preferences → Settings (or `Ctrl+,`)
+2. Search for "QVD"
+3. Adjust the "Max Preview Rows" value
+
+## QVD File Format
+
+QVD files are a proprietary tabular format used by Qlik Sense and QlikView. They consist of:
+- An XML header containing metadata about the file and field definitions
+- Binary data section containing the actual table data
+
+For more information about the QVD format:
+- [qvd4js Library](https://github.com/MuellerConstantin/qvd4js)
+- [PyQVD Documentation](https://pyqvd.readthedocs.io/latest/guide/qvd-file-format.html)
+
+## Development
+
+### Prerequisites
+
+- Node.js 18.x or later
+- npm 8.x or later
+- Visual Studio Code 1.105.0 or later
+
+### Building the Extension
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/ptarmiganlabs/qvd4vscode.git
+   cd qvd4vscode
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Run linting:
+   ```bash
+   npm run lint
+   ```
+
+### Testing the Extension Locally
+
+1. Open the project in VS Code:
+   ```bash
+   code .
+   ```
+
+2. Press `F5` to start debugging
+   - This will open a new VS Code window with the extension loaded
+   - The extension will be in development mode
+
+3. In the new window:
+   - Open a QVD file or use Command Palette → "Open QVD File"
+   - The QVD viewer should display the file contents
+
+4. Make changes to the code and reload the extension window (`Ctrl+R` or `Cmd+R`)
+
+### Creating a Test QVD File
+
+A sample QVD file is provided in `test-data/sample.qvd` for testing the metadata display. To create your own test QVD files, you can:
+
+1. Export data as QVD from Qlik Sense or QlikView
+2. Use the qvd4js library programmatically
+3. Use other QVD creation tools
+
+### Project Structure
+
+```
+qvd4vscode/
+├── extension.js           # Main extension entry point
+├── qvdReader.js          # QVD file reader and metadata extractor
+├── qvdEditorProvider.js  # Custom editor provider for QVD files
+├── package.json          # Extension manifest
+├── test-data/            # Sample QVD files for testing
+└── test/                 # Test files
+```
 
 ## Known Issues
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+- Binary data reading depends on the qvd4js library and may not work with all QVD file variations
+- Large QVD files (>10,000 rows) may take longer to load; use the maxPreviewRows setting to limit display
+- The extension currently provides read-only access to QVD files
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit issues or pull requests.
+
+## License
+
+See LICENSE file for details.
 
 ## Release Notes
 
-Users appreciate release notes as you update your extension.
+### 0.0.1
 
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
+Initial release:
+- QVD file viewer with metadata display
+- Data preview with configurable row limit
+- Custom editor integration
+- Field information display
 
 ---
 
-## Working with Markdown
-
-You can author your README using Visual Studio Code.  Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux)
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux)
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+**Enjoy viewing your QVD files in VS Code!**

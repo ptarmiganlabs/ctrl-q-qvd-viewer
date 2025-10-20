@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QvdTableHeader>
+  <CreatorDoc>QVD4VSCode Test</CreatorDoc>
+  <CreateUtcTime>2025-10-20 16:00:00</CreateUtcTime>
+  <TableCreator>QVD4VSCode</TableCreator>
+  <NoOfRecords>3</NoOfRecords>
+  <Offset>0</Offset>
+  <Length>0</Length>
+  <Fields>
+    <QvdFieldHeader>
+      <FieldName>ID</FieldName>
+      <Type>INTEGER</Type>
+      <NoOfSymbols>3</NoOfSymbols>
+      <Offset>0</Offset>
+      <Length>0</Length>
+      <BitOffset>0</BitOffset>
+      <BitWidth>2</BitWidth>
+      <Bias>0</Bias>
+    </QvdFieldHeader>
+    <QvdFieldHeader>
+      <FieldName>Name</FieldName>
+      <Type>TEXT</Type>
+      <NoOfSymbols>3</NoOfSymbols>
+      <Offset>0</Offset>
+      <Length>0</Length>
+      <BitOffset>0</BitOffset>
+      <BitWidth>2</BitWidth>
+      <Bias>0</Bias>
+    </QvdFieldHeader>
+    <QvdFieldHeader>
+      <FieldName>Age</FieldName>
+      <Type>INTEGER</Type>
+      <NoOfSymbols>3</NoOfSymbols>
+      <Offset>0</Offset>
+      <Length>0</Length>
+      <BitOffset>0</BitOffset>
+      <BitWidth>2</BitWidth>
+      <Bias>0</Bias>
+    </QvdFieldHeader>
+  </Fields>
+</QvdTableHeader>

@@ -1,30 +1,46 @@
 // The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
 const vscode = require('vscode');
-
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
+const QvdEditorProvider = require('./qvdEditorProvider');
 
 /**
  * @param {vscode.ExtensionContext} context
  */
 function activate(context) {
+	console.log('QVD4VSCode extension is now active');
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "qvd4vscode" is now active!');
+	// Register the custom editor provider for QVD files
+	const qvdEditorProvider = new QvdEditorProvider(context);
+	
+	const editorRegistration = vscode.window.registerCustomEditorProvider(
+		QvdEditorProvider.viewType,
+		qvdEditorProvider,
+		{
+			webviewOptions: {
+				retainContextWhenHidden: true
+			},
+			supportsMultipleEditorsPerDocument: false
+		}
+	);
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with  registerCommand
-	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand('qvd4vscode.helloWorld', function () {
-		// The code you place here will be executed every time your command is executed
+	context.subscriptions.push(editorRegistration);
 
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from qvd4vscode!');
+	// Register command to open QVD file
+	const openQvdCommand = vscode.commands.registerCommand('qvd4vscode.openQvd', async () => {
+		const uri = await vscode.window.showOpenDialog({
+			canSelectFiles: true,
+			canSelectFolders: false,
+			canSelectMany: false,
+			filters: {
+				'QVD Files': ['qvd', 'QVD']
+			}
+		});
+
+		if (uri && uri[0]) {
+			await vscode.commands.executeCommand('vscode.openWith', uri[0], QvdEditorProvider.viewType);
+		}
 	});
 
-	context.subscriptions.push(disposable);
+	context.subscriptions.push(openQvdCommand);
 }
 
 // This method is called when your extension is deactivated
