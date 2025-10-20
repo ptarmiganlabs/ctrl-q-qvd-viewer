@@ -104,17 +104,24 @@ class QvdReader {
             
             // Extract ALL metadata fields, including potentially empty ones
             const metadata = {
+                qvBuildNo: header.QvBuildNo || '',
                 creatorDoc: header.CreatorDoc || '',
                 createUtcTime: header.CreateUtcTime || '',
-                tableCreator: header.TableCreator || '',
                 sourceCreateUtcTime: header.SourceCreateUtcTime || '',
                 sourceFileUtcTime: header.SourceFileUtcTime || '',
                 sourceFileSize: header.SourceFileSize || '',
                 staleUtcTime: header.StaleUtcTime || '',
+                tableName: header.TableName || '',
+                tableCreator: header.TableCreator || '',
+                compression: header.Compression || '',
+                recordByteSize: header.RecordByteSize || '',
                 noOfRecords: parseInt(header.NoOfRecords) || 0,
                 offset: parseInt(header.Offset) || 0,
                 length: parseInt(header.Length) || 0,
                 comment: header.Comment || '',
+                encryptionInfo: header.EncryptionInfo || '',
+                tableTags: header.TableTags || '',
+                profilingData: header.ProfilingData || '',
                 lineage: header.Lineage || [],
                 fields: []
             };
@@ -125,27 +132,39 @@ class QvdReader {
                     ? header.Fields.QvdFieldHeader 
                     : [header.Fields.QvdFieldHeader];
                     
-                metadata.fields = fields.map(field => ({
-                    name: field.FieldName || '',
-                    type: field.Type || '',
-                    extent: field.Extent || '',
-                    noOfSymbols: parseInt(field.NoOfSymbols) || 0,
-                    offset: parseInt(field.Offset) || 0,
-                    length: parseInt(field.Length) || 0,
-                    bitOffset: parseInt(field.BitOffset) || 0,
-                    bitWidth: parseInt(field.BitWidth) || 0,
-                    bias: parseInt(field.Bias) || 0,
-                    numberFormat: field.NumberFormat ? {
-                        type: field.NumberFormat.Type || '',
-                        nDec: field.NumberFormat.nDec || '',
-                        useThou: field.NumberFormat.UseThou || '',
-                        fmt: field.NumberFormat.Fmt || '',
-                        dec: field.NumberFormat.Dec || '',
-                        thou: field.NumberFormat.Thou || ''
-                    } : null,
-                    tags: field.Tags || '',
-                    comment: field.Comment || ''
-                }));
+                metadata.fields = fields.map(field => {
+                    // Handle Tags - can be an array of strings or empty
+                    let tagsArray = [];
+                    if (field.Tags) {
+                        if (field.Tags.String) {
+                            tagsArray = Array.isArray(field.Tags.String) 
+                                ? field.Tags.String 
+                                : [field.Tags.String];
+                        }
+                    }
+                    
+                    return {
+                        name: field.FieldName || '',
+                        type: field.Type || '',
+                        extent: field.Extent || '',
+                        noOfSymbols: parseInt(field.NoOfSymbols) || 0,
+                        offset: parseInt(field.Offset) || 0,
+                        length: parseInt(field.Length) || 0,
+                        bitOffset: parseInt(field.BitOffset) || 0,
+                        bitWidth: parseInt(field.BitWidth) || 0,
+                        bias: parseInt(field.Bias) || 0,
+                        numberFormat: field.NumberFormat ? {
+                            type: field.NumberFormat.Type || '',
+                            nDec: field.NumberFormat.nDec || '',
+                            useThou: field.NumberFormat.UseThou || '',
+                            fmt: field.NumberFormat.Fmt || '',
+                            dec: field.NumberFormat.Dec || '',
+                            thou: field.NumberFormat.Thou || ''
+                        } : null,
+                        tags: tagsArray,
+                        comment: field.Comment || ''
+                    };
+                });
             }
             
             return metadata;

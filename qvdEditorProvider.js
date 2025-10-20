@@ -261,16 +261,16 @@ class QvdEditorProvider {
                 <h2>File Metadata</h2>
                 ${metadata ? `
                 <div class="metadata-item">
+                    <span class="metadata-label">QV Build No:</span>
+                    <span class="metadata-value">${this.escapeHtml(metadata.qvBuildNo) || '(empty)'}</span>
+                </div>
+                <div class="metadata-item">
                     <span class="metadata-label">Creator Document:</span>
                     <span class="metadata-value">${this.escapeHtml(metadata.creatorDoc) || '(empty)'}</span>
                 </div>
                 <div class="metadata-item">
                     <span class="metadata-label">Created (UTC):</span>
                     <span class="metadata-value">${this.escapeHtml(metadata.createUtcTime) || '(empty)'}</span>
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Table Creator:</span>
-                    <span class="metadata-value">${this.escapeHtml(metadata.tableCreator) || '(empty)'}</span>
                 </div>
                 <div class="metadata-item">
                     <span class="metadata-label">Source Create (UTC):</span>
@@ -289,6 +289,22 @@ class QvdEditorProvider {
                     <span class="metadata-value">${this.escapeHtml(metadata.staleUtcTime) || '(empty)'}</span>
                 </div>
                 <div class="metadata-item">
+                    <span class="metadata-label">Table Name:</span>
+                    <span class="metadata-value">${this.escapeHtml(metadata.tableName) || '(empty)'}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Table Creator:</span>
+                    <span class="metadata-value">${this.escapeHtml(metadata.tableCreator) || '(empty)'}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Compression:</span>
+                    <span class="metadata-value">${this.escapeHtml(metadata.compression) || '(empty)'}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Record Byte Size:</span>
+                    <span class="metadata-value">${this.escapeHtml(metadata.recordByteSize) || '(empty)'}</span>
+                </div>
+                <div class="metadata-item">
                     <span class="metadata-label">Total Records:</span>
                     <span class="metadata-value">${totalRows}</span>
                 </div>
@@ -303,6 +319,24 @@ class QvdEditorProvider {
                 <div class="metadata-item">
                     <span class="metadata-label">Comment:</span>
                     <span class="metadata-value">${this.escapeHtml(metadata.comment) || '(empty)'}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Encryption Info:</span>
+                    <span class="metadata-value">${this.escapeHtml(metadata.encryptionInfo) || '(empty)'}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Table Tags:</span>
+                    <span class="metadata-value">${this.escapeHtml(metadata.tableTags) || '(empty)'}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Profiling Data:</span>
+                    <span class="metadata-value">${this.escapeHtml(metadata.profilingData) || '(empty)'}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Lineage:</span>
+                    <span class="metadata-value">${metadata.lineage && metadata.lineage.LineageInfo ? 
+                        (Array.isArray(metadata.lineage.LineageInfo) ? metadata.lineage.LineageInfo.length : 1) + ' item(s)' 
+                        : '(empty)'}</span>
                 </div>
                 ` : '<p>No metadata available</p>'}
             </div>
@@ -353,7 +387,12 @@ class QvdEditorProvider {
                             </tr>
                             <tr>
                                 <td class="field-metadata-row"><strong>Tags</strong></td>
-                                ${metadata.fields.map(field => `<td>${this.escapeHtml(field.tags) || '(empty)'}</td>`).join('')}
+                                ${metadata.fields.map(field => {
+                                    const tagsDisplay = field.tags && field.tags.length > 0 
+                                        ? field.tags.map(t => this.escapeHtml(t)).join(', ') 
+                                        : '(empty)';
+                                    return `<td>${tagsDisplay}</td>`;
+                                }).join('')}
                             </tr>
                             <tr>
                                 <td class="field-metadata-row"><strong>Comment</strong></td>
