@@ -108,7 +108,18 @@ There are two ways to open a QVD file:
 
 The extension displays QVD files in three sections:
 
-**1. File Metadata**
+#### 1. File Metadata
+
+```text
+Creator Document: QVD4VSCode Test
+Created (UTC): 2025-10-20 16:00:00
+Table Creator: QVD4VSCode
+Total Records: 3
+```
+
+#### 2. Field Details
+
+Each field shows:
 
 ```
 Creator Document: QVD4VSCode Test
@@ -117,7 +128,8 @@ Table Creator: QVD4VSCode
 Total Records: 3
 ```
 
-**2. Field Information**
+#### 2. Field Information
+
 Each field shows:
 
 - Field name
@@ -125,7 +137,8 @@ Each field shows:
 - Number of unique symbols
 - Bit width for data storage
 
-**3. Data Preview**
+#### 3. Data Preview
+
 A formatted table showing the first N rows (configurable) with all columns from the QVD file.
 
 ### Example Output
@@ -184,6 +197,7 @@ For more information about the QVD format:
    ```
 
 3. Run linting:
+
    ```bash
    npm run lint
    ```
@@ -218,7 +232,7 @@ A sample QVD file is provided in `test-data/sample.qvd` for testing the metadata
 
 ### Project Structure
 
-```
+```text
 qvd4vscode/
 ├── extension.js           # Main extension entry point
 ├── qvdReader.js          # QVD file reader and metadata extractor
