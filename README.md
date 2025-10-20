@@ -39,7 +39,31 @@ There are two ways to open a QVD file:
    - Type "Open QVD File" and select the command
    - Choose a QVD file from the file picker
 
-The extension will automatically display:
+### What You'll See
+
+The extension displays QVD files in three sections:
+
+**1. File Metadata**
+```
+Creator Document: QVD4VSCode Test
+Created (UTC): 2025-10-20 16:00:00
+Table Creator: QVD4VSCode
+Total Records: 3
+```
+
+**2. Field Information**
+Each field shows:
+- Field name
+- Data type (INTEGER, TEXT, etc.)
+- Number of unique symbols
+- Bit width for data storage
+
+**3. Data Preview**
+A formatted table showing the first N rows (configurable) with all columns from the QVD file.
+
+### Example Output
+
+When you open a QVD file, you'll see:
 - File metadata at the top
 - Field information with types and statistics
 - Data preview in a table format below
