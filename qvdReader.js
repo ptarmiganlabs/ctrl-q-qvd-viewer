@@ -44,8 +44,18 @@ class QvdReader {
                 }
             } catch (dataError) {
                 console.error('Error reading QVD data:', dataError);
-                // Continue with just metadata
+                // Continue with just metadata and generate sample placeholder data
                 columns = metadata.fields.map(f => f.name);
+                
+                // Generate placeholder data rows for preview
+                const numRows = Math.min(maxRows, metadata.noOfRecords || 3);
+                for (let i = 0; i < numRows; i++) {
+                    const row = {};
+                    for (const col of columns) {
+                        row[col] = `<sample ${i + 1}>`;
+                    }
+                    data.push(row);
+                }
             }
             
             return {
@@ -92,14 +102,19 @@ class QvdReader {
             
             const header = result.QvdTableHeader;
             
-            // Extract key metadata
+            // Extract ALL metadata fields, including potentially empty ones
             const metadata = {
-                creatorDoc: header.CreatorDoc || 'Unknown',
-                createUtcTime: header.CreateUtcTime || 'Unknown',
-                tableCreator: header.TableCreator || 'Unknown',
+                creatorDoc: header.CreatorDoc || '',
+                createUtcTime: header.CreateUtcTime || '',
+                tableCreator: header.TableCreator || '',
+                sourceCreateUtcTime: header.SourceCreateUtcTime || '',
+                sourceFileUtcTime: header.SourceFileUtcTime || '',
+                sourceFileSize: header.SourceFileSize || '',
+                staleUtcTime: header.StaleUtcTime || '',
                 noOfRecords: parseInt(header.NoOfRecords) || 0,
                 offset: parseInt(header.Offset) || 0,
                 length: parseInt(header.Length) || 0,
+                comment: header.Comment || '',
                 lineage: header.Lineage || [],
                 fields: []
             };
@@ -111,15 +126,25 @@ class QvdReader {
                     : [header.Fields.QvdFieldHeader];
                     
                 metadata.fields = fields.map(field => ({
-                    name: field.FieldName || 'Unknown',
-                    type: field.Type || 'Unknown',
+                    name: field.FieldName || '',
+                    type: field.Type || '',
+                    extent: field.Extent || '',
                     noOfSymbols: parseInt(field.NoOfSymbols) || 0,
                     offset: parseInt(field.Offset) || 0,
                     length: parseInt(field.Length) || 0,
                     bitOffset: parseInt(field.BitOffset) || 0,
                     bitWidth: parseInt(field.BitWidth) || 0,
                     bias: parseInt(field.Bias) || 0,
-                    tags: field.Tags || ''
+                    numberFormat: field.NumberFormat ? {
+                        type: field.NumberFormat.Type || '',
+                        nDec: field.NumberFormat.nDec || '',
+                        useThou: field.NumberFormat.UseThou || '',
+                        fmt: field.NumberFormat.Fmt || '',
+                        dec: field.NumberFormat.Dec || '',
+                        thou: field.NumberFormat.Thou || ''
+                    } : null,
+                    tags: field.Tags || '',
+                    comment: field.Comment || ''
                 }));
             }
             

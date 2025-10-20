@@ -28,12 +28,15 @@ class QvdEditorProvider {
         // Read and display QVD content
         await this.updateWebview(document.uri.fsPath, webviewPanel.webview, maxRows);
         
-        // Handle refresh command
+        // Handle messages from webview
         webviewPanel.webview.onDidReceiveMessage(
             async message => {
                 switch (message.command) {
                     case 'refresh':
                         await this.updateWebview(document.uri.fsPath, webviewPanel.webview, maxRows);
+                        break;
+                    case 'openSettings':
+                        vscode.commands.executeCommand('workbench.action.openSettings', 'qvd4vscode');
                         break;
                 }
             }
@@ -115,10 +118,39 @@ class QvdEditorProvider {
                     margin: 0;
                 }
                 
+                .header-container {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 20px;
+                }
+                
                 h1 {
                     font-size: 1.5em;
-                    margin-bottom: 10px;
+                    margin: 0;
                     color: var(--vscode-foreground);
+                }
+                
+                .settings-button {
+                    background-color: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 0.9em;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                }
+                
+                .settings-button:hover {
+                    background-color: var(--vscode-button-hoverBackground);
+                }
+                
+                .settings-icon {
+                    width: 16px;
+                    height: 16px;
                 }
                 
                 h2 {
@@ -144,30 +176,16 @@ class QvdEditorProvider {
                 .metadata-label {
                     font-weight: bold;
                     display: inline-block;
-                    min-width: 150px;
+                    min-width: 200px;
                     color: var(--vscode-foreground);
+                }
+                
+                .metadata-value {
+                    color: var(--vscode-descriptionForeground);
                 }
                 
                 .fields-section {
                     margin-top: 15px;
-                }
-                
-                .field-item {
-                    margin: 5px 0;
-                    padding: 8px;
-                    background-color: var(--vscode-editor-background);
-                    border-radius: 3px;
-                }
-                
-                .field-name {
-                    font-weight: bold;
-                    color: var(--vscode-symbolIcon-fieldForeground);
-                }
-                
-                .field-details {
-                    font-size: 0.9em;
-                    color: var(--vscode-descriptionForeground);
-                    margin-left: 10px;
                 }
                 
                 table {
@@ -192,11 +210,11 @@ class QvdEditorProvider {
                     color: var(--vscode-foreground);
                 }
                 
-                tr:nth-child(even) {
+                tbody tr:nth-child(even) {
                     background-color: var(--vscode-editor-inactiveSelectionBackground);
                 }
                 
-                tr:hover {
+                tbody tr:hover {
                     background-color: var(--vscode-list-hoverBackground);
                 }
                 
@@ -212,45 +230,158 @@ class QvdEditorProvider {
                     overflow-x: auto;
                     margin-top: 10px;
                 }
+                
+                .field-metadata-row {
+                    font-weight: bold;
+                    background-color: var(--vscode-editor-inactiveSelectionBackground);
+                }
             </style>
         </head>
         <body>
-            <h1>QVD File Viewer</h1>
+            <div class="header-container">
+                <h1>QVD File Viewer</h1>
+                <button class="settings-button" onclick="openSettings()">
+                    <svg class="settings-icon" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/>
+                        <path d="M14 7.5a1.5 1.5 0 0 1-1.5 1.5h-.38a.5.5 0 0 0-.43.75l.19.32a1.5 1.5 0 0 1-2.3 1.94l-.31-.19a.5.5 0 0 0-.75.43v.38a1.5 1.5 0 0 1-3 0v-.38a.5.5 0 0 0-.75-.43l-.31.19a1.5 1.5 0 0 1-2.3-1.94l.19-.32a.5.5 0 0 0-.43-.75H2.5A1.5 1.5 0 0 1 1 7.5v-1A1.5 1.5 0 0 1 2.5 5h.38a.5.5 0 0 0 .43-.75l-.19-.32a1.5 1.5 0 0 1 2.3-1.94l.31.19a.5.5 0 0 0 .75-.43V1.5a1.5 1.5 0 0 1 3 0v.38a.5.5 0 0 0 .75.43l.31-.19a1.5 1.5 0 0 1 2.3 1.94l-.19.32a.5.5 0 0 0 .43.75h.38A1.5 1.5 0 0 1 14 6.5v1z"/>
+                    </svg>
+                    Settings
+                </button>
+            </div>
+            
+            <script>
+                const vscode = acquireVsCodeApi();
+                
+                function openSettings() {
+                    vscode.postMessage({ command: 'openSettings' });
+                }
+            </script>
             
             <div class="metadata">
                 <h2>File Metadata</h2>
                 ${metadata ? `
                 <div class="metadata-item">
                     <span class="metadata-label">Creator Document:</span>
-                    <span>${this.escapeHtml(metadata.creatorDoc)}</span>
+                    <span class="metadata-value">${this.escapeHtml(metadata.creatorDoc) || '(empty)'}</span>
                 </div>
                 <div class="metadata-item">
                     <span class="metadata-label">Created (UTC):</span>
-                    <span>${this.escapeHtml(metadata.createUtcTime)}</span>
+                    <span class="metadata-value">${this.escapeHtml(metadata.createUtcTime) || '(empty)'}</span>
                 </div>
                 <div class="metadata-item">
                     <span class="metadata-label">Table Creator:</span>
-                    <span>${this.escapeHtml(metadata.tableCreator)}</span>
+                    <span class="metadata-value">${this.escapeHtml(metadata.tableCreator) || '(empty)'}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Source Create (UTC):</span>
+                    <span class="metadata-value">${this.escapeHtml(metadata.sourceCreateUtcTime) || '(empty)'}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Source File Time (UTC):</span>
+                    <span class="metadata-value">${this.escapeHtml(metadata.sourceFileUtcTime) || '(empty)'}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Source File Size:</span>
+                    <span class="metadata-value">${this.escapeHtml(metadata.sourceFileSize) || '(empty)'}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Stale Time (UTC):</span>
+                    <span class="metadata-value">${this.escapeHtml(metadata.staleUtcTime) || '(empty)'}</span>
                 </div>
                 <div class="metadata-item">
                     <span class="metadata-label">Total Records:</span>
-                    <span>${totalRows}</span>
+                    <span class="metadata-value">${totalRows}</span>
                 </div>
-                
-                <div class="fields-section">
-                    <h3>Fields (${metadata.fields ? metadata.fields.length : 0})</h3>
-                    ${metadata.fields ? metadata.fields.map(field => `
-                        <div class="field-item">
-                            <span class="field-name">${this.escapeHtml(field.name)}</span>
-                            <span class="field-details">
-                                Type: ${this.escapeHtml(field.type)} | 
-                                Symbols: ${field.noOfSymbols} |
-                                Bit Width: ${field.bitWidth}
-                            </span>
-                        </div>
-                    `).join('') : ''}
+                <div class="metadata-item">
+                    <span class="metadata-label">Offset:</span>
+                    <span class="metadata-value">${metadata.offset}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Length:</span>
+                    <span class="metadata-value">${metadata.length}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Comment:</span>
+                    <span class="metadata-value">${this.escapeHtml(metadata.comment) || '(empty)'}</span>
                 </div>
                 ` : '<p>No metadata available</p>'}
+            </div>
+            
+            <div class="fields-section">
+                <h2>Field Metadata (${metadata && metadata.fields ? metadata.fields.length : 0} fields)</h2>
+                ${metadata && metadata.fields && metadata.fields.length > 0 ? `
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                ${metadata.fields.map(field => `<th>${this.escapeHtml(field.name)}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="field-metadata-row">
+                                <td colspan="${metadata.fields.length}"><strong>Type</strong></td>
+                            </tr>
+                            <tr>
+                                ${metadata.fields.map(field => `<td>${this.escapeHtml(field.type) || '(empty)'}</td>`).join('')}
+                            </tr>
+                            <tr class="field-metadata-row">
+                                <td colspan="${metadata.fields.length}"><strong>Extent</strong></td>
+                            </tr>
+                            <tr>
+                                ${metadata.fields.map(field => `<td>${this.escapeHtml(field.extent) || '(empty)'}</td>`).join('')}
+                            </tr>
+                            <tr class="field-metadata-row">
+                                <td colspan="${metadata.fields.length}"><strong>Number of Symbols</strong></td>
+                            </tr>
+                            <tr>
+                                ${metadata.fields.map(field => `<td>${field.noOfSymbols}</td>`).join('')}
+                            </tr>
+                            <tr class="field-metadata-row">
+                                <td colspan="${metadata.fields.length}"><strong>Offset</strong></td>
+                            </tr>
+                            <tr>
+                                ${metadata.fields.map(field => `<td>${field.offset}</td>`).join('')}
+                            </tr>
+                            <tr class="field-metadata-row">
+                                <td colspan="${metadata.fields.length}"><strong>Length</strong></td>
+                            </tr>
+                            <tr>
+                                ${metadata.fields.map(field => `<td>${field.length}</td>`).join('')}
+                            </tr>
+                            <tr class="field-metadata-row">
+                                <td colspan="${metadata.fields.length}"><strong>Bit Offset</strong></td>
+                            </tr>
+                            <tr>
+                                ${metadata.fields.map(field => `<td>${field.bitOffset}</td>`).join('')}
+                            </tr>
+                            <tr class="field-metadata-row">
+                                <td colspan="${metadata.fields.length}"><strong>Bit Width</strong></td>
+                            </tr>
+                            <tr>
+                                ${metadata.fields.map(field => `<td>${field.bitWidth}</td>`).join('')}
+                            </tr>
+                            <tr class="field-metadata-row">
+                                <td colspan="${metadata.fields.length}"><strong>Bias</strong></td>
+                            </tr>
+                            <tr>
+                                ${metadata.fields.map(field => `<td>${field.bias}</td>`).join('')}
+                            </tr>
+                            <tr class="field-metadata-row">
+                                <td colspan="${metadata.fields.length}"><strong>Tags</strong></td>
+                            </tr>
+                            <tr>
+                                ${metadata.fields.map(field => `<td>${this.escapeHtml(field.tags) || '(empty)'}</td>`).join('')}
+                            </tr>
+                            <tr class="field-metadata-row">
+                                <td colspan="${metadata.fields.length}"><strong>Comment</strong></td>
+                            </tr>
+                            <tr>
+                                ${metadata.fields.map(field => `<td>${this.escapeHtml(field.comment) || '(empty)'}</td>`).join('')}
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                ` : '<p>No field metadata available</p>'}
             </div>
             
             <div class="data-section">
