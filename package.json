@@ -4,10 +4,24 @@
   "description": "View Qlik Sense and QlikView QVD files from within VS Code",
   "version": "0.0.1",
   "publisher": "ptarmiganlabs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ptarmiganlabs/qvd4vscode.git"
+  },
+  "keywords": [
+    "qvd",
+    "qlik",
+    "qlik sense",
+    "qlikview",
+    "data viewer",
+    "file viewer"
+  ],
   "engines": {
     "vscode": "^1.105.0"
   },
   "categories": [
+    "Data Science",
+    "Visualization",
     "Other"
   ],
   "activationEvents": [],

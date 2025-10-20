@@ -1,15 +1,41 @@
 const assert = require('assert');
-
-// You can import and use all API from the 'vscode' module
-// as well as import your extension to test it
 const vscode = require('vscode');
-// const myExtension = require('../extension');
+const path = require('path');
+const QvdReader = require('../qvdReader');
 
 suite('Extension Test Suite', () => {
 	vscode.window.showInformationMessage('Start all tests.');
 
-	test('Sample test', () => {
-		assert.strictEqual(-1, [1, 2, 3].indexOf(5));
-		assert.strictEqual(-1, [1, 2, 3].indexOf(0));
+	test('QVD Reader - Metadata Extraction', async () => {
+		const reader = new QvdReader();
+		const testFilePath = path.join(__dirname, '..', 'test-data', 'sample.qvd');
+		
+		const result = await reader.read(testFilePath, 10);
+		
+		// Check that metadata was extracted
+		assert.strictEqual(result.error, null);
+		assert.notStrictEqual(result.metadata, null);
+		assert.strictEqual(result.metadata.noOfRecords, 3);
+		assert.strictEqual(result.columns.length, 3);
+		assert.strictEqual(result.metadata.fields.length, 3);
+	});
+
+	test('QVD Reader - Field Information', async () => {
+		const reader = new QvdReader();
+		const testFilePath = path.join(__dirname, '..', 'test-data', 'sample.qvd');
+		
+		const result = await reader.read(testFilePath, 10);
+		
+		// Check field names
+		const fieldNames = result.metadata.fields.map(f => f.name);
+		assert.ok(fieldNames.includes('ID'));
+		assert.ok(fieldNames.includes('Name'));
+		assert.ok(fieldNames.includes('Age'));
+	});
+
+	test('Extension Activation', async () => {
+		// Check that the extension is activated
+		const ext = vscode.extensions.getExtension('ptarmiganlabs.qvd4vscode');
+		assert.ok(ext);
 	});
 });
