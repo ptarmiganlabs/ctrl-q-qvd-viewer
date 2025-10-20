@@ -28,15 +28,22 @@ class QvdEditorProvider {
         // Read and display QVD content
         await this.updateWebview(document.uri.fsPath, webviewPanel.webview, maxRows);
         
+        // Store file path and webview for later use
+        const filePath = document.uri.fsPath;
+        
         // Handle messages from webview
         webviewPanel.webview.onDidReceiveMessage(
             async message => {
                 switch (message.command) {
                     case 'refresh':
-                        await this.updateWebview(document.uri.fsPath, webviewPanel.webview, maxRows);
+                        await this.updateWebview(filePath, webviewPanel.webview, maxRows);
                         break;
                     case 'openSettings':
                         vscode.commands.executeCommand('workbench.action.openSettings', 'qvd4vscode');
+                        break;
+                    case 'loadAll':
+                        // Load all rows (0 means all)
+                        await this.updateWebview(filePath, webviewPanel.webview, 0);
                         break;
                 }
             }
@@ -100,7 +107,11 @@ class QvdEditorProvider {
      * Generate HTML for webview
      */
     getHtmlForWebview(result) {
-        const { metadata, data, columns, totalRows } = result;
+        const { metadata, data, columns, totalRows, dataError } = result;
+        const config = vscode.workspace.getConfiguration('qvd4vscode');
+        const loadAllWarningThreshold = config.get('loadAllWarningThreshold', 25000);
+        const isPartialLoad = data.length < totalRows;
+        const needsWarning = totalRows > loadAllWarningThreshold;
         
         return `<!DOCTYPE html>
         <html lang="en">
@@ -131,7 +142,7 @@ class QvdEditorProvider {
                     color: var(--vscode-foreground);
                 }
                 
-                .settings-button {
+                .settings-button, .load-all-button {
                     background-color: var(--vscode-button-background);
                     color: var(--vscode-button-foreground);
                     border: none;
@@ -144,8 +155,13 @@ class QvdEditorProvider {
                     gap: 6px;
                 }
                 
-                .settings-button:hover {
+                .settings-button:hover, .load-all-button:hover {
                     background-color: var(--vscode-button-hoverBackground);
+                }
+                
+                .load-all-button:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
                 }
                 
                 .settings-icon {
@@ -251,9 +267,54 @@ class QvdEditorProvider {
             
             <script>
                 const vscode = acquireVsCodeApi();
+                const totalRows = ${totalRows};
+                const needsWarning = ${needsWarning};
+                const warningThreshold = ${loadAllWarningThreshold};
                 
                 function openSettings() {
                     vscode.postMessage({ command: 'openSettings' });
+                }
+                
+                function loadAllData() {
+                    if (needsWarning) {
+                        const message = \`This file contains \${totalRows.toLocaleString()} rows, which exceeds the warning threshold of \${warningThreshold.toLocaleString()} rows.\\n\\nLoading all data may take some time and consume significant memory.\\n\\nDo you want to continue?\`;
+                        
+                        // Show confirmation using a simple confirm dialog
+                        // Note: We can't use native confirm in webview, so we'll show a custom UI
+                        const confirmDiv = document.createElement('div');
+                        confirmDiv.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000;';
+                        confirmDiv.innerHTML = \`
+                            <div style="background: var(--vscode-editor-background); border: 1px solid var(--vscode-panel-border); padding: 20px; border-radius: 8px; max-width: 500px; box-shadow: 0 4px 8px rgba(0,0,0,0.3);">
+                                <h3 style="margin-top: 0; color: var(--vscode-errorForeground);">⚠️ Large File Warning</h3>
+                                <p style="color: var(--vscode-foreground); line-height: 1.5;">This file contains <strong>\${totalRows.toLocaleString()}</strong> rows, which exceeds the warning threshold of <strong>\${warningThreshold.toLocaleString()}</strong> rows.</p>
+                                <p style="color: var(--vscode-foreground); line-height: 1.5;">Loading all data may take some time and consume significant memory.</p>
+                                <p style="color: var(--vscode-foreground); line-height: 1.5;"><strong>Do you want to continue?</strong></p>
+                                <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
+                                    <button onclick="this.parentElement.parentElement.parentElement.remove()" style="background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Cancel</button>
+                                    <button onclick="confirmLoadAll()" style="background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Load All</button>
+                                </div>
+                            </div>
+                        \`;
+                        document.body.appendChild(confirmDiv);
+                    } else {
+                        doLoadAll();
+                    }
+                }
+                
+                function confirmLoadAll() {
+                    // Remove the confirmation dialog
+                    const confirmDiv = document.querySelector('div[style*="position: fixed"]');
+                    if (confirmDiv) confirmDiv.remove();
+                    doLoadAll();
+                }
+                
+                function doLoadAll() {
+                    const btn = document.getElementById('loadAllBtn');
+                    if (btn) {
+                        btn.disabled = true;
+                        btn.textContent = 'Loading...';
+                    }
+                    vscode.postMessage({ command: 'loadAll' });
                 }
             </script>
             
@@ -405,27 +466,47 @@ class QvdEditorProvider {
             </div>
             
             <div class="data-section">
-                <h2>Data Preview</h2>
-                <div class="info-banner">
-                    Showing ${data.length} of ${totalRows} rows
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h2 style="margin: 0;">Data Preview</h2>
+                    ${isPartialLoad ? `
+                        <button class="load-all-button" onclick="loadAllData()" id="loadAllBtn">
+                            Load All Rows (${totalRows.toLocaleString()})
+                        </button>
+                    ` : ''}
                 </div>
                 
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                ${columns.map(col => `<th>${this.escapeHtml(col)}</th>`).join('')}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${data.map(row => `
+                ${dataError ? `
+                    <div class="info-banner" style="background-color: var(--vscode-inputValidation-warningBackground); border-left-color: var(--vscode-inputValidation-warningBorder);">
+                        ⚠️ Unable to load data: ${this.escapeHtml(dataError)}
+                    </div>
+                ` : data.length === 0 ? `
+                    <div class="info-banner" style="background-color: var(--vscode-inputValidation-infoBackground); border-left-color: var(--vscode-inputValidation-infoBorder);">
+                        ℹ️ No data loaded. The file may be empty or data could not be read.
+                    </div>
+                ` : `
+                    <div class="info-banner">
+                        Showing ${data.length.toLocaleString()} of ${totalRows.toLocaleString()} rows
+                    </div>
+                `}
+                
+                ${data.length > 0 ? `
+                    <div class="table-container">
+                        <table>
+                            <thead>
                                 <tr>
-                                    ${columns.map(col => `<td>${this.escapeHtml(String(row[col] ?? ''))}</td>`).join('')}
+                                    ${columns.map(col => `<th>${this.escapeHtml(col)}</th>`).join('')}
                                 </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+                            <tbody>
+                                ${data.map(row => `
+                                    <tr>
+                                        ${columns.map(col => `<td>${this.escapeHtml(String(row[col] ?? ''))}</td>`).join('')}
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                ` : ''}
             </div>
         </body>
         </html>`;

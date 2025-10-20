@@ -9,7 +9,7 @@ class QvdReader {
     /**
      * Read QVD file and return metadata and data
      * @param {string} filePath - Path to the QVD file
-     * @param {number} maxRows - Maximum number of rows to read (default: 25)
+     * @param {number} maxRows - Maximum number of rows to read (default: 25, 0 = all rows)
      * @returns {Promise<{metadata: object, data: Array, error: string|null}>}
      */
     async read(filePath, maxRows = 25) {
@@ -19,50 +19,44 @@ class QvdReader {
             
             let data = [];
             let columns = [];
+            let dataError = null;
             
             try {
                 // Try to read the data using qvd4js
-                const reader = new QvdFileReader();
-                const dataFrame = await reader.load(filePath);
+                const reader = new QvdFileReader(filePath);
+                const dataFrame = await reader.load();
                 
                 // Get columns
-                columns = metadata.fields.map(f => f.name);
+                columns = dataFrame.columns || metadata.fields.map(f => f.name);
                 
-                // Get the data rows
-                const allData = dataFrame.toDict();
-                
-                // Convert to row format and limit to maxRows
-                const numRows = Math.min(maxRows, metadata.noOfRecords || 0);
+                // Determine how many rows to return (0 means all)
+                const numRows = maxRows === 0 ? metadata.noOfRecords : Math.min(maxRows, metadata.noOfRecords || 0);
                 data = [];
                 
+                // Read rows from dataFrame.data which is indexed by row number
                 for (let i = 0; i < numRows; i++) {
-                    const row = {};
-                    for (const col of columns) {
-                        row[col] = allData[col] ? allData[col][i] : null;
+                    const rowData = dataFrame.data[i.toString()];
+                    if (rowData) {
+                        const row = {};
+                        columns.forEach((col, idx) => {
+                            row[col] = rowData[idx];
+                        });
+                        data.push(row);
                     }
-                    data.push(row);
                 }
-            } catch (dataError) {
-                console.error('Error reading QVD data:', dataError);
-                // Continue with just metadata and generate sample placeholder data
+            } catch (error) {
+                console.error('Error reading QVD data:', error);
+                dataError = error.message;
+                // Continue with just metadata - no placeholder data
                 columns = metadata.fields.map(f => f.name);
-                
-                // Generate placeholder data rows for preview
-                const numRows = Math.min(maxRows, metadata.noOfRecords || 3);
-                for (let i = 0; i < numRows; i++) {
-                    const row = {};
-                    for (const col of columns) {
-                        row[col] = `<sample ${i + 1}>`;
-                    }
-                    data.push(row);
-                }
             }
             
             return {
                 metadata,
                 data,
                 columns,
-                totalRows: metadata.noOfRecords || data.length,
+                totalRows: metadata.noOfRecords || 0,
+                dataError,
                 error: null
             };
         } catch (error) {
@@ -71,6 +65,7 @@ class QvdReader {
                 data: [],
                 columns: [],
                 totalRows: 0,
+                dataError: null,
                 error: error.message
             };
         }
