@@ -14,6 +14,71 @@ A Visual Studio Code extension for viewing Qlik Sense and QlikView QVD (QlikView
 - **Configurable Display**: Customize the number of rows displayed (default: 25)
 - **Read-Only Access**: Safe viewing without modifying original QVD files
 
+## Getting Started
+
+### Quick Start (3 Steps)
+
+1. **Install the Extension**
+
+   - Open VS Code
+   - Go to Extensions (`Ctrl+Shift+X` or `Cmd+Shift+X` on Mac)
+   - Search for "QVD Viewer for VS Code"
+   - Click "Install"
+
+2. **Open a QVD File**
+
+   - Click on any `.qvd` file in your workspace, or
+   - Press `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (Mac)
+   - Type "Open QVD File" and select the command
+
+3. **Start Viewing**
+   - The QVD file will open automatically showing metadata and data preview
+
+That's it! You're ready to view QVD files in VS Code.
+
+### First-Time Setup: Setting Default Editor
+
+When you open your first QVD file, VS Code might show this dialog:
+
+> ⚠️ **"There are multiple default editors available for the resource."**
+>
+> - **Configure Default** | **Keep QVD Viewer**
+
+**What does this mean?**
+
+This dialog appears when multiple extensions can handle `.qvd` files. VS Code needs to know which one to use by default.
+
+**What should you do?**
+
+Choose one of these options:
+
+- **Click "Keep QVD Viewer"** _(Recommended)_
+
+  - Uses this extension to open QVD files
+  - You can always change this later
+  - This is the quickest option to get started
+
+- **Click "Configure Default"**
+  - Opens settings to choose your preferred editor
+  - Select "QVD Viewer" from the list
+  - This sets it as the permanent default
+
+**Tip:** If you accidentally choose the wrong editor, you can always:
+
+1. Right-click on any `.qvd` file
+2. Select "Open With..."
+3. Choose "QVD Viewer"
+4. Check "Configure default editor for '\*.qvd'..." to make it permanent
+
+### Changing Settings (Optional)
+
+By default, the extension shows 25 rows of data. To change this:
+
+1. Open Settings: File → Preferences → Settings (or `Ctrl+,`)
+2. Search for "QVD"
+3. Find "QVD Viewer: Max Preview Rows"
+4. Adjust the value (1-1000 rows)
+
 ## Installation
 
 ### From VSIX (Local Installation)
@@ -34,7 +99,7 @@ See [Development](#development) section below.
 There are two ways to open a QVD file:
 
 1. **From File Explorer**: Click on any `.qvd` or `.QVD` file in the VS Code Explorer sidebar
-2. **Using Command Palette**: 
+2. **Using Command Palette**:
    - Press `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (Mac)
    - Type "Open QVD File" and select the command
    - Choose a QVD file from the file picker
@@ -44,6 +109,7 @@ There are two ways to open a QVD file:
 The extension displays QVD files in three sections:
 
 **1. File Metadata**
+
 ```
 Creator Document: QVD4VSCode Test
 Created (UTC): 2025-10-20 16:00:00
@@ -53,6 +119,7 @@ Total Records: 3
 
 **2. Field Information**
 Each field shows:
+
 - Field name
 - Data type (INTEGER, TEXT, etc.)
 - Number of unique symbols
@@ -64,6 +131,7 @@ A formatted table showing the first N rows (configurable) with all columns from 
 ### Example Output
 
 When you open a QVD file, you'll see:
+
 - File metadata at the top
 - Field information with types and statistics
 - Data preview in a table format below
@@ -72,9 +140,10 @@ When you open a QVD file, you'll see:
 
 This extension contributes the following settings:
 
-* `qvd4vscode.maxPreviewRows`: Maximum number of rows to display in the QVD preview (default: 25, min: 1, max: 1000)
+- `qvd4vscode.maxPreviewRows`: Maximum number of rows to display in the QVD preview (default: 25, min: 1, max: 1000)
 
 To change this setting:
+
 1. Go to File → Preferences → Settings (or `Ctrl+,`)
 2. Search for "QVD"
 3. Adjust the "Max Preview Rows" value
@@ -82,10 +151,12 @@ To change this setting:
 ## QVD File Format
 
 QVD files are a proprietary tabular format used by Qlik Sense and QlikView. They consist of:
+
 - An XML header containing metadata about the file and field definitions
 - Binary data section containing the actual table data
 
 For more information about the QVD format:
+
 - [qvd4js Library](https://github.com/MuellerConstantin/qvd4js)
 - [PyQVD Documentation](https://pyqvd.readthedocs.io/latest/guide/qvd-file-format.html)
 
@@ -100,12 +171,14 @@ For more information about the QVD format:
 ### Building the Extension
 
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/ptarmiganlabs/qvd4vscode.git
    cd qvd4vscode
    ```
 
 2. Install dependencies:
+
    ```bash
    npm install
    ```
@@ -118,15 +191,18 @@ For more information about the QVD format:
 ### Testing the Extension Locally
 
 1. Open the project in VS Code:
+
    ```bash
    code .
    ```
 
 2. Press `F5` to start debugging
+
    - This will open a new VS Code window with the extension loaded
    - The extension will be in development mode
 
 3. In the new window:
+
    - Open a QVD file or use Command Palette → "Open QVD File"
    - The QVD viewer should display the file contents
 
@@ -171,6 +247,7 @@ See LICENSE file for details.
 ### 0.0.1
 
 Initial release:
+
 - QVD file viewer with metadata display
 - Data preview with configurable row limit
 - Custom editor integration
