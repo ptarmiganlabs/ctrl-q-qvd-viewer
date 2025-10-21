@@ -1,8 +1,10 @@
 const vscode = require("vscode");
 const QvdReader = require("./qvdReader");
+const fs = require("fs");
+const path = require("path");
 
 /**
- * Provider for QVD file custom editor
+ * Provider for QVD file custom editor with tabbed interface and Tabulator
  */
 class QvdEditorProvider {
   static viewType = "ctrl-q-qvd-viewer.qvdEditor";
@@ -19,6 +21,9 @@ class QvdEditorProvider {
     // Setup initial content for the webview
     webviewPanel.webview.options = {
       enableScripts: true,
+      localResourceRoots: [
+        vscode.Uri.joinPath(this.context.extensionUri, "media"),
+      ],
     };
 
     // Get the max rows configuration
@@ -58,20 +63,6 @@ class QvdEditorProvider {
             : Math.min(currentRows * 2, 100000);
           await this.updateWebview(filePath, webviewPanel.webview, newMaxRows);
           break;
-
-        // Future: Server-side pagination support
-        // When qvd4js supports streaming/lazy loading, add this handler:
-        // case 'loadPage':
-        //     const pageData = await this.qvdReader.readPage(
-        //         filePath,
-        //         message.page,
-        //         message.pageSize
-        //     );
-        //     webviewPanel.webview.postMessage({
-        //         command: 'pageData',
-        //         data: pageData
-        //     });
-        //     break;
       }
     });
   }
@@ -130,1015 +121,717 @@ class QvdEditorProvider {
   }
 
   /**
-   * Generate HTML for webview
+   * Get nonce for CSP
+   */
+  getNonce() {
+    let text = "";
+    const possible =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    for (let i = 0; i < 32; i++) {
+      text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
+    return text;
+  }
+
+  /**
+   * Get Tabulator library inlined as string
+   */
+  getTabulatorJs() {
+    const tabulatorPath = path.join(
+      this.context.extensionPath,
+      "media",
+      "tabulator",
+      "tabulator.min.js"
+    );
+    return fs.readFileSync(tabulatorPath, "utf8");
+  }
+
+  /**
+   * Get Tabulator CSS inlined as string
+   */
+  getTabulatorCss() {
+    const tabulatorCssPath = path.join(
+      this.context.extensionPath,
+      "media",
+      "tabulator",
+      "tabulator.min.css"
+    );
+    return fs.readFileSync(tabulatorCssPath, "utf8");
+  }
+
+  /**
+   * Generate HTML for webview with tabbed interface and Tabulator
    */
   getHtmlForWebview(result) {
-    const { metadata, data, columns, totalRows, dataError } = result;
+    const { metadata, data, totalRows, dataError } = result;
     const hasMoreRows = data.length < totalRows;
+    const nonce = this.getNonce();
+
+    // Inline Tabulator for easier CSP compliance
+    const tabulatorJs = this.getTabulatorJs();
+    const tabulatorCss = this.getTabulatorCss();
+
+    // Prepare schema data for schema tab
+    const schemaData =
+      metadata && metadata.fields
+        ? metadata.fields.map((field) => ({
+            name: field.name,
+            type: field.type || "",
+            extent: field.extent || "",
+            noOfSymbols: field.noOfSymbols || 0,
+            offset: field.offset || 0,
+            length: field.length || 0,
+            bitOffset: field.bitOffset || 0,
+            bitWidth: field.bitWidth || 0,
+            bias: field.bias || 0,
+            tags:
+              field.tags && field.tags.length > 0
+                ? field.tags.join(", ")
+                : "",
+            comment: field.comment || "",
+          }))
+        : [];
+
+    // Prepare metadata as key-value pairs for metadata tab
+    const metadataKV = metadata
+      ? [
+          { key: "QV Build No", value: metadata.qvBuildNo || "" },
+          { key: "Creator Document", value: metadata.creatorDoc || "" },
+          { key: "Created (UTC)", value: metadata.createUtcTime || "" },
+          {
+            key: "Source Create (UTC)",
+            value: metadata.sourceCreateUtcTime || "",
+          },
+          {
+            key: "Source File Time (UTC)",
+            value: metadata.sourceFileUtcTime || "",
+          },
+          { key: "Source File Size", value: metadata.sourceFileSize || "" },
+          { key: "Stale Time (UTC)", value: metadata.staleUtcTime || "" },
+          { key: "Table Name", value: metadata.tableName || "" },
+          { key: "Table Creator", value: metadata.tableCreator || "" },
+          { key: "Compression", value: metadata.compression || "" },
+          { key: "Record Byte Size", value: metadata.recordByteSize || "" },
+          { key: "Total Records", value: totalRows.toString() },
+          { key: "Offset", value: metadata.offset.toString() },
+          { key: "Length", value: metadata.length.toString() },
+          { key: "Comment", value: metadata.comment || "" },
+          { key: "Encryption Info", value: metadata.encryptionInfo || "" },
+          { key: "Table Tags", value: metadata.tableTags || "" },
+          { key: "Profiling Data", value: metadata.profilingData || "" },
+        ]
+      : [];
 
     return `<!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Ctrl-Q QVD Viewer</title>
-            <style>
-                body {
-                    font-family: var(--vscode-font-family);
-                    font-size: var(--vscode-font-size);
-                    color: var(--vscode-foreground);
-                    background-color: var(--vscode-editor-background);
-                    padding: 20px;
-                    margin: 0;
-                }
-                
-                .header-container {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    margin-bottom: 20px;
-                }
-                
-                .header-buttons {
-                    display: flex;
-                    gap: 10px;
-                    align-items: center;
-                }
-                
-                h1 {
-                    font-size: 1.5em;
-                    margin: 0;
-                    color: var(--vscode-foreground);
-                }
-                
-                .settings-button, .load-all-button, .about-button {
-                    background-color: var(--vscode-button-background);
-                    color: var(--vscode-button-foreground);
-                    border: none;
-                    padding: 8px 16px;
-                    border-radius: 4px;
-                    cursor: pointer;
-                    font-size: 0.9em;
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                }
-                
-                .about-button {
-                    background-color: var(--vscode-button-secondaryBackground);
-                    color: var(--vscode-button-secondaryForeground);
-                }
-                
-                .settings-button:hover, .load-all-button:hover {
-                    background-color: var(--vscode-button-hoverBackground);
-                }
-                
-                .about-button:hover {
-                    background-color: var(--vscode-button-secondaryHoverBackground);
-                }
-                
-                .load-all-button:disabled {
-                    opacity: 0.5;
-                    cursor: not-allowed;
-                }
-                
-                .settings-icon {
-                    width: 16px;
-                    height: 16px;
-                }
-                
-                h2 {
-                    font-size: 1.2em;
-                    margin-top: 25px;
-                    margin-bottom: 10px;
-                    color: var(--vscode-foreground);
-                    border-bottom: 1px solid var(--vscode-panel-border);
-                    padding-bottom: 5px;
-                }
-                
-                .metadata {
-                    background-color: var(--vscode-editor-inactiveSelectionBackground);
-                    padding: 15px;
-                    border-radius: 4px;
-                    margin-bottom: 30px;
-                    border: 1px solid var(--vscode-panel-border);
-                }
-                
-                .metadata-item {
-                    margin: 8px 0;
-                    display: flex;
-                    align-items: center;
-                    gap: 10px;
-                }
-                
-                .metadata-label {
-                    font-weight: bold;
-                    display: inline-block;
-                    min-width: 200px;
-                    color: var(--vscode-foreground);
-                    flex-shrink: 0;
-                }
-                
-                .metadata-value {
-                    color: var(--vscode-descriptionForeground);
-                    flex: 1;
-                }
-                
-                .copy-btn {
-                    background-color: transparent;
-                    border: 1px solid var(--vscode-button-border);
-                    color: var(--vscode-button-foreground);
-                    padding: 4px 8px;
-                    border-radius: 3px;
-                    cursor: pointer;
-                    font-size: 0.85em;
-                    opacity: 0.7;
-                    transition: opacity 0.2s, background-color 0.2s;
-                    flex-shrink: 0;
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 4px;
-                }
-                
-                .copy-btn:hover {
-                    opacity: 1;
-                    background-color: var(--vscode-button-secondaryHoverBackground);
-                }
-                
-                .copy-btn.copied {
-                    background-color: var(--vscode-button-background);
-                    opacity: 1;
-                }
-                
-                .collapsible-section {
-                    margin: 15px 0;
-                }
-                
-                .collapsible-header {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    cursor: pointer;
-                    padding: 10px;
-                    background-color: var(--vscode-editor-inactiveSelectionBackground);
-                    border-radius: 4px;
-                    border: 1px solid var(--vscode-panel-border);
-                    user-select: none;
-                }
-                
-                .collapsible-header:hover {
-                    background-color: var(--vscode-list-hoverBackground);
-                }
-                
-                .collapsible-icon {
-                    transition: transform 0.2s;
-                    font-size: 0.8em;
-                }
-                
-                .collapsible-icon.expanded {
-                    transform: rotate(90deg);
-                }
-                
-                .collapsible-content {
-                    display: none;
-                    padding: 10px;
-                    margin-top: 5px;
-                    background-color: var(--vscode-editor-inactiveSelectionBackground);
-                    border-radius: 4px;
-                    border: 1px solid var(--vscode-panel-border);
-                }
-                
-                .collapsible-content.expanded {
-                    display: block;
-                }
-                
-                .fields-section {
-                    margin-top: 30px;
-                    margin-bottom: 40px;
-                    padding-bottom: 30px;
-                    border-bottom: 2px solid var(--vscode-panel-border);
-                }
-                
-                .data-section {
-                    margin-top: 40px;
-                    padding-top: 20px;
-                    border-top: 3px solid var(--vscode-panel-border);
-                }
-                
-                table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    margin-top: 15px;
-                    background-color: var(--vscode-editor-background);
-                }
-                
-                th {
-                    background-color: var(--vscode-editor-selectionBackground);
-                    color: var(--vscode-foreground);
-                    padding: 10px;
-                    text-align: left;
-                    border: 1px solid var(--vscode-panel-border);
-                    font-weight: bold;
-                }
-                
-                td {
-                    padding: 8px 10px;
-                    border: 1px solid var(--vscode-panel-border);
-                    color: var(--vscode-foreground);
-                }
-                
-                tbody tr:nth-child(even) {
-                    background-color: var(--vscode-editor-inactiveSelectionBackground);
-                }
-                
-                tbody tr:hover {
-                    background-color: var(--vscode-list-hoverBackground);
-                }
-                
-                .info-banner {
-                    background-color: var(--vscode-textBlockQuote-background);
-                    border-left: 4px solid var(--vscode-textBlockQuote-border);
-                    padding: 10px 15px;
-                    margin: 15px 0;
-                    color: var(--vscode-foreground);
-                }
-                
-                .table-container {
-                    overflow-x: auto;
-                    margin-top: 10px;
-                }
-                
-                .field-metadata-row {
-                    font-weight: bold;
-                    background-color: var(--vscode-editor-inactiveSelectionBackground);
-                }
-                
-                /* Pagination styles */
-                .pagination-controls {
-                    display: flex;
-                    align-items: center;
-                    gap: 20px;
-                    margin: 20px 0;
-                    padding: 15px;
-                    background-color: var(--vscode-editor-inactiveSelectionBackground);
-                    border-radius: 4px;
-                    flex-wrap: wrap;
-                }
-                
-                .pagination-info {
-                    color: var(--vscode-foreground);
-                    font-size: 0.9em;
-                }
-                
-                .pagination-buttons {
-                    display: flex;
-                    gap: 5px;
-                    align-items: center;
-                }
-                
-                .pagination-btn {
-                    background-color: var(--vscode-button-background);
-                    color: var(--vscode-button-foreground);
-                    border: none;
-                    padding: 6px 10px;
-                    border-radius: 4px;
-                    cursor: pointer;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    min-width: 32px;
-                    height: 28px;
-                }
-                
-                .pagination-btn:hover:not(:disabled) {
-                    background-color: var(--vscode-button-hoverBackground);
-                }
-                
-                .pagination-btn:disabled {
-                    opacity: 0.5;
-                    cursor: not-allowed;
-                }
-                
-                .pagination-page-info {
-                    display: flex;
-                    align-items: center;
-                    gap: 5px;
-                    color: var(--vscode-foreground);
-                    font-size: 0.9em;
-                }
-                
-                .page-input {
-                    width: 50px;
-                    padding: 4px 8px;
-                    background-color: var(--vscode-input-background);
-                    color: var(--vscode-input-foreground);
-                    border: 1px solid var(--vscode-input-border);
-                    border-radius: 4px;
-                    text-align: center;
-                }
-                
-                .pagination-size {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    margin-left: auto;
-                }
-                
-                .pagination-size label {
-                    color: var(--vscode-foreground);
-                    font-size: 0.9em;
-                }
-                
-                .page-size-select {
-                    padding: 4px 8px;
-                    background-color: var(--vscode-dropdown-background);
-                    color: var(--vscode-dropdown-foreground);
-                    border: 1px solid var(--vscode-dropdown-border);
-                    border-radius: 4px;
-                    cursor: pointer;
-                }
-                
-                .codicon {
-                    display: inline-block;
-                    width: 16px;
-                    height: 16px;
-                }
-                
-                .codicon-chevron-left::before {
-                    content: '‹';
-                    font-size: 20px;
-                    font-weight: bold;
-                }
-                
-                .codicon-chevron-right::before {
-                    content: '›';
-                    font-size: 20px;
-                    font-weight: bold;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="header-container">
-                <h1>Ctrl-Q QVD File Viewer</h1>
-                <div class="header-buttons">
-                    <button class="about-button" onclick="openAbout()">
-                        ℹ️ About
-                    </button>
-                    <button class="settings-button" onclick="openSettings()">
-                        <svg class="settings-icon" viewBox="0 0 16 16" fill="currentColor">
-                            <path d="M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/>
-                            <path d="M14 7.5a1.5 1.5 0 0 1-1.5 1.5h-.38a.5.5 0 0 0-.43.75l.19.32a1.5 1.5 0 0 1-2.3 1.94l-.31-.19a.5.5 0 0 0-.75.43v.38a1.5 1.5 0 0 1-3 0v-.38a.5.5 0 0 0-.75-.43l-.31.19a1.5 1.5 0 0 1-2.3-1.94l.19-.32a.5.5 0 0 0-.43-.75H2.5A1.5 1.5 0 0 1 1 7.5v-1A1.5 1.5 0 0 1 2.5 5h.38a.5.5 0 0 0 .43-.75l-.19-.32a1.5 1.5 0 0 1 2.3-1.94l.31.19a.5.5 0 0 0 .75-.43V1.5a1.5 1.5 0 0 1 3 0v.38a.5.5 0 0 0 .75.43l.31-.19a1.5 1.5 0 0 1 2.3 1.94l-.19.32a.5.5 0 0 0 .43.75h.38A1.5 1.5 0 0 1 14 6.5v1z"/>
-                        </svg>
-                        Settings
-                    </button>
-                </div>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ctrl-Q QVD Viewer</title>
+    <style>
+        /* Tabulator CSS - inlined */
+        ${tabulatorCss}
+        
+        /* Custom styles */
+        :root {
+            --tab-active-color: var(--vscode-tab-activeBackground, #1e1e1e);
+            --tab-inactive-color: var(--vscode-tab-inactiveBackground, #2d2d2d);
+            --tab-border-color: var(--vscode-tab-border, #454545);
+        }
+        
+        * {
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: var(--vscode-font-family);
+            font-size: var(--vscode-font-size);
+            color: var(--vscode-foreground);
+            background-color: var(--vscode-editor-background);
+            padding: 0;
+            margin: 0;
+            overflow: hidden;
+        }
+        
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        
+        .header-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 20px;
+            background-color: var(--vscode-editor-background);
+            border-bottom: 1px solid var(--vscode-panel-border);
+            flex-shrink: 0;
+        }
+        
+        h1 {
+            font-size: 1.2em;
+            margin: 0;
+            color: var(--vscode-foreground);
+        }
+        
+        .header-buttons {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .header-button {
+            background-color: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            border: none;
+            padding: 6px 12px;
+            border-radius: 2px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+        
+        .header-button:hover {
+            background-color: var(--vscode-button-hoverBackground);
+        }
+        
+        /* Tab styles */
+        .tab-container {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            overflow: hidden;
+        }
+        
+        .tabs {
+            display: flex;
+            background-color: var(--tab-inactive-color);
+            border-bottom: 1px solid var(--tab-border-color);
+            padding: 0;
+            margin: 0;
+            flex-shrink: 0;
+        }
+        
+        .tab-button {
+            padding: 10px 20px;
+            background-color: var(--tab-inactive-color);
+            color: var(--vscode-foreground);
+            border: none;
+            border-right: 1px solid var(--tab-border-color);
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: background-color 0.15s;
+        }
+        
+        .tab-button:hover {
+            background-color: var(--vscode-list-hoverBackground);
+        }
+        
+        .tab-button.active {
+            background-color: var(--tab-active-color);
+            border-bottom: 2px solid var(--vscode-focusBorder);
+        }
+        
+        .tab-content {
+            display: none;
+            flex: 1;
+            overflow: hidden;
+            padding: 15px;
+        }
+        
+        .tab-content.active {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* Search box styles */
+        .search-container {
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+        
+        .search-input {
+            flex: 1;
+            padding: 6px 10px;
+            background-color: var(--vscode-input-background);
+            color: var(--vscode-input-foreground);
+            border: 1px solid var(--vscode-input-border);
+            border-radius: 2px;
+            font-size: 0.9em;
+        }
+        
+        .search-input:focus {
+            outline: 1px solid var(--vscode-focusBorder);
+        }
+        
+        /* Table container */
+        .table-wrapper {
+            flex: 1;
+            overflow: auto;
+            background-color: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 2px;
+        }
+        
+        /* Info banner */
+        .info-banner {
+            background-color: var(--vscode-textBlockQuote-background);
+            border-left: 4px solid var(--vscode-textBlockQuote-border);
+            padding: 10px 15px;
+            margin-bottom: 12px;
+            color: var(--vscode-foreground);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        
+        .load-button {
+            background-color: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            border: none;
+            padding: 5px 10px;
+            border-radius: 2px;
+            cursor: pointer;
+            font-size: 0.85em;
+            margin-left: 8px;
+        }
+        
+        .load-button:hover {
+            background-color: var(--vscode-button-hoverBackground);
+        }
+        
+        .load-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        /* Tabulator overrides for VSCode theme */
+        .tabulator {
+            background-color: var(--vscode-editor-background);
+            border: none;
+            font-size: var(--vscode-font-size, 13px);
+        }
+        
+        .tabulator .tabulator-header {
+            background-color: var(--vscode-editor-selectionBackground);
+            border-bottom: 2px solid var(--vscode-panel-border);
+        }
+        
+        .tabulator .tabulator-header .tabulator-col {
+            background-color: var(--vscode-editor-selectionBackground);
+            border-right: 1px solid var(--vscode-panel-border);
+        }
+        
+        .tabulator .tabulator-header .tabulator-col .tabulator-col-content {
+            padding: 8px;
+            color: var(--vscode-foreground);
+        }
+        
+        .tabulator .tabulator-tableholder .tabulator-table {
+            background-color: var(--vscode-editor-background);
+            color: var(--vscode-foreground);
+        }
+        
+        .tabulator-row {
+            background-color: var(--vscode-editor-background);
+            border-bottom: 1px solid var(--vscode-panel-border);
+        }
+        
+        .tabulator-row.tabulator-row-even {
+            background-color: var(--vscode-editor-inactiveSelectionBackground);
+        }
+        
+        .tabulator-row:hover {
+            background-color: var(--vscode-list-hoverBackground) !important;
+        }
+        
+        .tabulator-cell {
+            border-right: 1px solid var(--vscode-panel-border);
+            padding: 6px 8px;
+        }
+        
+        .tabulator-footer {
+            background-color: var(--vscode-editor-inactiveSelectionBackground);
+            border-top: 2px solid var(--vscode-panel-border);
+            color: var(--vscode-foreground);
+            padding: 8px;
+        }
+        
+        .tabulator-footer .tabulator-page {
+            background-color: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            border: 1px solid var(--vscode-button-border);
+            margin: 0 2px;
+            border-radius: 2px;
+            padding: 4px 8px;
+        }
+        
+        .tabulator-footer .tabulator-page:not(.disabled):hover {
+            background-color: var(--vscode-button-hoverBackground);
+        }
+        
+        .tabulator-footer .tabulator-page.active {
+            background-color: var(--vscode-button-hoverBackground);
+        }
+        
+        /* Context menu */
+        .context-menu {
+            position: fixed;
+            background-color: var(--vscode-menu-background);
+            border: 1px solid var(--vscode-menu-border);
+            border-radius: 2px;
+            padding: 4px 0;
+            z-index: 10000;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        .context-menu-item {
+            padding: 6px 16px;
+            cursor: pointer;
+            color: var(--vscode-menu-foreground);
+            font-size: 0.9em;
+        }
+        
+        .context-menu-item:hover {
+            background-color: var(--vscode-menu-selectionBackground);
+            color: var(--vscode-menu-selectionForeground);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-container">
+            <h1>📊 Ctrl-Q QVD File Viewer</h1>
+            <div class="header-buttons">
+                <button class="header-button" onclick="openAbout()">ℹ️ About</button>
+                <button class="header-button" onclick="openSettings()">⚙️ Settings</button>
+            </div>
+        </div>
+        
+        <div class="tab-container">
+            <div class="tabs">
+                <button class="tab-button active" onclick="switchTab(event, 'data')">📋 Data</button>
+                <button class="tab-button" onclick="switchTab(event, 'schema')">🔍 Schema</button>
+                <button class="tab-button" onclick="switchTab(event, 'metadata')">ℹ️ Metadata</button>
             </div>
             
-            <script>
-                const vscode = acquireVsCodeApi();
-                const totalRowsInFile = ${totalRows};
-                const currentLoadedRows = ${data.length};
-                
-                function openAbout() {
-                    vscode.postMessage({ command: 'openAbout' });
-                }
-                
-                function openSettings() {
-                    vscode.postMessage({ command: 'openSettings' });
-                }
-                
-                function loadMoreRows() {
-                    const btn = document.getElementById('loadMoreBtn');
-                    if (btn) {
-                        btn.disabled = true;
-                        btn.textContent = 'Loading...';
-                    }
-                    vscode.postMessage({ 
-                        command: 'loadMore',
-                        currentRows: currentLoadedRows,
-                        loadAll: false
-                    });
-                }
-                
-                function loadAllRows() {
-                    const btn = document.getElementById('loadAllBtn');
-                    if (btn) {
-                        btn.disabled = true;
-                        btn.textContent = 'Loading...';
-                    }
-                    vscode.postMessage({ 
-                        command: 'loadMore',
-                        currentRows: currentLoadedRows,
-                        loadAll: true
-                    });
-                }
-                
-                function copyToClipboard(text, buttonId) {
-                    navigator.clipboard.writeText(text).then(() => {
-                        const btn = document.getElementById(buttonId);
-                        if (btn) {
-                            const originalText = btn.innerHTML;
-                            btn.innerHTML = '✓ Copied';
-                            btn.classList.add('copied');
-                            setTimeout(() => {
-                                btn.innerHTML = originalText;
-                                btn.classList.remove('copied');
-                            }, 2000);
-                        }
-                    }).catch(err => {
-                        console.error('Failed to copy:', err);
-                    });
-                }
-                
-                function toggleCollapsible(id) {
-                    const content = document.getElementById(id);
-                    const icon = document.getElementById(id + '-icon');
-                    if (content && icon) {
-                        content.classList.toggle('expanded');
-                        icon.classList.toggle('expanded');
-                    }
-                }
-            </script>
-            
-            <div class="metadata">
-                <h2 style="margin-top: 0; border-bottom: 2px solid var(--vscode-panel-border); padding-bottom: 10px;">📋 File Metadata</h2>
-                ${
-                  metadata
-                    ? `
-                <div class="metadata-item">
-                    <span class="metadata-label">QV Build No:</span>
-                    <span class="metadata-value">${
-                      this.escapeHtml(metadata.qvBuildNo) || "(empty)"
-                    }</span>
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Creator Document:</span>
-                    <span class="metadata-value">${
-                      this.escapeHtml(metadata.creatorDoc) || "(empty)"
-                    }</span>
-                    ${
-                      metadata.creatorDoc
-                        ? `<button class="copy-btn" id="copy-creator-doc" onclick="copyToClipboard('${this.escapeHtml(
-                            metadata.creatorDoc
-                          ).replace(
-                            /'/g,
-                            "\\'"
-                          )}', 'copy-creator-doc')">📋 Copy</button>`
-                        : ""
-                    }
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Created (UTC):</span>
-                    <span class="metadata-value">${
-                      this.escapeHtml(metadata.createUtcTime) || "(empty)"
-                    }</span>
-                    ${
-                      metadata.createUtcTime
-                        ? `<button class="copy-btn" id="copy-create-time" onclick="copyToClipboard('${this.escapeHtml(
-                            metadata.createUtcTime
-                          )}', 'copy-create-time')">📋 Copy</button>`
-                        : ""
-                    }
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Source Create (UTC):</span>
-                    <span class="metadata-value">${
-                      this.escapeHtml(metadata.sourceCreateUtcTime) || "(empty)"
-                    }</span>
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Source File Time (UTC):</span>
-                    <span class="metadata-value">${
-                      this.escapeHtml(metadata.sourceFileUtcTime) || "(empty)"
-                    }</span>
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Source File Size:</span>
-                    <span class="metadata-value">${
-                      this.escapeHtml(metadata.sourceFileSize) || "(empty)"
-                    }</span>
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Stale Time (UTC):</span>
-                    <span class="metadata-value">${
-                      this.escapeHtml(metadata.staleUtcTime) || "(empty)"
-                    }</span>
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Table Name:</span>
-                    <span class="metadata-value">${
-                      this.escapeHtml(metadata.tableName) || "(empty)"
-                    }</span>
-                    ${
-                      metadata.tableName
-                        ? `<button class="copy-btn" id="copy-table-name" onclick="copyToClipboard('${this.escapeHtml(
-                            metadata.tableName
-                          ).replace(
-                            /'/g,
-                            "\\'"
-                          )}', 'copy-table-name')">📋 Copy</button>`
-                        : ""
-                    }
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Table Creator:</span>
-                    <span class="metadata-value">${
-                      this.escapeHtml(metadata.tableCreator) || "(empty)"
-                    }</span>
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Compression:</span>
-                    <span class="metadata-value">${
-                      this.escapeHtml(metadata.compression) || "(empty)"
-                    }</span>
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Record Byte Size:</span>
-                    <span class="metadata-value">${
-                      this.escapeHtml(metadata.recordByteSize) || "(empty)"
-                    }</span>
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Total Records:</span>
-                    <span class="metadata-value">${totalRows}</span>
-                    <button class="copy-btn" id="copy-total-records" onclick="copyToClipboard('${totalRows}', 'copy-total-records')">📋 Copy</button>
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Offset:</span>
-                    <span class="metadata-value">${metadata.offset}</span>
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Length:</span>
-                    <span class="metadata-value">${metadata.length}</span>
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Comment:</span>
-                    <span class="metadata-value">${
-                      this.escapeHtml(metadata.comment) || "(empty)"
-                    }</span>
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Encryption Info:</span>
-                    <span class="metadata-value">${
-                      this.escapeHtml(metadata.encryptionInfo) || "(empty)"
-                    }</span>
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Table Tags:</span>
-                    <span class="metadata-value">${
-                      this.escapeHtml(metadata.tableTags) || "(empty)"
-                    }</span>
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Profiling Data:</span>
-                    <span class="metadata-value">${
-                      this.escapeHtml(metadata.profilingData) || "(empty)"
-                    }</span>
-                </div>
-                
-                ${
-                  metadata.lineage && metadata.lineage.LineageInfo
-                    ? `
-                <div class="collapsible-section">
-                    <div class="collapsible-header" onclick="toggleCollapsible('lineage-content')">
-                        <span class="collapsible-icon" id="lineage-content-icon">▶</span>
-                        <strong>Lineage Information</strong>
-                        <span style="color: var(--vscode-descriptionForeground); margin-left: auto;">${
-                          Array.isArray(metadata.lineage.LineageInfo)
-                            ? metadata.lineage.LineageInfo.length
-                            : 1
-                        } item(s)</span>
-                    </div>
-                    <div class="collapsible-content" id="lineage-content">
-                        ${
-                          Array.isArray(metadata.lineage.LineageInfo)
-                            ? metadata.lineage.LineageInfo.map(
-                                (lineageItem, index) => `
-                            <div style="margin: 10px 0; padding: 10px; background-color: var(--vscode-editor-background); border-radius: 4px;">
-                                <strong>Lineage Item ${index + 1}:</strong>
-                                <div style="margin-left: 15px; margin-top: 5px;">
-                                    ${
-                                      lineageItem.Discriminator
-                                        ? `<div><strong>Discriminator:</strong> ${this.escapeHtml(
-                                            lineageItem.Discriminator
-                                          )}</div>`
-                                        : ""
-                                    }
-                                    ${
-                                      lineageItem.Statement
-                                        ? `<div><strong>Statement:</strong> <pre style="white-space: pre-wrap; margin: 5px 0; padding: 8px; background-color: var(--vscode-textCodeBlock-background); border-radius: 3px; overflow-x: auto;">${this.escapeHtml(
-                                            lineageItem.Statement
-                                          )}</pre></div>`
-                                        : ""
-                                    }
-                                </div>
-                            </div>
-                            `
-                              ).join("")
-                            : `
-                            <div style="margin: 10px 0; padding: 10px; background-color: var(--vscode-editor-background); border-radius: 4px;">
-                                ${
-                                  metadata.lineage.LineageInfo.Discriminator
-                                    ? `<div><strong>Discriminator:</strong> ${this.escapeHtml(
-                                        metadata.lineage.LineageInfo
-                                          .Discriminator
-                                      )}</div>`
-                                    : ""
-                                }
-                                ${
-                                  metadata.lineage.LineageInfo.Statement
-                                    ? `<div><strong>Statement:</strong> <pre style="white-space: pre-wrap; margin: 5px 0; padding: 8px; background-color: var(--vscode-textCodeBlock-background); border-radius: 3px; overflow-x: auto;">${this.escapeHtml(
-                                        metadata.lineage.LineageInfo.Statement
-                                      )}</pre></div>`
-                                    : ""
-                                }
-                            </div>
-                            `
-                        }
-                    </div>
-                </div>
-                `
-                    : ""
-                }
-                `
-                    : "<p>No metadata available</p>"
-                }
-            </div>
-            
-            <div class="fields-section">
-                <h2 style="border-bottom: 2px solid var(--vscode-panel-border); padding-bottom: 10px;">🔍 Field Metadata (${
-                  metadata && metadata.fields ? metadata.fields.length : 0
-                } fields)</h2>
-                ${
-                  metadata && metadata.fields && metadata.fields.length > 0
-                    ? `
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Field Property</th>
-                                ${metadata.fields
-                                  .map(
-                                    (field) =>
-                                      `<th>${this.escapeHtml(field.name)}</th>`
-                                  )
-                                  .join("")}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td class="field-metadata-row"><strong>Type</strong></td>
-                                ${metadata.fields
-                                  .map(
-                                    (field) =>
-                                      `<td>${
-                                        this.escapeHtml(field.type) || "(empty)"
-                                      }</td>`
-                                  )
-                                  .join("")}
-                            </tr>
-                            <tr>
-                                <td class="field-metadata-row"><strong>Extent</strong></td>
-                                ${metadata.fields
-                                  .map(
-                                    (field) =>
-                                      `<td>${
-                                        this.escapeHtml(field.extent) ||
-                                        "(empty)"
-                                      }</td>`
-                                  )
-                                  .join("")}
-                            </tr>
-                            <tr>
-                                <td class="field-metadata-row"><strong>Number of Symbols</strong></td>
-                                ${metadata.fields
-                                  .map(
-                                    (field) => `<td>${field.noOfSymbols}</td>`
-                                  )
-                                  .join("")}
-                            </tr>
-                            <tr>
-                                <td class="field-metadata-row"><strong>Offset</strong></td>
-                                ${metadata.fields
-                                  .map((field) => `<td>${field.offset}</td>`)
-                                  .join("")}
-                            </tr>
-                            <tr>
-                                <td class="field-metadata-row"><strong>Length</strong></td>
-                                ${metadata.fields
-                                  .map((field) => `<td>${field.length}</td>`)
-                                  .join("")}
-                            </tr>
-                            <tr>
-                                <td class="field-metadata-row"><strong>Bit Offset</strong></td>
-                                ${metadata.fields
-                                  .map((field) => `<td>${field.bitOffset}</td>`)
-                                  .join("")}
-                            </tr>
-                            <tr>
-                                <td class="field-metadata-row"><strong>Bit Width</strong></td>
-                                ${metadata.fields
-                                  .map((field) => `<td>${field.bitWidth}</td>`)
-                                  .join("")}
-                            </tr>
-                            <tr>
-                                <td class="field-metadata-row"><strong>Bias</strong></td>
-                                ${metadata.fields
-                                  .map((field) => `<td>${field.bias}</td>`)
-                                  .join("")}
-                            </tr>
-                            <tr>
-                                <td class="field-metadata-row"><strong>Tags</strong></td>
-                                ${metadata.fields
-                                  .map((field) => {
-                                    const tagsDisplay =
-                                      field.tags && field.tags.length > 0
-                                        ? field.tags
-                                            .map((t) => this.escapeHtml(t))
-                                            .join(", ")
-                                        : "(empty)";
-                                    return `<td>${tagsDisplay}</td>`;
-                                  })
-                                  .join("")}
-                            </tr>
-                            <tr>
-                                <td class="field-metadata-row"><strong>Comment</strong></td>
-                                ${metadata.fields
-                                  .map(
-                                    (field) =>
-                                      `<td>${
-                                        this.escapeHtml(field.comment) ||
-                                        "(empty)"
-                                      }</td>`
-                                  )
-                                  .join("")}
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                `
-                    : "<p>No field metadata available</p>"
-                }
-            </div>
-            
-            <div class="data-section">
-                <h2 style="margin-top: 0; padding-bottom: 15px; border-bottom: 2px solid var(--vscode-panel-border);">📊 Data Preview</h2>
-                
+            <!-- Data Tab -->
+            <div id="data-tab" class="tab-content active">
                 ${
                   hasMoreRows
                     ? `
-                    <div class="info-banner" style="margin: 15px 0;">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                📊 Showing ${data.length.toLocaleString()} of ${totalRows.toLocaleString()} rows 
-                                (${((data.length / totalRows) * 100).toFixed(
-                                  1
-                                )}% of file loaded)
-                            </div>
-                            <div style="display: flex; gap: 10px;">
-                                <button class="load-all-button" onclick="loadMoreRows()" id="loadMoreBtn">
-                                    Load More (next ${Math.min(
-                                      data.length,
-                                      totalRows - data.length
-                                    ).toLocaleString()} rows)
-                                </button>
-                                <button class="load-all-button" onclick="loadAllRows()" id="loadAllBtn">
-                                    Load All Remaining (${(
-                                      totalRows - data.length
-                                    ).toLocaleString()} rows)
-                                </button>
-                            </div>
-                        </div>
+                <div class="info-banner">
+                    <div>
+                        📊 Showing ${data.length.toLocaleString()} of ${totalRows.toLocaleString()} rows 
+                        (${((data.length / totalRows) * 100).toFixed(1)}% of file loaded)
                     </div>
-                    `
+                    <div>
+                        <button class="load-button" onclick="loadMoreRows()" id="loadMoreBtn">
+                            Load More (next ${Math.min(data.length, totalRows - data.length).toLocaleString()} rows)
+                        </button>
+                        <button class="load-button" onclick="loadAllRows()" id="loadAllBtn">
+                            Load All Remaining (${(totalRows - data.length).toLocaleString()} rows)
+                        </button>
+                    </div>
+                </div>
+                `
                     : ""
                 }
-                
                 ${
                   dataError
                     ? `
-                    <div class="info-banner" style="background-color: var(--vscode-inputValidation-warningBackground); border-left-color: var(--vscode-inputValidation-warningBorder);">
-                        ⚠️ Unable to load data: ${this.escapeHtml(dataError)}
-                    </div>
-                `
-                    : data.length === 0
-                    ? `
-                    <div class="info-banner" style="background-color: var(--vscode-inputValidation-infoBackground); border-left-color: var(--vscode-inputValidation-infoBorder);">
-                        ℹ️ No data loaded. The file may be empty or data could not be read.
-                    </div>
+                <div class="info-banner" style="border-left-color: var(--vscode-inputValidation-warningBorder);">
+                    ⚠️ Unable to load data: ${this.escapeHtml(dataError)}
+                </div>
                 `
                     : ""
                 }
-                
-                ${
-                  data.length > 0
-                    ? `
-                    <!-- Pagination controls will be rendered here -->
-                    <div id="pagination-container"></div>
-                    
-                    <!-- Table will be rendered here -->
-                    <div class="table-container" id="data-table-container"></div>
-                    
-                    <script>
-                        // Inline pagination implementation for webview
-                        (function() {
-                            const tableData = ${JSON.stringify(data)};
-                            const tableColumns = ${JSON.stringify(columns)};
-                            
-                            class TablePagination {
-                                constructor(options) {
-                                    this.data = options.data || [];
-                                    this.columns = options.columns || [];
-                                    this.pageSize = options.pageSize || 100;
-                                    this.currentPage = 0;
-                                    this.totalRows = this.data.length; // Use actual data length for pagination
-                                    this.totalRowsInFile = options.totalRowsInFile || this.data.length; // Total in file for display
-                                    
-                                    this.tableContainer = document.getElementById(options.tableContainerId);
-                                    this.paginationContainer = document.getElementById(options.paginationContainerId);
-                                    
-                                    this.render();
-                                }
-                                
-                                get totalPages() {
-                                    return Math.ceil(this.totalRows / this.pageSize);
-                                }
-                                
-                                getCurrentPageData() {
-                                    const start = this.currentPage * this.pageSize;
-                                    const end = start + this.pageSize;
-                                    return this.data.slice(start, end);
-                                }
-                                
-                                goToPage(page) {
-                                    const newPage = Math.max(0, Math.min(page, this.totalPages - 1));
-                                    if (newPage === this.currentPage) return;
-                                    this.currentPage = newPage;
-                                    this.render();
-                                }
-                                
-                                render() {
-                                    this.renderTable();
-                                    this.renderPaginationControls();
-                                }
-                                
-                                renderTable() {
-                                    if (!this.tableContainer) return;
-                                    
-                                    const pageData = this.getCurrentPageData();
-                                    let html = '<table class="qvd-data-table">';
-                                    
-                                    html += '<thead><tr>';
-                                    this.columns.forEach(col => {
-                                        html += '<th>' + this.escapeHtml(col) + '</th>';
-                                    });
-                                    html += '</tr></thead>';
-                                    
-                                    html += '<tbody>';
-                                    pageData.forEach(row => {
-                                        html += '<tr>';
-                                        this.columns.forEach(col => {
-                                            const value = row[col] !== null && row[col] !== undefined ? row[col] : '';
-                                            html += '<td>' + this.escapeHtml(String(value)) + '</td>';
-                                        });
-                                        html += '</tr>';
-                                    });
-                                    html += '</tbody></table>';
-                                    
-                                    this.tableContainer.innerHTML = html;
-                                }
-                                
-                                renderPaginationControls() {
-                                    if (!this.paginationContainer) return;
-                                    
-                                    const startRow = this.currentPage * this.pageSize + 1;
-                                    const endRow = Math.min((this.currentPage + 1) * this.pageSize, this.totalRows);
-                                    
-                                    let html = '<div class="pagination-controls">';
-                                    
-                                    html += '<div class="pagination-info">';
-                                    html += 'Showing ' + startRow.toLocaleString() + ' - ' + endRow.toLocaleString() + ' of ' + this.totalRows.toLocaleString() + ' loaded rows';
-                                    if (this.totalRows < this.totalRowsInFile) {
-                                        html += ' (total in file: ' + this.totalRowsInFile.toLocaleString() + ')';
-                                    }
-                                    html += '</div>';
-                                    
-                                    html += '<div class="pagination-buttons">';
-                                    
-                                    const firstDisabled = this.currentPage === 0 ? ' disabled' : '';
-                                    const lastDisabled = this.currentPage >= this.totalPages - 1 ? ' disabled' : '';
-                                    
-                                    html += '<button class="pagination-btn" data-action="first"' + firstDisabled + '>';
-                                    html += '<span class="codicon codicon-chevron-left"></span><span class="codicon codicon-chevron-left"></span>';
-                                    html += '</button>';
-                                    
-                                    html += '<button class="pagination-btn" data-action="prev"' + firstDisabled + '>';
-                                    html += '<span class="codicon codicon-chevron-left"></span>';
-                                    html += '</button>';
-                                    
-                                    html += '<div class="pagination-page-info">';
-                                    html += 'Page <input type="number" class="page-input" min="1" max="' + this.totalPages + '" value="' + (this.currentPage + 1) + '"> of ' + this.totalPages;
-                                    html += '</div>';
-                                    
-                                    html += '<button class="pagination-btn" data-action="next"' + lastDisabled + '>';
-                                    html += '<span class="codicon codicon-chevron-right"></span>';
-                                    html += '</button>';
-                                    
-                                    html += '<button class="pagination-btn" data-action="last"' + lastDisabled + '>';
-                                    html += '<span class="codicon codicon-chevron-right"></span><span class="codicon codicon-chevron-right"></span>';
-                                    html += '</button>';
-                                    
-                                    html += '</div>';
-                                    
-                                    html += '<div class="pagination-size">';
-                                    html += '<label for="page-size-select">Rows per page:</label>';
-                                    html += '<select id="page-size-select" class="page-size-select">';
-                                    [25, 50, 100, 250, 500].forEach(size => {
-                                        const selected = this.pageSize === size ? ' selected' : '';
-                                        html += '<option value="' + size + '"' + selected + '>' + size + '</option>';
-                                    });
-                                    html += '</select>';
-                                    html += '</div>';
-                                    
-                                    html += '</div>';
-                                    
-                                    this.paginationContainer.innerHTML = html;
-                                    this.attachPaginationEvents();
-                                }
-                                
-                                attachPaginationEvents() {
-                                    if (!this.paginationContainer) return;
-                                    
-                                    const buttons = this.paginationContainer.querySelectorAll('.pagination-btn');
-                                    buttons.forEach(btn => {
-                                        btn.addEventListener('click', (e) => {
-                                            const action = e.currentTarget.dataset.action;
-                                            switch (action) {
-                                                case 'first':
-                                                    this.goToPage(0);
-                                                    break;
-                                                case 'prev':
-                                                    this.goToPage(this.currentPage - 1);
-                                                    break;
-                                                case 'next':
-                                                    this.goToPage(this.currentPage + 1);
-                                                    break;
-                                                case 'last':
-                                                    this.goToPage(this.totalPages - 1);
-                                                    break;
-                                            }
-                                        });
-                                    });
-                                    
-                                    const pageInput = this.paginationContainer.querySelector('.page-input');
-                                    if (pageInput) {
-                                        pageInput.addEventListener('change', (e) => {
-                                            const page = parseInt(e.target.value) - 1;
-                                            this.goToPage(page);
-                                        });
-                                        
-                                        pageInput.addEventListener('keypress', (e) => {
-                                            if (e.key === 'Enter') {
-                                                const page = parseInt(e.target.value) - 1;
-                                                this.goToPage(page);
-                                            }
-                                        });
-                                    }
-                                    
-                                    const sizeSelect = this.paginationContainer.querySelector('.page-size-select');
-                                    if (sizeSelect) {
-                                        sizeSelect.addEventListener('change', (e) => {
-                                            this.pageSize = parseInt(e.target.value);
-                                            this.currentPage = 0;
-                                            this.render();
-                                        });
-                                    }
-                                }
-                                
-                                escapeHtml(text) {
-                                    const div = document.createElement('div');
-                                    div.textContent = text;
-                                    return div.innerHTML;
-                                }
-                            }
-                            
-                            // Initialize pagination
-                            new TablePagination({
-                                data: tableData,
-                                columns: tableColumns,
-                                totalRowsInFile: ${totalRows},
-                                pageSize: 100,
-                                tableContainerId: 'data-table-container',
-                                paginationContainerId: 'pagination-container'
-                            });
-                        })();
-                    </script>
-                `
-                    : ""
-                }
+                <div class="search-container">
+                    <input type="text" class="search-input" id="data-search" placeholder="🔍 Search in data..." onkeyup="filterDataTable(this.value)" />
+                </div>
+                <div class="table-wrapper">
+                    <div id="data-table"></div>
+                </div>
             </div>
-        </body>
-        </html>`;
+            
+            <!-- Schema Tab -->
+            <div id="schema-tab" class="tab-content">
+                <div class="search-container">
+                    <input type="text" class="search-input" id="schema-search" placeholder="🔍 Search in schema..." onkeyup="filterSchemaTable(this.value)" />
+                </div>
+                <div class="table-wrapper">
+                    <div id="schema-table"></div>
+                </div>
+            </div>
+            
+            <!-- Metadata Tab -->
+            <div id="metadata-tab" class="tab-content">
+                <div class="search-container">
+                    <input type="text" class="search-input" id="metadata-search" placeholder="🔍 Search in metadata..." onkeyup="filterMetadataTable(this.value)" />
+                </div>
+                <div class="table-wrapper">
+                    <div id="metadata-table"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Context Menu -->
+    <div id="context-menu" class="context-menu" style="display: none;">
+        <div class="context-menu-item" onclick="copyCell()">📋 Copy Cell Value</div>
+    </div>
+    
+    <script nonce="${nonce}">
+        /* Tabulator library - inlined */
+        ${tabulatorJs}
+    </script>
+    
+    <script nonce="${nonce}">
+        const vscode = acquireVsCodeApi();
+        const totalRowsInFile = ${totalRows};
+        const currentLoadedRows = ${data.length};
+        
+        // Data for tables
+        const tableData = ${JSON.stringify(data)};
+        const schemaData = ${JSON.stringify(schemaData)};
+        const metadataData = ${JSON.stringify(metadataKV)};
+        
+        let currentContextCell = null;
+        let dataTable, schemaTable, metadataTable;
+        
+        // Initialize tables on load
+        window.addEventListener('DOMContentLoaded', function() {
+            initializeTables();
+        });
+        
+        function initializeTables() {
+            // Initialize Data Table
+            if (tableData.length > 0) {
+                const columns = Object.keys(tableData[0]).map(key => ({
+                    title: key,
+                    field: key,
+                    headerSort: true,
+                    headerFilter: false
+                }));
+                
+                dataTable = new Tabulator("#data-table", {
+                    data: tableData,
+                    columns: columns,
+                    layout: "fitDataStretch",
+                    pagination: true,
+                    paginationSize: 100,
+                    paginationSizeSelector: [25, 50, 100, 250, 500],
+                    paginationCounter: "rows",
+                    movableColumns: true,
+                    resizableColumns: true
+                });
+                
+                // Add context menu handler
+                dataTable.on("cellContext", function(e, cell){
+                    e.preventDefault();
+                    showContextMenu(e, cell);
+                });
+            }
+            
+            // Initialize Schema Table
+            if (schemaData.length > 0) {
+                const schemaColumns = [
+                    { title: "Name", field: "name", headerSort: true },
+                    { title: "Type", field: "type", headerSort: true },
+                    { title: "Extent", field: "extent", headerSort: true },
+                    { title: "No. of Symbols", field: "noOfSymbols", headerSort: true },
+                    { title: "Offset", field: "offset", headerSort: true },
+                    { title: "Length", field: "length", headerSort: true },
+                    { title: "Bit Offset", field: "bitOffset", headerSort: true },
+                    { title: "Bit Width", field: "bitWidth", headerSort: true },
+                    { title: "Bias", field: "bias", headerSort: true },
+                    { title: "Tags", field: "tags", headerSort: true },
+                    { title: "Comment", field: "comment", headerSort: true }
+                ];
+                
+                schemaTable = new Tabulator("#schema-table", {
+                    data: schemaData,
+                    columns: schemaColumns,
+                    layout: "fitDataStretch",
+                    pagination: true,
+                    paginationSize: 50,
+                    paginationSizeSelector: [25, 50, 100],
+                    paginationCounter: "rows",
+                    resizableColumns: true
+                });
+                
+                schemaTable.on("cellContext", function(e, cell){
+                    e.preventDefault();
+                    showContextMenu(e, cell);
+                });
+            }
+            
+            // Initialize Metadata Table
+            if (metadataData.length > 0) {
+                const metadataColumns = [
+                    { title: "Property", field: "key", headerSort: true, width: 250 },
+                    { title: "Value", field: "value", headerSort: false }
+                ];
+                
+                metadataTable = new Tabulator("#metadata-table", {
+                    data: metadataData,
+                    columns: metadataColumns,
+                    layout: "fitDataStretch",
+                    pagination: true,
+                    paginationSize: 50,
+                    paginationSizeSelector: [25, 50, 100],
+                    paginationCounter: "rows",
+                    resizableColumns: true
+                });
+                
+                metadataTable.on("cellContext", function(e, cell){
+                    e.preventDefault();
+                    showContextMenu(e, cell);
+                });
+            }
+        }
+        
+        // Tab switching
+        function switchTab(event, tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(tabName + '-tab').classList.add('active');
+            
+            // Redraw the table to fix any layout issues
+            setTimeout(() => {
+                if (tabName === 'data' && dataTable) dataTable.redraw();
+                if (tabName === 'schema' && schemaTable) schemaTable.redraw();
+                if (tabName === 'metadata' && metadataTable) metadataTable.redraw();
+            }, 10);
+        }
+        
+        // Filter functions
+        function filterDataTable(searchText) {
+            if (dataTable) {
+                if (searchText) {
+                    dataTable.setFilter([
+                        Object.keys(tableData[0] || {}).map(key => ({
+                            field: key,
+                            type: "like",
+                            value: searchText
+                        }))
+                    ], "or");
+                } else {
+                    dataTable.clearFilter();
+                }
+            }
+        }
+        
+        function filterSchemaTable(searchText) {
+            if (schemaTable) {
+                if (searchText) {
+                    schemaTable.setFilter([
+                        ["name", "like", searchText],
+                        ["type", "like", searchText],
+                        ["tags", "like", searchText],
+                        ["comment", "like", searchText]
+                    ], "or");
+                } else {
+                    schemaTable.clearFilter();
+                }
+            }
+        }
+        
+        function filterMetadataTable(searchText) {
+            if (metadataTable) {
+                if (searchText) {
+                    metadataTable.setFilter([
+                        ["key", "like", searchText],
+                        ["value", "like", searchText]
+                    ], "or");
+                } else {
+                    metadataTable.clearFilter();
+                }
+            }
+        }
+        
+        // Message handlers
+        function openAbout() {
+            vscode.postMessage({ command: 'openAbout' });
+        }
+        
+        function openSettings() {
+            vscode.postMessage({ command: 'openSettings' });
+        }
+        
+        function loadMoreRows() {
+            const btn = document.getElementById('loadMoreBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Loading...';
+            }
+            vscode.postMessage({ 
+                command: 'loadMore',
+                currentRows: currentLoadedRows,
+                loadAll: false
+            });
+        }
+        
+        function loadAllRows() {
+            const btn = document.getElementById('loadAllBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Loading...';
+            }
+            vscode.postMessage({ 
+                command: 'loadMore',
+                currentRows: currentLoadedRows,
+                loadAll: true
+            });
+        }
+        
+        // Context menu handlers
+        function showContextMenu(e, cell) {
+            e.preventDefault();
+            currentContextCell = cell;
+            const menu = document.getElementById('context-menu');
+            menu.style.display = 'block';
+            menu.style.left = e.pageX + 'px';
+            menu.style.top = e.pageY + 'px';
+        }
+        
+        function hideContextMenu() {
+            document.getElementById('context-menu').style.display = 'none';
+            currentContextCell = null;
+        }
+        
+        function copyCell() {
+            if (currentContextCell) {
+                const value = currentContextCell.getValue();
+                navigator.clipboard.writeText(String(value)).then(() => {
+                    console.log('Cell value copied to clipboard');
+                }).catch(err => {
+                    console.error('Failed to copy:', err);
+                });
+            }
+            hideContextMenu();
+        }
+        
+        // Hide context menu on click outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.context-menu')) {
+                hideContextMenu();
+            }
+        });
+        
+        // Hide context menu on scroll
+        document.addEventListener('scroll', hideContextMenu, true);
+    </script>
+</body>
+</html>`;
   }
 
   /**
