@@ -35,6 +35,11 @@
         "command": "ctrl-q-qvd-viewer.openQvd",
         "title": "Open QVD File",
         "category": "QVD"
+      },
+      {
+        "command": "ctrl-q-qvd-viewer.about",
+        "title": "About",
+        "category": "QVD"
       }
     ],
     "customEditors": [
