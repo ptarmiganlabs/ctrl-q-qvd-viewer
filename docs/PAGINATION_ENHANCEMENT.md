@@ -28,7 +28,7 @@
 
 ```json
 {
-  "qvd4vscode.maxPreviewRows": {
+  "ctrl-q-qvd-viewer.maxPreviewRows": {
     "default": 25,
     "maximum": 1000
   }
@@ -39,7 +39,7 @@
 
 ```json
 {
-  "qvd4vscode.maxPreviewRows": {
+  "ctrl-q-qvd-viewer.maxPreviewRows": {
     "default": 5000,
     "minimum": 100,
     "maximum": 100000
@@ -63,7 +63,7 @@
 **Removed**:
 
 ```json
-"qvd4vscode.loadAllWarningThreshold": {
+"ctrl-q-qvd-viewer.loadAllWarningThreshold": {
   "type": "number",
   "default": 25000,
   "description": "Show warning when loading all rows..."
@@ -73,7 +73,7 @@
 **Kept**:
 
 ```json
-"qvd4vscode.maxPreviewRows": {
+"ctrl-q-qvd-viewer.maxPreviewRows": {
   "type": "number",
   "default": 5000,
   "description": "Maximum number of rows to load from the QVD file for preview and pagination",
@@ -143,7 +143,7 @@ Users can now adjust the number of loaded rows via:
 
 ```json
 {
-  "qvd4vscode.maxPreviewRows": 5000
+  "ctrl-q-qvd-viewer.maxPreviewRows": 5000
 }
 ```
 

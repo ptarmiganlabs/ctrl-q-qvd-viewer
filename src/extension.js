@@ -6,7 +6,7 @@ const QvdEditorProvider = require('./qvdEditorProvider');
  * @param {vscode.ExtensionContext} context
  */
 function activate(context) {
-	console.log('QVD4VSCode extension is now active');
+	console.log('Ctrl-Q QVD Viewer extension is now active');
 
 	// Register the custom editor provider for QVD files
 	const qvdEditorProvider = new QvdEditorProvider(context);
@@ -25,7 +25,7 @@ function activate(context) {
 	context.subscriptions.push(editorRegistration);
 
 	// Register command to open QVD file
-	const openQvdCommand = vscode.commands.registerCommand('qvd4vscode.openQvd', async () => {
+	const openQvdCommand = vscode.commands.registerCommand('ctrl-q-qvd-viewer.openQvd', async () => {
 		const uri = await vscode.window.showOpenDialog({
 			canSelectFiles: true,
 			canSelectFolders: false,

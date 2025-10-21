@@ -1,5 +1,5 @@
 {
-  "name": "qvd4vscode",
+  "name": "ctrl-q-qvd-viewer",
   "displayName": "Ctrl-Q QVD Viewer",
   "description": "View Qlik Sense and QlikView QVD files from within VS Code",
   "version": "0.0.1",
@@ -32,14 +32,14 @@
   "contributes": {
     "commands": [
       {
-        "command": "qvd4vscode.openQvd",
+        "command": "ctrl-q-qvd-viewer.openQvd",
         "title": "Open QVD File",
         "category": "QVD"
       }
     ],
     "customEditors": [
       {
-        "viewType": "qvd4vscode.qvdEditor",
+        "viewType": "ctrl-q-qvd-viewer.qvdEditor",
         "displayName": "Ctrl-Q QVD Viewer",
         "selector": [
           {
@@ -55,7 +55,7 @@
     "configuration": {
       "title": "Ctrl-Q QVD Viewer",
       "properties": {
-        "qvd4vscode.maxPreviewRows": {
+        "ctrl-q-qvd-viewer.maxPreviewRows": {
           "type": "number",
           "default": 5000,
           "description": "Maximum number of rows to load from the QVD file for preview and pagination",

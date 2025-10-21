@@ -169,7 +169,7 @@ When you open a QVD file, you'll see:
 
 This extension contributes the following settings:
 
-- `qvd4vscode.maxPreviewRows`: Maximum number of rows to display in the QVD preview (default: 25, min: 1, max: 1000)
+- `ctrl-q-qvd-viewer.maxPreviewRows`: Maximum number of rows to display in the QVD preview (default: 25, min: 1, max: 1000)
 
 To change this setting:
 
@@ -203,7 +203,7 @@ For more information about the QVD format:
 
    ```bash
    git clone https://github.com/ptarmiganlabs/qvd4vscode.git
-   cd qvd4vscode
+   cd ctrl-q-qvd-viewer
    ```
 
 2. Install dependencies:
@@ -249,7 +249,7 @@ A sample QVD file is provided in `test-data/sample.qvd` for testing the metadata
 ### Project Structure
 
 ```text
-qvd4vscode/
+ctrl-q-qvd-viewer/
 ├── src/
 │   ├── extension.js           # Main extension entry point
 │   ├── qvdReader.js          # QVD file reader and metadata extractor

@@ -24,7 +24,7 @@ Before you begin, ensure you have the following installed:
 
 ```bash
 git clone https://github.com/ptarmiganlabs/qvd4vscode.git
-cd qvd4vscode
+cd ctrl-q-qvd-viewer
 ```
 
 ### 2. Install Dependencies
@@ -68,7 +68,7 @@ This will install all required dependencies including:
 ### Code Structure
 
 ```
-qvd4vscode/
+ctrl-q-qvd-viewer/
 ├── src/
 │   ├── extension.js              # Extension entry point and activation
 │   ├── qvdReader.js             # Core QVD file reading and metadata extraction
@@ -184,7 +184,7 @@ To create a `.vsix` package for distribution:
    vsce package
    ```
 
-3. This creates a `.vsix` file in the project root (e.g., `qvd4vscode-0.0.1.vsix`)
+3. This creates a `.vsix` file in the project root (e.g., `ctrl-q-qvd-viewer-0.0.1.vsix`)
 
 ### Install the Package Locally
 
