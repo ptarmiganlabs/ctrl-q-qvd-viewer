@@ -5,9 +5,6 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
 
 jobs:
   # Run tests and linting on all pushes and PRs
@@ -50,12 +47,13 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      id-token: write
     steps:
       - name: Run Release Please
         uses: googleapis/release-please-action@v4
         id: release
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_PLEASE_PAT || github.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
