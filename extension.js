@@ -1,6 +1,7 @@
 // The module 'vscode' contains the VS Code extensibility API
 const vscode = require('vscode');
 const QvdEditorProvider = require('./qvdEditorProvider');
+const AboutPanel = require('./aboutPanel');
 
 /**
  * @param {vscode.ExtensionContext} context
@@ -41,6 +42,13 @@ function activate(context) {
 	});
 
 	context.subscriptions.push(openQvdCommand);
+
+	// Register command to show About page
+	const aboutCommand = vscode.commands.registerCommand('qvd4vscode.about', () => {
+		AboutPanel.show(context);
+	});
+
+	context.subscriptions.push(aboutCommand);
 }
 
 // This method is called when your extension is deactivated

@@ -33,6 +33,11 @@
         "command": "qvd4vscode.openQvd",
         "title": "Open QVD File",
         "category": "QVD"
+      },
+      {
+        "command": "qvd4vscode.about",
+        "title": "About",
+        "category": "QVD"
       }
     ],
     "customEditors": [

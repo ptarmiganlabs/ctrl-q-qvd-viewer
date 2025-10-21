@@ -38,4 +38,10 @@ suite('Extension Test Suite', () => {
 		const ext = vscode.extensions.getExtension('ptarmiganlabs.qvd4vscode');
 		assert.ok(ext);
 	});
+
+	test('About Command Registration', async () => {
+		// Check that the about command is registered
+		const commands = await vscode.commands.getCommands(true);
+		assert.ok(commands.includes('qvd4vscode.about'));
+	});
 });
