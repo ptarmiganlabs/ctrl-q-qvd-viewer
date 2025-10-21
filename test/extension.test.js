@@ -56,16 +56,21 @@ suite("Extension Test Suite", () => {
 
   test("About Command Registration", async () => {
     // Ensure extension is activated first
-    const ext = vscode.extensions.getExtension("ptarmiganlabs.ctrl-q-qvd-viewer");
+    const ext = vscode.extensions.getExtension(
+      "ptarmiganlabs.ctrl-q-qvd-viewer"
+    );
     if (ext && !ext.isActive) {
       await ext.activate();
     }
-    
+
     // Wait a bit for command registration to complete
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
     // Check that the about command is registered
     const commands = await vscode.commands.getCommands(true);
-    assert.ok(commands.includes("ctrl-q-qvd-viewer.about"), "About command should be registered");
+    assert.ok(
+      commands.includes("ctrl-q-qvd-viewer.about"),
+      "About command should be registered"
+    );
   });
 });
