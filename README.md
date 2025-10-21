@@ -1,22 +1,8 @@
 # Ctrl-Q QVD Viewer
 
-A Visual Studio Code extension for viewing Qlik Sense and QlikView QVD (QlikView Data) files directly within VS Code.
+A Visual Studio Code extension for viewing Qlik Sense and QlikView QVD files directly within VS Code.
 
 **Sponsored by [Ptarmigan Labs](https://ptarmiganlabs.com)**
-
-## About Ctrl-Q
-
-Ctrl-Q is part of the **Butler family** of tools for Qlik Sense and QlikView developers. The Butler suite provides a comprehensive set of utilities for managing, monitoring, and enhancing Qlik environments.
-
-### The Butler Family
-
-- **[Butler](https://butler.ptarmiganlabs.com)**: Core monitoring and automation tool for Qlik Sense Enterprise
-- **[Ctrl-Q](https://ctrl-q.ptarmiganlabs.com)**: Command-line tool for Qlik Sense administration and DevOps
-- **[Butler SOS](https://butler-sos.ptarmiganlabs.com)**: Real-time monitoring and metrics for Qlik Sense
-- **[Butler CW](https://butler-cw.ptarmiganlabs.com)**: Cache warming utility for Qlik Sense apps
-- **Ctrl-Q QVD Viewer** (this extension): View QVD files directly in VS Code
-
-Learn more about the Butler family at [butler.ptarmiganlabs.com/docs/about/butler-family](https://butler.ptarmiganlabs.com/docs/about/butler-family)
 
 ## Features
 
@@ -26,9 +12,25 @@ Learn more about the Butler family at [butler.ptarmiganlabs.com/docs/about/butle
   - Table creator details
   - Total number of records
   - Field definitions with types, symbols, and technical details
-- **Data Preview**: View sample data from QVD files in a formatted table
-- **Configurable Display**: Customize the number of rows displayed (default: 25)
+- **Data Preview**: View sample data from QVD files in a formatted table with pagination
+- **Configurable Display**: Customize the number of rows to load (default: 5,000, range: 100-100,000)
+- **About Panel**: Access information about the Butler family of tools
 - **Read-Only Access**: Safe viewing without modifying original QVD files
+
+## About Ctrl-Q
+
+Ctrl-Q is a set of sibling tools to the **Butler family** of tools for Qlik Sense and QlikView developers and admins.
+The Butler suite provides a best-in-class set of utilities for managing, monitoring, and enhancing Qlik environments, while Ctrl-Q focuses on command-line and developer-centric tools.
+
+### The Butler Family
+
+- **[Butler](https://butler.ptarmiganlabs.com)**: Core monitoring and automation tool for Qlik Sense Enterprise
+- **[Ctrl-Q](https://ctrl-q.ptarmiganlabs.com)**: Command-line tool for Qlik Sense administration and DevOps
+- **[Butler SOS](https://butler-sos.ptarmiganlabs.com)**: Real-time monitoring and metrics for Qlik Sense
+- **[Butler CW](https://butler-cw.ptarmiganlabs.com)**: Cache warming utility for Qlik Sense apps
+- **Ctrl-Q QVD Viewer** (this extension): View QVD files directly in VS Code
+
+Learn more about the Butler family at [https://ptarmiganlabs.com/the-butler-family/](https://ptarmiganlabs.com/the-butler-family/)
 
 ## Getting Started
 
@@ -43,9 +45,7 @@ Learn more about the Butler family at [butler.ptarmiganlabs.com/docs/about/butle
 
 2. **Open a QVD File**
 
-   - Click on any `.qvd` file in your workspace, or
-   - Press `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (Mac)
-   - Type "Open QVD File" and select the command
+   - Click on any `.qvd` file in your workspace
 
 3. **Start Viewing**
    - The QVD file will open automatically showing metadata and data preview
@@ -58,11 +58,13 @@ When you open your first QVD file, VS Code might show this dialog:
 
 > ⚠️ **"There are multiple default editors available for the resource."**
 >
-> - **Configure Default** | **Keep QVD Viewer**
+> - **Configure Default** | **Keep Ctrl-Q QVD Viewer**
 
 **What does this mean?**
 
 This dialog appears when multiple extensions can handle `.qvd` files. VS Code needs to know which one to use by default.
+
+Some XML viewers can view QVD files since they are partly XML-based, but they won't be able to preview the actual data and metadata properly like Ctrl-Q QVD Viewer does.
 
 **What should you do?**
 
@@ -88,12 +90,12 @@ Choose one of these options:
 
 ### Changing Settings (Optional)
 
-By default, the extension shows 25 rows of data. To change this:
+By default, the extension loads 5,000 rows of data for preview and pagination. To change this:
 
 1. Open Settings: File → Preferences → Settings (or `Ctrl+,`)
 2. Search for "Ctrl-Q QVD"
 3. Find "Ctrl-Q QVD Viewer: Max Preview Rows"
-4. Adjust the value (1-1000 rows)
+4. Adjust the value (100-100,000 rows)
 
 ## Installation
 
@@ -126,23 +128,10 @@ The extension displays QVD files in three sections:
 
 #### 1. File Metadata
 
-```text
-Creator Document: QVD4VSCode Test
-Created (UTC): 2025-10-20 16:00:00
-Table Creator: QVD4VSCode
-Total Records: 3
-```
-
-#### 2. Field Details
-
-Each field shows:
-
-```
-Creator Document: QVD4VSCode Test
-Created (UTC): 2025-10-20 16:00:00
-Table Creator: QVD4VSCode
-Total Records: 3
-```
+- Creator document name
+- Creation date and time (UTC)
+- Table creator information
+- Total number of records
 
 #### 2. Field Information
 
@@ -155,7 +144,7 @@ Each field shows:
 
 #### 3. Data Preview
 
-A formatted table showing the first N rows (configurable) with all columns from the QVD file.
+A formatted table with pagination controls showing the loaded rows with all columns from the QVD file.
 
 ### Example Output
 
@@ -169,7 +158,7 @@ When you open a QVD file, you'll see:
 
 This extension contributes the following settings:
 
-- `ctrl-q-qvd-viewer.maxPreviewRows`: Maximum number of rows to display in the QVD preview (default: 25, min: 1, max: 1000)
+- `ctrl-q-qvd-viewer.maxPreviewRows`: Maximum number of rows to load from the QVD file for preview and pagination (default: 5000, min: 100, max: 100000)
 
 To change this setting:
 
@@ -177,24 +166,12 @@ To change this setting:
 2. Search for "Ctrl-Q QVD"
 3. Adjust the "Max Preview Rows" value
 
-## QVD File Format
-
-QVD files are a proprietary tabular format used by Qlik Sense and QlikView. They consist of:
-
-- An XML header containing metadata about the file and field definitions
-- Binary data section containing the actual table data
-
-For more information about the QVD format:
-
-- [qvd4js Library](https://github.com/MuellerConstantin/qvd4js)
-- [PyQVD Documentation](https://pyqvd.readthedocs.io/latest/guide/qvd-file-format.html)
-
 ## Development
 
 ### Prerequisites
 
-- Node.js 18.x or later
-- npm 8.x or later
+- Node.js 22.x or later
+- npm 11.x or later
 - Visual Studio Code 1.105.0 or later
 
 ### Building the Extension
@@ -246,24 +223,9 @@ A sample QVD file is provided in `test-data/sample.qvd` for testing the metadata
 2. Use the qvd4js library programmatically
 3. Use other QVD creation tools
 
-### Project Structure
-
-```text
-ctrl-q-qvd-viewer/
-├── src/
-│   ├── extension.js           # Main extension entry point
-│   ├── qvdReader.js          # QVD file reader and metadata extractor
-│   ├── qvdEditorProvider.js  # Custom editor provider for QVD files
-│   └── webview/              # Webview-related files
-├── package.json              # Extension manifest
-├── test-data/                # Sample QVD files for testing
-└── test/                     # Test files
-```
-
 ## Known Issues
 
-- Binary data reading depends on the qvd4js library and may not work with all QVD file variations
-- Large QVD files (>10,000 rows) may take longer to load; use the maxPreviewRows setting to limit display
+- Large QVD files may take long to load; use the maxPreviewRows setting to limit display
 - The extension currently provides read-only access to QVD files
 
 ## Contributing
@@ -276,18 +238,7 @@ This extension is sponsored by [Ptarmigan Labs](https://ptarmiganlabs.com), crea
 
 ## License
 
-See LICENSE file for details.
-
-## Release Notes
-
-### 0.0.1
-
-Initial release:
-
-- QVD file viewer with metadata display
-- Data preview with configurable row limit
-- Custom editor integration
-- Field information display
+MIT. See LICENSE file for details.
 
 ---
 
