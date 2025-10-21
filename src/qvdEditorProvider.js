@@ -233,6 +233,26 @@ class QvdEditorProvider {
         ]
       : [];
 
+    // Prepare lineage data for lineage tab
+    const lineageData = [];
+    if (metadata && metadata.lineage) {
+      const lineageArray = Array.isArray(metadata.lineage)
+        ? metadata.lineage
+        : metadata.lineage.LineageInfo
+        ? Array.isArray(metadata.lineage.LineageInfo)
+          ? metadata.lineage.LineageInfo
+          : [metadata.lineage.LineageInfo]
+        : [];
+
+      lineageArray.forEach((item, index) => {
+        lineageData.push({
+          index: index + 1,
+          discriminator: item.Discriminator || item.discriminator || "",
+          statement: item.Statement || item.statement || "",
+        });
+      });
+    }
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -559,6 +579,7 @@ class QvdEditorProvider {
                 <button class="tab-button active" data-tab="data">📋 Data</button>
                 <button class="tab-button" data-tab="schema">🔍 Schema</button>
                 <button class="tab-button" data-tab="metadata">ℹ️ File Metadata</button>
+                <button class="tab-button" data-tab="lineage">🔗 Lineage</button>
             </div>
             
             <!-- Data Tab -->
@@ -629,6 +650,27 @@ class QvdEditorProvider {
                     <div id="metadata-table"></div>
                 </div>
             </div>
+            
+            <!-- Lineage Tab -->
+            <div id="lineage-tab" class="tab-content">
+                ${
+                  lineageData.length > 0
+                    ? `
+                <div class="search-container">
+                    <input type="text" class="search-input" id="lineage-search" placeholder="🔍 Search in lineage..." />
+                    <button class="clear-search-btn" id="clear-lineage-search">✕ Clear</button>
+                </div>
+                <div class="table-wrapper">
+                    <div id="lineage-table"></div>
+                </div>
+                `
+                    : `
+                <div class="info-banner">
+                    ℹ️ No lineage information available for this QVD file.
+                </div>
+                `
+                }
+            </div>
         </div>
     </div>
     
@@ -651,9 +693,10 @@ class QvdEditorProvider {
         const tableData = ${JSON.stringify(data)};
         const schemaData = ${JSON.stringify(schemaData)};
         const metadataData = ${JSON.stringify(metadataKV)};
+        const lineageData = ${JSON.stringify(lineageData)};
         
         let currentContextCell = null;
-        let dataTable, schemaTable, metadataTable;
+        let dataTable, schemaTable, metadataTable, lineageTable;
         
         // Initialize tables on load
         window.addEventListener('DOMContentLoaded', function() {
@@ -692,6 +735,13 @@ class QvdEditorProvider {
                 });
             }
             
+            const lineageSearch = document.getElementById('lineage-search');
+            if (lineageSearch) {
+                lineageSearch.addEventListener('keyup', function() {
+                    filterLineageTable(this.value);
+                });
+            }
+            
             // Clear search buttons
             const clearDataSearch = document.getElementById('clear-data-search');
             if (clearDataSearch) {
@@ -722,6 +772,17 @@ class QvdEditorProvider {
                     if (searchInput) {
                         searchInput.value = '';
                         filterMetadataTable('');
+                    }
+                });
+            }
+            
+            const clearLineageSearch = document.getElementById('clear-lineage-search');
+            if (clearLineageSearch) {
+                clearLineageSearch.addEventListener('click', function() {
+                    const searchInput = document.getElementById('lineage-search');
+                    if (searchInput) {
+                        searchInput.value = '';
+                        filterLineageTable('');
                     }
                 });
             }
@@ -850,6 +911,31 @@ class QvdEditorProvider {
                     showContextMenu(e, cell);
                 });
             }
+            
+            // Initialize Lineage Table
+            if (lineageData.length > 0) {
+                const lineageColumns = [
+                    { title: "#", field: "index", headerSort: false, width: 60 },
+                    { title: "Discriminator", field: "discriminator", headerSort: false, widthGrow: 3 },
+                    { title: "Statement", field: "statement", headerSort: false, widthGrow: 2 }
+                ];
+                
+                lineageTable = new Tabulator("#lineage-table", {
+                    data: lineageData,
+                    columns: lineageColumns,
+                    layout: "fitDataStretch",
+                    pagination: true,
+                    paginationSize: 25,
+                    paginationSizeSelector: [10, 25, 50],
+                    paginationCounter: "rows",
+                    resizableColumns: true
+                });
+                
+                lineageTable.on("cellContext", function(e, cell){
+                    e.preventDefault();
+                    showContextMenu(e, cell);
+                });
+            }
         }
         
         // Tab switching
@@ -867,6 +953,7 @@ class QvdEditorProvider {
                 if (tabName === 'data' && dataTable) dataTable.redraw();
                 if (tabName === 'schema' && schemaTable) schemaTable.redraw();
                 if (tabName === 'metadata' && metadataTable) metadataTable.redraw();
+                if (tabName === 'lineage' && lineageTable) lineageTable.redraw();
             }, 10);
         }
         
@@ -917,6 +1004,22 @@ class QvdEditorProvider {
                     });
                 } else {
                     metadataTable.clearFilter();
+                }
+            }
+        }
+        
+        function filterLineageTable(searchText) {
+            if (lineageTable) {
+                if (searchText) {
+                    const search = searchText.toLowerCase();
+                    lineageTable.setFilter(function(data) {
+                        return (
+                            String(data.discriminator || '').toLowerCase().includes(search) ||
+                            String(data.statement || '').toLowerCase().includes(search)
+                        );
+                    });
+                } else {
+                    lineageTable.clearFilter();
                 }
             }
         }
