@@ -4,6 +4,19 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [0.0.3](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v0.0.2...v0.0.3) (2025-10-21)
+
+
+### Features
+
+* Add logo image for Ctrl-Q QVD Viewer ([17fe6c3](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/17fe6c3f2b8336a47f361b2670276f2973585d94))
+* Add Parquet and CSV test data files ([8840883](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/884088301efdedd388c79de97833b227ccbdadd1))
+
+
+### Miscellaneous
+
+* **deps:** update dependency @vscode/test-cli to ^0.0.12 ([c7dfb31](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/c7dfb31360bd352335f3e965d705bc487500d545))
+
 ## [0.0.2](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v0.0.1...v0.0.2) (2025-10-21)
 
 
