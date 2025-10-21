@@ -75,12 +75,13 @@ class QvdReader {
   }
 
   /**
-   * Read specific page of data (FUTURE: when qvd4js supports streaming/lazy loading)
+   * Read a specific page of data from the QVD file
    * @param {string} filePath - Path to the QVD file
    * @param {number} page - Page number (0-indexed)
    * @param {number} pageSize - Rows per page
    * @returns {Promise<{metadata: object, data: Array, columns: Array, totalRows: number, page: number, pageSize: number, error: string|null}>}
    */
+  // eslint-disable-next-line no-unused-vars
   async readPage(filePath, page, pageSize) {
     // TODO: Implement when qvd4js supports streaming
     // For now, this would still load the full file and slice the data
