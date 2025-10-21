@@ -35,7 +35,7 @@ suite("Extension Test Suite", () => {
 
   test("Extension Activation", async () => {
     // Check that the extension is activated
-    const ext = vscode.extensions.getExtension("ptarmiganlabs.qvd4vscode");
+    const ext = vscode.extensions.getExtension("ptarmiganlabs.ctrl-q-qvd-viewer");
     assert.ok(ext);
   });
 });

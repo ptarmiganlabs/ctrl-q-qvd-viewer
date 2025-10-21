@@ -5,7 +5,7 @@ const QvdReader = require("./qvdReader");
  * Provider for QVD file custom editor
  */
 class QvdEditorProvider {
-  static viewType = "qvd4vscode.qvdEditor";
+  static viewType = "ctrl-q-qvd-viewer.qvdEditor";
 
   constructor(context) {
     this.context = context;
@@ -22,7 +22,7 @@ class QvdEditorProvider {
     };
 
     // Get the max rows configuration
-    const config = vscode.workspace.getConfiguration("qvd4vscode");
+    const config = vscode.workspace.getConfiguration("ctrl-q-qvd-viewer");
     const maxRows = config.get("maxPreviewRows", 5000);
 
     // Read and display QVD content
@@ -44,7 +44,7 @@ class QvdEditorProvider {
         case "openSettings":
           vscode.commands.executeCommand(
             "workbench.action.openSettings",
-            "qvd4vscode"
+            "ctrl-q-qvd-viewer"
           );
           break;
         case "loadMore":
@@ -138,7 +138,7 @@ class QvdEditorProvider {
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>QVD Viewer</title>
+            <title>Ctrl-Q QVD Viewer</title>
             <style>
                 body {
                     font-family: var(--vscode-font-family);
@@ -388,7 +388,7 @@ class QvdEditorProvider {
         </head>
         <body>
             <div class="header-container">
-                <h1>QVD File Viewer</h1>
+                <h1>Ctrl-Q QVD File Viewer</h1>
                 <button class="settings-button" onclick="openSettings()">
                     <svg class="settings-icon" viewBox="0 0 16 16" fill="currentColor">
                         <path d="M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/>

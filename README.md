@@ -1,6 +1,22 @@
-# QVD Viewer for VS Code
+# Ctrl-Q QVD Viewer
 
 A Visual Studio Code extension for viewing Qlik Sense and QlikView QVD (QlikView Data) files directly within VS Code.
+
+**Sponsored by [Ptarmigan Labs](https://ptarmiganlabs.com)**
+
+## About Ctrl-Q
+
+Ctrl-Q is part of the **Butler family** of tools for Qlik Sense and QlikView developers. The Butler suite provides a comprehensive set of utilities for managing, monitoring, and enhancing Qlik environments.
+
+### The Butler Family
+
+- **[Butler](https://butler.ptarmiganlabs.com)**: Core monitoring and automation tool for Qlik Sense Enterprise
+- **[Ctrl-Q](https://ctrl-q.ptarmiganlabs.com)**: Command-line tool for Qlik Sense administration and DevOps
+- **[Butler SOS](https://butler-sos.ptarmiganlabs.com)**: Real-time monitoring and metrics for Qlik Sense
+- **[Butler CW](https://butler-cw.ptarmiganlabs.com)**: Cache warming utility for Qlik Sense apps
+- **Ctrl-Q QVD Viewer** (this extension): View QVD files directly in VS Code
+
+Learn more about the Butler family at [butler.ptarmiganlabs.com/docs/about/butler-family](https://butler.ptarmiganlabs.com/docs/about/butler-family)
 
 ## Features
 
@@ -22,7 +38,7 @@ A Visual Studio Code extension for viewing Qlik Sense and QlikView QVD (QlikView
 
    - Open VS Code
    - Go to Extensions (`Ctrl+Shift+X` or `Cmd+Shift+X` on Mac)
-   - Search for "QVD Viewer for VS Code"
+   - Search for "Ctrl-Q QVD Viewer"
    - Click "Install"
 
 2. **Open a QVD File**
@@ -52,7 +68,7 @@ This dialog appears when multiple extensions can handle `.qvd` files. VS Code ne
 
 Choose one of these options:
 
-- **Click "Keep QVD Viewer"** _(Recommended)_
+- **Click "Keep Ctrl-Q QVD Viewer"** _(Recommended)_
 
   - Uses this extension to open QVD files
   - You can always change this later
@@ -60,14 +76,14 @@ Choose one of these options:
 
 - **Click "Configure Default"**
   - Opens settings to choose your preferred editor
-  - Select "QVD Viewer" from the list
+  - Select "Ctrl-Q QVD Viewer" from the list
   - This sets it as the permanent default
 
 **Tip:** If you accidentally choose the wrong editor, you can always:
 
 1. Right-click on any `.qvd` file
 2. Select "Open With..."
-3. Choose "QVD Viewer"
+3. Choose "Ctrl-Q QVD Viewer"
 4. Check "Configure default editor for '\*.qvd'..." to make it permanent
 
 ### Changing Settings (Optional)
@@ -75,8 +91,8 @@ Choose one of these options:
 By default, the extension shows 25 rows of data. To change this:
 
 1. Open Settings: File → Preferences → Settings (or `Ctrl+,`)
-2. Search for "QVD"
-3. Find "QVD Viewer: Max Preview Rows"
+2. Search for "Ctrl-Q QVD"
+3. Find "Ctrl-Q QVD Viewer: Max Preview Rows"
 4. Adjust the value (1-1000 rows)
 
 ## Installation
@@ -153,12 +169,12 @@ When you open a QVD file, you'll see:
 
 This extension contributes the following settings:
 
-- `qvd4vscode.maxPreviewRows`: Maximum number of rows to display in the QVD preview (default: 25, min: 1, max: 1000)
+- `ctrl-q-qvd-viewer.maxPreviewRows`: Maximum number of rows to display in the QVD preview (default: 25, min: 1, max: 1000)
 
 To change this setting:
 
 1. Go to File → Preferences → Settings (or `Ctrl+,`)
-2. Search for "QVD"
+2. Search for "Ctrl-Q QVD"
 3. Adjust the "Max Preview Rows" value
 
 ## QVD File Format
@@ -187,7 +203,7 @@ For more information about the QVD format:
 
    ```bash
    git clone https://github.com/ptarmiganlabs/qvd4vscode.git
-   cd qvd4vscode
+   cd ctrl-q-qvd-viewer
    ```
 
 2. Install dependencies:
@@ -233,7 +249,7 @@ A sample QVD file is provided in `test-data/sample.qvd` for testing the metadata
 ### Project Structure
 
 ```text
-qvd4vscode/
+ctrl-q-qvd-viewer/
 ├── src/
 │   ├── extension.js           # Main extension entry point
 │   ├── qvdReader.js          # QVD file reader and metadata extractor
@@ -254,6 +270,10 @@ qvd4vscode/
 
 Contributions are welcome! Please feel free to submit issues or pull requests.
 
+## Sponsorship
+
+This extension is sponsored by [Ptarmigan Labs](https://ptarmiganlabs.com), creators of the Butler suite of tools for Qlik Sense and QlikView.
+
 ## License
 
 See LICENSE file for details.
@@ -271,4 +291,5 @@ Initial release:
 
 ---
 
-**Enjoy viewing your QVD files in VS Code!**
+**Part of the Butler family of tools for Qlik Sense and QlikView**  
+Learn more at [butler.ptarmiganlabs.com](https://butler.ptarmiganlabs.com) | [ptarmiganlabs.com](https://ptarmiganlabs.com)

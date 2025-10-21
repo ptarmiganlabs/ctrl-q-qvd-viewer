@@ -174,7 +174,7 @@ Users can still adjust initial load via settings:
 
 ```json
 {
-  "qvd4vscode.maxPreviewRows": 5000 // 100 - 100,000
+  "ctrl-q-qvd-viewer.maxPreviewRows": 5000 // 100 - 100,000
 }
 ```
 
