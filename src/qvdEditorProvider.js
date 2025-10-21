@@ -41,6 +41,9 @@ class QvdEditorProvider {
         case "refresh":
           await this.updateWebview(filePath, webviewPanel.webview, maxRows);
           break;
+        case "openAbout":
+          vscode.commands.executeCommand("ctrl-q-qvd-viewer.about");
+          break;
         case "openSettings":
           vscode.commands.executeCommand(
             "workbench.action.openSettings",
@@ -156,13 +159,19 @@ class QvdEditorProvider {
                     margin-bottom: 20px;
                 }
                 
+                .header-buttons {
+                    display: flex;
+                    gap: 10px;
+                    align-items: center;
+                }
+                
                 h1 {
                     font-size: 1.5em;
                     margin: 0;
                     color: var(--vscode-foreground);
                 }
                 
-                .settings-button, .load-all-button {
+                .settings-button, .load-all-button, .about-button {
                     background-color: var(--vscode-button-background);
                     color: var(--vscode-button-foreground);
                     border: none;
@@ -175,8 +184,17 @@ class QvdEditorProvider {
                     gap: 6px;
                 }
                 
+                .about-button {
+                    background-color: var(--vscode-button-secondaryBackground);
+                    color: var(--vscode-button-secondaryForeground);
+                }
+                
                 .settings-button:hover, .load-all-button:hover {
                     background-color: var(--vscode-button-hoverBackground);
+                }
+                
+                .about-button:hover {
+                    background-color: var(--vscode-button-secondaryHoverBackground);
                 }
                 
                 .load-all-button:disabled {
@@ -208,6 +226,9 @@ class QvdEditorProvider {
                 
                 .metadata-item {
                     margin: 8px 0;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
                 }
                 
                 .metadata-label {
@@ -215,10 +236,80 @@ class QvdEditorProvider {
                     display: inline-block;
                     min-width: 200px;
                     color: var(--vscode-foreground);
+                    flex-shrink: 0;
                 }
                 
                 .metadata-value {
                     color: var(--vscode-descriptionForeground);
+                    flex: 1;
+                }
+                
+                .copy-btn {
+                    background-color: transparent;
+                    border: 1px solid var(--vscode-button-border);
+                    color: var(--vscode-button-foreground);
+                    padding: 4px 8px;
+                    border-radius: 3px;
+                    cursor: pointer;
+                    font-size: 0.85em;
+                    opacity: 0.7;
+                    transition: opacity 0.2s, background-color 0.2s;
+                    flex-shrink: 0;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
+                }
+                
+                .copy-btn:hover {
+                    opacity: 1;
+                    background-color: var(--vscode-button-secondaryHoverBackground);
+                }
+                
+                .copy-btn.copied {
+                    background-color: var(--vscode-button-background);
+                    opacity: 1;
+                }
+                
+                .collapsible-section {
+                    margin: 15px 0;
+                }
+                
+                .collapsible-header {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    cursor: pointer;
+                    padding: 10px;
+                    background-color: var(--vscode-editor-inactiveSelectionBackground);
+                    border-radius: 4px;
+                    border: 1px solid var(--vscode-panel-border);
+                    user-select: none;
+                }
+                
+                .collapsible-header:hover {
+                    background-color: var(--vscode-list-hoverBackground);
+                }
+                
+                .collapsible-icon {
+                    transition: transform 0.2s;
+                    font-size: 0.8em;
+                }
+                
+                .collapsible-icon.expanded {
+                    transform: rotate(90deg);
+                }
+                
+                .collapsible-content {
+                    display: none;
+                    padding: 10px;
+                    margin-top: 5px;
+                    background-color: var(--vscode-editor-inactiveSelectionBackground);
+                    border-radius: 4px;
+                    border: 1px solid var(--vscode-panel-border);
+                }
+                
+                .collapsible-content.expanded {
+                    display: block;
                 }
                 
                 .fields-section {
@@ -389,19 +480,28 @@ class QvdEditorProvider {
         <body>
             <div class="header-container">
                 <h1>Ctrl-Q QVD File Viewer</h1>
-                <button class="settings-button" onclick="openSettings()">
-                    <svg class="settings-icon" viewBox="0 0 16 16" fill="currentColor">
-                        <path d="M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/>
-                        <path d="M14 7.5a1.5 1.5 0 0 1-1.5 1.5h-.38a.5.5 0 0 0-.43.75l.19.32a1.5 1.5 0 0 1-2.3 1.94l-.31-.19a.5.5 0 0 0-.75.43v.38a1.5 1.5 0 0 1-3 0v-.38a.5.5 0 0 0-.75-.43l-.31.19a1.5 1.5 0 0 1-2.3-1.94l.19-.32a.5.5 0 0 0-.43-.75H2.5A1.5 1.5 0 0 1 1 7.5v-1A1.5 1.5 0 0 1 2.5 5h.38a.5.5 0 0 0 .43-.75l-.19-.32a1.5 1.5 0 0 1 2.3-1.94l.31.19a.5.5 0 0 0 .75-.43V1.5a1.5 1.5 0 0 1 3 0v.38a.5.5 0 0 0 .75.43l.31-.19a1.5 1.5 0 0 1 2.3 1.94l-.19.32a.5.5 0 0 0 .43.75h.38A1.5 1.5 0 0 1 14 6.5v1z"/>
-                    </svg>
-                    Settings
-                </button>
+                <div class="header-buttons">
+                    <button class="about-button" onclick="openAbout()">
+                        ℹ️ About
+                    </button>
+                    <button class="settings-button" onclick="openSettings()">
+                        <svg class="settings-icon" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/>
+                            <path d="M14 7.5a1.5 1.5 0 0 1-1.5 1.5h-.38a.5.5 0 0 0-.43.75l.19.32a1.5 1.5 0 0 1-2.3 1.94l-.31-.19a.5.5 0 0 0-.75.43v.38a1.5 1.5 0 0 1-3 0v-.38a.5.5 0 0 0-.75-.43l-.31.19a1.5 1.5 0 0 1-2.3-1.94l.19-.32a.5.5 0 0 0-.43-.75H2.5A1.5 1.5 0 0 1 1 7.5v-1A1.5 1.5 0 0 1 2.5 5h.38a.5.5 0 0 0 .43-.75l-.19-.32a1.5 1.5 0 0 1 2.3-1.94l.31.19a.5.5 0 0 0 .75-.43V1.5a1.5 1.5 0 0 1 3 0v.38a.5.5 0 0 0 .75.43l.31-.19a1.5 1.5 0 0 1 2.3 1.94l-.19.32a.5.5 0 0 0 .43.75h.38A1.5 1.5 0 0 1 14 6.5v1z"/>
+                        </svg>
+                        Settings
+                    </button>
+                </div>
             </div>
             
             <script>
                 const vscode = acquireVsCodeApi();
                 const totalRowsInFile = ${totalRows};
                 const currentLoadedRows = ${data.length};
+                
+                function openAbout() {
+                    vscode.postMessage({ command: 'openAbout' });
+                }
                 
                 function openSettings() {
                     vscode.postMessage({ command: 'openSettings' });
@@ -432,6 +532,32 @@ class QvdEditorProvider {
                         loadAll: true
                     });
                 }
+                
+                function copyToClipboard(text, buttonId) {
+                    navigator.clipboard.writeText(text).then(() => {
+                        const btn = document.getElementById(buttonId);
+                        if (btn) {
+                            const originalText = btn.innerHTML;
+                            btn.innerHTML = '✓ Copied';
+                            btn.classList.add('copied');
+                            setTimeout(() => {
+                                btn.innerHTML = originalText;
+                                btn.classList.remove('copied');
+                            }, 2000);
+                        }
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                    });
+                }
+                
+                function toggleCollapsible(id) {
+                    const content = document.getElementById(id);
+                    const icon = document.getElementById(id + '-icon');
+                    if (content && icon) {
+                        content.classList.toggle('expanded');
+                        icon.classList.toggle('expanded');
+                    }
+                }
             </script>
             
             <div class="metadata">
@@ -450,12 +576,29 @@ class QvdEditorProvider {
                     <span class="metadata-value">${
                       this.escapeHtml(metadata.creatorDoc) || "(empty)"
                     }</span>
+                    ${
+                      metadata.creatorDoc
+                        ? `<button class="copy-btn" id="copy-creator-doc" onclick="copyToClipboard('${this.escapeHtml(
+                            metadata.creatorDoc
+                          ).replace(
+                            /'/g,
+                            "\\'"
+                          )}', 'copy-creator-doc')">📋 Copy</button>`
+                        : ""
+                    }
                 </div>
                 <div class="metadata-item">
                     <span class="metadata-label">Created (UTC):</span>
                     <span class="metadata-value">${
                       this.escapeHtml(metadata.createUtcTime) || "(empty)"
                     }</span>
+                    ${
+                      metadata.createUtcTime
+                        ? `<button class="copy-btn" id="copy-create-time" onclick="copyToClipboard('${this.escapeHtml(
+                            metadata.createUtcTime
+                          )}', 'copy-create-time')">📋 Copy</button>`
+                        : ""
+                    }
                 </div>
                 <div class="metadata-item">
                     <span class="metadata-label">Source Create (UTC):</span>
@@ -486,6 +629,16 @@ class QvdEditorProvider {
                     <span class="metadata-value">${
                       this.escapeHtml(metadata.tableName) || "(empty)"
                     }</span>
+                    ${
+                      metadata.tableName
+                        ? `<button class="copy-btn" id="copy-table-name" onclick="copyToClipboard('${this.escapeHtml(
+                            metadata.tableName
+                          ).replace(
+                            /'/g,
+                            "\\'"
+                          )}', 'copy-table-name')">📋 Copy</button>`
+                        : ""
+                    }
                 </div>
                 <div class="metadata-item">
                     <span class="metadata-label">Table Creator:</span>
@@ -508,6 +661,7 @@ class QvdEditorProvider {
                 <div class="metadata-item">
                     <span class="metadata-label">Total Records:</span>
                     <span class="metadata-value">${totalRows}</span>
+                    <button class="copy-btn" id="copy-total-records" onclick="copyToClipboard('${totalRows}', 'copy-total-records')">📋 Copy</button>
                 </div>
                 <div class="metadata-item">
                     <span class="metadata-label">Offset:</span>
@@ -541,16 +695,71 @@ class QvdEditorProvider {
                       this.escapeHtml(metadata.profilingData) || "(empty)"
                     }</span>
                 </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Lineage:</span>
-                    <span class="metadata-value">${
-                      metadata.lineage && metadata.lineage.LineageInfo
-                        ? (Array.isArray(metadata.lineage.LineageInfo)
+                
+                ${
+                  metadata.lineage && metadata.lineage.LineageInfo
+                    ? `
+                <div class="collapsible-section">
+                    <div class="collapsible-header" onclick="toggleCollapsible('lineage-content')">
+                        <span class="collapsible-icon" id="lineage-content-icon">▶</span>
+                        <strong>Lineage Information</strong>
+                        <span style="color: var(--vscode-descriptionForeground); margin-left: auto;">${
+                          Array.isArray(metadata.lineage.LineageInfo)
                             ? metadata.lineage.LineageInfo.length
-                            : 1) + " item(s)"
-                        : "(empty)"
-                    }</span>
+                            : 1
+                        } item(s)</span>
+                    </div>
+                    <div class="collapsible-content" id="lineage-content">
+                        ${
+                          Array.isArray(metadata.lineage.LineageInfo)
+                            ? metadata.lineage.LineageInfo.map(
+                                (lineageItem, index) => `
+                            <div style="margin: 10px 0; padding: 10px; background-color: var(--vscode-editor-background); border-radius: 4px;">
+                                <strong>Lineage Item ${index + 1}:</strong>
+                                <div style="margin-left: 15px; margin-top: 5px;">
+                                    ${
+                                      lineageItem.Discriminator
+                                        ? `<div><strong>Discriminator:</strong> ${this.escapeHtml(
+                                            lineageItem.Discriminator
+                                          )}</div>`
+                                        : ""
+                                    }
+                                    ${
+                                      lineageItem.Statement
+                                        ? `<div><strong>Statement:</strong> <pre style="white-space: pre-wrap; margin: 5px 0; padding: 8px; background-color: var(--vscode-textCodeBlock-background); border-radius: 3px; overflow-x: auto;">${this.escapeHtml(
+                                            lineageItem.Statement
+                                          )}</pre></div>`
+                                        : ""
+                                    }
+                                </div>
+                            </div>
+                            `
+                              ).join("")
+                            : `
+                            <div style="margin: 10px 0; padding: 10px; background-color: var(--vscode-editor-background); border-radius: 4px;">
+                                ${
+                                  metadata.lineage.LineageInfo.Discriminator
+                                    ? `<div><strong>Discriminator:</strong> ${this.escapeHtml(
+                                        metadata.lineage.LineageInfo
+                                          .Discriminator
+                                      )}</div>`
+                                    : ""
+                                }
+                                ${
+                                  metadata.lineage.LineageInfo.Statement
+                                    ? `<div><strong>Statement:</strong> <pre style="white-space: pre-wrap; margin: 5px 0; padding: 8px; background-color: var(--vscode-textCodeBlock-background); border-radius: 3px; overflow-x: auto;">${this.escapeHtml(
+                                        metadata.lineage.LineageInfo.Statement
+                                      )}</pre></div>`
+                                    : ""
+                                }
+                            </div>
+                            `
+                        }
+                    </div>
                 </div>
+                `
+                    : ""
+                }
                 `
                     : "<p>No metadata available</p>"
                 }
