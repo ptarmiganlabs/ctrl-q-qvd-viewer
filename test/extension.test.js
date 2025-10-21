@@ -38,4 +38,10 @@ suite("Extension Test Suite", () => {
     const ext = vscode.extensions.getExtension("ptarmiganlabs.ctrl-q-qvd-viewer");
     assert.ok(ext);
   });
+
+  test("About Command Registration", async () => {
+    // Check that the about command is registered
+    const commands = await vscode.commands.getCommands(true);
+    assert.ok(commands.includes('ctrl-q-qvd-viewer.about'));
+  });
 });
