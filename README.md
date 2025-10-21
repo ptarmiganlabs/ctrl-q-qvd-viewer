@@ -234,12 +234,14 @@ A sample QVD file is provided in `test-data/sample.qvd` for testing the metadata
 
 ```text
 qvd4vscode/
-├── extension.js           # Main extension entry point
-├── qvdReader.js          # QVD file reader and metadata extractor
-├── qvdEditorProvider.js  # Custom editor provider for QVD files
-├── package.json          # Extension manifest
-├── test-data/            # Sample QVD files for testing
-└── test/                 # Test files
+├── src/
+│   ├── extension.js           # Main extension entry point
+│   ├── qvdReader.js          # QVD file reader and metadata extractor
+│   ├── qvdEditorProvider.js  # Custom editor provider for QVD files
+│   └── webview/              # Webview-related files
+├── package.json              # Extension manifest
+├── test-data/                # Sample QVD files for testing
+└── test/                     # Test files
 ```
 
 ## Known Issues

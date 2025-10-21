@@ -9,11 +9,10 @@ Before you begin, ensure you have the following installed:
 - **Node.js**: Version 18.x or later
   - Download from [nodejs.org](https://nodejs.org/)
   - Verify installation: `node --version`
-  
 - **npm**: Version 8.x or later (comes with Node.js)
   - Verify installation: `npm --version`
-  
 - **Visual Studio Code**: Version 1.105.0 or later
+
   - Download from [code.visualstudio.com](https://code.visualstudio.com/)
 
 - **Git**: For version control
@@ -35,6 +34,7 @@ npm install
 ```
 
 This will install all required dependencies including:
+
 - `qvd4js` - QVD file reading library
 - `xml2js` - XML parsing library
 - Development dependencies for linting and testing
@@ -44,15 +44,18 @@ This will install all required dependencies including:
 ### Running the Extension in Development Mode
 
 1. Open the project in VS Code:
+
    ```bash
    code .
    ```
 
 2. Press `F5` or go to **Run → Start Debugging**
+
    - This launches a new VS Code window titled "[Extension Development Host]"
    - The extension is loaded and active in this window
 
 3. In the Extension Development Host window:
+
    - Open a QVD file from the file explorer, or
    - Use Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) → "Open QVD File"
 
@@ -66,30 +69,35 @@ This will install all required dependencies including:
 
 ```
 qvd4vscode/
-├── extension.js              # Extension entry point and activation
-├── qvdReader.js             # Core QVD file reading and metadata extraction
-├── qvdEditorProvider.js     # Custom editor provider for webview
-├── package.json             # Extension manifest and dependencies
+├── src/
+│   ├── extension.js              # Extension entry point and activation
+│   ├── qvdReader.js             # Core QVD file reading and metadata extraction
+│   ├── qvdEditorProvider.js     # Custom editor provider for webview
+│   └── webview/
+│       └── pagination.js        # Client-side pagination logic
+├── package.json                 # Extension manifest and dependencies
 ├── test/
-│   └── extension.test.js    # Automated tests
+│   └── extension.test.js        # Automated tests
 └── test-data/
-    └── sample.qvd           # Sample QVD file for testing
+    └── sample.qvd               # Sample QVD file for testing
 ```
 
 ### Key Components
 
-- **extension.js**: 
+- **src/extension.js**:
+
   - Handles extension activation
   - Registers custom editor provider
   - Registers commands
 
-- **qvdReader.js**:
+- **src/qvdReader.js**:
+
   - Reads QVD files
   - Extracts XML metadata
   - Attempts to read binary data using qvd4js
   - Returns structured metadata and data
 
-- **qvdEditorProvider.js**:
+- **src/qvdEditorProvider.js**:
   - Implements VS Code custom editor provider
   - Generates HTML webview with QVD data
   - Handles configuration settings
@@ -119,6 +127,7 @@ npm test
 ```
 
 This will:
+
 1. Run the linter
 2. Execute automated tests in VS Code test environment
 
@@ -128,17 +137,20 @@ This will:
 2. Test the following scenarios:
 
    **Scenario 1: Open QVD from Explorer**
+
    - Navigate to the test-data folder
    - Click on `sample.qvd`
    - Verify metadata and fields are displayed
 
    **Scenario 2: Open QVD via Command**
+
    - Press `Ctrl+Shift+P` / `Cmd+Shift+P`
    - Type "Open QVD File"
    - Select a QVD file
    - Verify it opens in the custom viewer
 
    **Scenario 3: Configuration**
+
    - Go to Settings → search for "QVD"
    - Change "Max Preview Rows" value
    - Open a QVD file with more rows
@@ -159,11 +171,13 @@ To test with real QVD files:
 To create a `.vsix` package for distribution:
 
 1. Install `vsce` (VS Code Extension CLI) globally:
+
    ```bash
    npm install -g @vscode/vsce
    ```
 
 2. Package the extension:
+
    ```bash
    npm run package
    # or directly:
@@ -190,6 +204,7 @@ To publish the extension to the VS Code Marketplace:
 2. Get a Personal Access Token (PAT) from Azure DevOps
 
 3. Login with vsce:
+
    ```bash
    vsce login <publisher-name>
    ```
@@ -212,6 +227,7 @@ The extension logs to the VS Code Debug Console. To view:
 ### Breakpoints
 
 Set breakpoints in any JavaScript file:
+
 1. Click in the gutter next to a line number
 2. Press `F5` to start debugging
 3. Execution will pause at breakpoints
@@ -230,7 +246,8 @@ To debug the webview content:
 
 ### Issue: Extension not loading
 
-**Solution**: 
+**Solution**:
+
 - Check the Output panel for errors
 - Ensure all dependencies are installed: `npm install`
 - Reload the Extension Development Host window
@@ -238,6 +255,7 @@ To debug the webview content:
 ### Issue: QVD file not opening
 
 **Solution**:
+
 - Verify the file is a valid QVD file
 - Check the Debug Console for error messages
 - Ensure the file has read permissions
@@ -245,22 +263,26 @@ To debug the webview content:
 ### Issue: Linter errors
 
 **Solution**:
+
 - Run `npm run lint` to see all errors
 - Fix errors or run `npx eslint . --fix` for auto-fixable issues
 
 ## Best Practices
 
 1. **Always run linter before committing**:
+
    ```bash
    npm run lint
    ```
 
 2. **Test with various QVD files**:
+
    - Small files (< 100 rows)
    - Large files (> 10,000 rows)
    - Files with different field types
 
 3. **Keep dependencies updated**:
+
    ```bash
    npm outdated
    npm update
@@ -280,6 +302,7 @@ To debug the webview content:
 ## Getting Help
 
 If you encounter issues:
+
 1. Check existing GitHub issues
 2. Create a new issue with:
    - Steps to reproduce
@@ -291,6 +314,7 @@ If you encounter issues:
 ## Contributing
 
 Contributions are welcome! Please:
+
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
