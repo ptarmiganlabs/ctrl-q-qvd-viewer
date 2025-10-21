@@ -63,6 +63,10 @@ class QvdEditorProvider {
             : Math.min(currentRows * 2, 100000);
           await this.updateWebview(filePath, webviewPanel.webview, newMaxRows);
           break;
+        case "copyToClipboard":
+          // Copy text to clipboard using VS Code API
+          await vscode.env.clipboard.writeText(message.text);
+          break;
       }
     });
   }
@@ -79,7 +83,7 @@ class QvdEditorProvider {
         return;
       }
 
-      webview.html = this.getHtmlForWebview(result);
+      webview.html = this.getHtmlForWebview(result, webview);
     } catch (error) {
       webview.html = this.getErrorHtml(error.message);
     }
@@ -162,7 +166,7 @@ class QvdEditorProvider {
   /**
    * Generate HTML for webview with tabbed interface and Tabulator
    */
-  getHtmlForWebview(result) {
+  getHtmlForWebview(result, webview) {
     const { metadata, data, totalRows, dataError } = result;
     const hasMoreRows = data.length < totalRows;
     const nonce = this.getNonce();
@@ -170,6 +174,15 @@ class QvdEditorProvider {
     // Inline Tabulator for easier CSP compliance
     const tabulatorJs = this.getTabulatorJs();
     const tabulatorCss = this.getTabulatorCss();
+
+    // Get the logo URI for the webview
+    const logoUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(
+        this.context.extensionUri,
+        "media",
+        "ctrl-q-logo-no-text.png"
+      )
+    );
 
     // Prepare schema data for schema tab
     const schemaData =
@@ -185,9 +198,7 @@ class QvdEditorProvider {
             bitWidth: field.bitWidth || 0,
             bias: field.bias || 0,
             tags:
-              field.tags && field.tags.length > 0
-                ? field.tags.join(", ")
-                : "",
+              field.tags && field.tags.length > 0 ? field.tags.join(", ") : "",
             comment: field.comment || "",
           }))
         : [];
@@ -226,7 +237,9 @@ class QvdEditorProvider {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src ${
+      webview.cspSource
+    };">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ctrl-Q QVD Viewer</title>
     <style>
@@ -274,6 +287,15 @@ class QvdEditorProvider {
             font-size: 1.2em;
             margin: 0;
             color: var(--vscode-foreground);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .logo {
+            width: 28px;
+            height: 28px;
+            object-fit: contain;
         }
         
         .header-buttons {
@@ -505,18 +527,18 @@ class QvdEditorProvider {
 <body>
     <div class="container">
         <div class="header-container">
-            <h1>📊 Ctrl-Q QVD File Viewer</h1>
+            <h1><img src="${logoUri}" alt="Ctrl-Q Logo" class="logo" />Ctrl-Q QVD File Viewer</h1>
             <div class="header-buttons">
-                <button class="header-button" onclick="openAbout()">ℹ️ About</button>
-                <button class="header-button" onclick="openSettings()">⚙️ Settings</button>
+                <button class="header-button" id="about-btn">ℹ️ About</button>
+                <button class="header-button" id="settings-btn">⚙️ Settings</button>
             </div>
         </div>
         
         <div class="tab-container">
             <div class="tabs">
-                <button class="tab-button active" onclick="switchTab(event, 'data')">📋 Data</button>
-                <button class="tab-button" onclick="switchTab(event, 'schema')">🔍 Schema</button>
-                <button class="tab-button" onclick="switchTab(event, 'metadata')">ℹ️ Metadata</button>
+                <button class="tab-button active" data-tab="data">📋 Data</button>
+                <button class="tab-button" data-tab="schema">🔍 Schema</button>
+                <button class="tab-button" data-tab="metadata">ℹ️ File Metadata</button>
             </div>
             
             <!-- Data Tab -->
@@ -527,14 +549,21 @@ class QvdEditorProvider {
                 <div class="info-banner">
                     <div>
                         📊 Showing ${data.length.toLocaleString()} of ${totalRows.toLocaleString()} rows 
-                        (${((data.length / totalRows) * 100).toFixed(1)}% of file loaded)
+                        (${((data.length / totalRows) * 100).toFixed(
+                          1
+                        )}% of file loaded)
                     </div>
                     <div>
-                        <button class="load-button" onclick="loadMoreRows()" id="loadMoreBtn">
-                            Load More (next ${Math.min(data.length, totalRows - data.length).toLocaleString()} rows)
+                        <button class="load-button" id="loadMoreBtn">
+                            Load More (next ${Math.min(
+                              data.length,
+                              totalRows - data.length
+                            ).toLocaleString()} rows)
                         </button>
-                        <button class="load-button" onclick="loadAllRows()" id="loadAllBtn">
-                            Load All Remaining (${(totalRows - data.length).toLocaleString()} rows)
+                        <button class="load-button" id="loadAllBtn">
+                            Load All Remaining (${(
+                              totalRows - data.length
+                            ).toLocaleString()} rows)
                         </button>
                     </div>
                 </div>
@@ -551,7 +580,7 @@ class QvdEditorProvider {
                     : ""
                 }
                 <div class="search-container">
-                    <input type="text" class="search-input" id="data-search" placeholder="🔍 Search in data..." onkeyup="filterDataTable(this.value)" />
+                    <input type="text" class="search-input" id="data-search" placeholder="🔍 Search in data..." />
                 </div>
                 <div class="table-wrapper">
                     <div id="data-table"></div>
@@ -561,7 +590,7 @@ class QvdEditorProvider {
             <!-- Schema Tab -->
             <div id="schema-tab" class="tab-content">
                 <div class="search-container">
-                    <input type="text" class="search-input" id="schema-search" placeholder="🔍 Search in schema..." onkeyup="filterSchemaTable(this.value)" />
+                    <input type="text" class="search-input" id="schema-search" placeholder="🔍 Search in schema..." />
                 </div>
                 <div class="table-wrapper">
                     <div id="schema-table"></div>
@@ -571,7 +600,7 @@ class QvdEditorProvider {
             <!-- Metadata Tab -->
             <div id="metadata-tab" class="tab-content">
                 <div class="search-container">
-                    <input type="text" class="search-input" id="metadata-search" placeholder="🔍 Search in metadata..." onkeyup="filterMetadataTable(this.value)" />
+                    <input type="text" class="search-input" id="metadata-search" placeholder="🔍 Search in metadata..." />
                 </div>
                 <div class="table-wrapper">
                     <div id="metadata-table"></div>
@@ -582,7 +611,7 @@ class QvdEditorProvider {
     
     <!-- Context Menu -->
     <div id="context-menu" class="context-menu" style="display: none;">
-        <div class="context-menu-item" onclick="copyCell()">📋 Copy Cell Value</div>
+        <div class="context-menu-item" id="copy-cell-btn">📋 Copy Cell Value</div>
     </div>
     
     <script nonce="${nonce}">
@@ -606,7 +635,78 @@ class QvdEditorProvider {
         // Initialize tables on load
         window.addEventListener('DOMContentLoaded', function() {
             initializeTables();
+            setupEventListeners();
         });
+        
+        function setupEventListeners() {
+            // Tab switching
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.addEventListener('click', function(e) {
+                    const tabName = this.getAttribute('data-tab');
+                    switchTab(e, tabName);
+                });
+            });
+            
+            // Search inputs
+            const dataSearch = document.getElementById('data-search');
+            if (dataSearch) {
+                dataSearch.addEventListener('keyup', function() {
+                    filterDataTable(this.value);
+                });
+            }
+            
+            const schemaSearch = document.getElementById('schema-search');
+            if (schemaSearch) {
+                schemaSearch.addEventListener('keyup', function() {
+                    filterSchemaTable(this.value);
+                });
+            }
+            
+            const metadataSearch = document.getElementById('metadata-search');
+            if (metadataSearch) {
+                metadataSearch.addEventListener('keyup', function() {
+                    filterMetadataTable(this.value);
+                });
+            }
+            
+            // Header buttons
+            const aboutBtn = document.getElementById('about-btn');
+            if (aboutBtn) {
+                aboutBtn.addEventListener('click', openAbout);
+            }
+            
+            const settingsBtn = document.getElementById('settings-btn');
+            if (settingsBtn) {
+                settingsBtn.addEventListener('click', openSettings);
+            }
+            
+            // Load more buttons
+            const loadMoreBtn = document.getElementById('loadMoreBtn');
+            if (loadMoreBtn) {
+                loadMoreBtn.addEventListener('click', loadMoreRows);
+            }
+            
+            const loadAllBtn = document.getElementById('loadAllBtn');
+            if (loadAllBtn) {
+                loadAllBtn.addEventListener('click', loadAllRows);
+            }
+            
+            // Context menu
+            const copyCellBtn = document.getElementById('copy-cell-btn');
+            if (copyCellBtn) {
+                copyCellBtn.addEventListener('click', copyCell);
+            }
+            
+            // Hide context menu on click outside
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.context-menu')) {
+                    hideContextMenu();
+                }
+            });
+            
+            // Hide context menu on scroll
+            document.addEventListener('scroll', hideContextMenu, true);
+        }
         
         function initializeTables() {
             // Initialize Data Table
@@ -717,13 +817,13 @@ class QvdEditorProvider {
         function filterDataTable(searchText) {
             if (dataTable) {
                 if (searchText) {
-                    dataTable.setFilter([
-                        Object.keys(tableData[0] || {}).map(key => ({
-                            field: key,
-                            type: "like",
-                            value: searchText
-                        }))
-                    ], "or");
+                    // Use custom filter function for OR logic across all columns
+                    dataTable.setFilter(function(data) {
+                        const search = searchText.toLowerCase();
+                        return Object.values(data).some(value => 
+                            String(value).toLowerCase().includes(search)
+                        );
+                    });
                 } else {
                     dataTable.clearFilter();
                 }
@@ -733,12 +833,15 @@ class QvdEditorProvider {
         function filterSchemaTable(searchText) {
             if (schemaTable) {
                 if (searchText) {
-                    schemaTable.setFilter([
-                        ["name", "like", searchText],
-                        ["type", "like", searchText],
-                        ["tags", "like", searchText],
-                        ["comment", "like", searchText]
-                    ], "or");
+                    const search = searchText.toLowerCase();
+                    schemaTable.setFilter(function(data) {
+                        return (
+                            String(data.name || '').toLowerCase().includes(search) ||
+                            String(data.type || '').toLowerCase().includes(search) ||
+                            String(data.tags || '').toLowerCase().includes(search) ||
+                            String(data.comment || '').toLowerCase().includes(search)
+                        );
+                    });
                 } else {
                     schemaTable.clearFilter();
                 }
@@ -748,10 +851,13 @@ class QvdEditorProvider {
         function filterMetadataTable(searchText) {
             if (metadataTable) {
                 if (searchText) {
-                    metadataTable.setFilter([
-                        ["key", "like", searchText],
-                        ["value", "like", searchText]
-                    ], "or");
+                    const search = searchText.toLowerCase();
+                    metadataTable.setFilter(function(data) {
+                        return (
+                            String(data.key || '').toLowerCase().includes(search) ||
+                            String(data.value || '').toLowerCase().includes(search)
+                        );
+                    });
                 } else {
                     metadataTable.clearFilter();
                 }
@@ -811,24 +917,13 @@ class QvdEditorProvider {
         function copyCell() {
             if (currentContextCell) {
                 const value = currentContextCell.getValue();
-                navigator.clipboard.writeText(String(value)).then(() => {
-                    console.log('Cell value copied to clipboard');
-                }).catch(err => {
-                    console.error('Failed to copy:', err);
+                vscode.postMessage({ 
+                    command: 'copyToClipboard',
+                    text: String(value)
                 });
             }
             hideContextMenu();
         }
-        
-        // Hide context menu on click outside
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.context-menu')) {
-                hideContextMenu();
-            }
-        });
-        
-        // Hide context menu on scroll
-        document.addEventListener('scroll', hideContextMenu, true);
     </script>
 </body>
 </html>`;
