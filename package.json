@@ -2,7 +2,7 @@
   "name": "ctrl-q-qvd-viewer",
   "displayName": "Ctrl-Q QVD Viewer",
   "description": "View Qlik Sense and QlikView QVD files from within VS Code",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "ptarmiganlabs",
   "repository": {
     "type": "git",
