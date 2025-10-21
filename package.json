@@ -1,33 +1,84 @@
 {
   "name": "qvd4vscode",
-  "displayName": "qvd4vscode",
+  "displayName": "QVD Viewer for VS Code",
   "description": "View Qlik Sense and QlikView QVD files from within VS Code",
   "version": "0.0.1",
+  "publisher": "ptarmiganlabs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ptarmiganlabs/qvd4vscode.git"
+  },
+  "license": "MIT",
+  "keywords": [
+    "qvd",
+    "qlik",
+    "qlik sense",
+    "qlikview",
+    "data viewer",
+    "file viewer"
+  ],
   "engines": {
     "vscode": "^1.105.0"
   },
   "categories": [
+    "Data Science",
+    "Visualization",
     "Other"
   ],
   "activationEvents": [],
-  "main": "./extension.js",
+  "main": "./src/extension.js",
   "contributes": {
-    "commands": [{
-      "command": "qvd4vscode.helloWorld",
-      "title": "Hello World"
-    }]
+    "commands": [
+      {
+        "command": "qvd4vscode.openQvd",
+        "title": "Open QVD File",
+        "category": "QVD"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "qvd4vscode.qvdEditor",
+        "displayName": "QVD Viewer",
+        "selector": [
+          {
+            "filenamePattern": "*.qvd"
+          },
+          {
+            "filenamePattern": "*.QVD"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "configuration": {
+      "title": "QVD Viewer",
+      "properties": {
+        "qvd4vscode.maxPreviewRows": {
+          "type": "number",
+          "default": 5000,
+          "description": "Maximum number of rows to load from the QVD file for preview and pagination",
+          "minimum": 100,
+          "maximum": 100000
+        }
+      }
+    }
   },
   "scripts": {
     "lint": "eslint .",
     "pretest": "npm run lint",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "package": "vsce package"
   },
   "devDependencies": {
-    "@types/vscode": "^1.105.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
-    "eslint": "^9.36.0",
+    "@types/vscode": "^1.105.0",
     "@vscode/test-cli": "^0.0.11",
-    "@vscode/test-electron": "^2.5.2"
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.36.0"
+  },
+  "dependencies": {
+    "qvd4js": "^1.0.5",
+    "xml2js": "^0.6.2"
   }
 }
