@@ -138,7 +138,7 @@ class QvdEditorProvider {
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>QVD Viewer</title>
+            <title>Ctrl-Q QVD Viewer</title>
             <style>
                 body {
                     font-family: var(--vscode-font-family);
@@ -388,7 +388,7 @@ class QvdEditorProvider {
         </head>
         <body>
             <div class="header-container">
-                <h1>QVD File Viewer</h1>
+                <h1>Ctrl-Q QVD File Viewer</h1>
                 <button class="settings-button" onclick="openSettings()">
                     <svg class="settings-icon" viewBox="0 0 16 16" fill="currentColor">
                         <path d="M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/>

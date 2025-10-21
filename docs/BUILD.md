@@ -1,6 +1,6 @@
 # Build and Development Guide
 
-This guide provides detailed instructions for building, testing, and developing the QVD4VSCode extension.
+This guide provides detailed instructions for building, testing, and developing the Ctrl-Q QVD Viewer extension.
 
 ## Prerequisites
 
@@ -151,7 +151,7 @@ This will:
 
    **Scenario 3: Configuration**
 
-   - Go to Settings → search for "QVD"
+   - Go to Settings → search for "Ctrl-Q QVD"
    - Change "Max Preview Rows" value
    - Open a QVD file with more rows
    - Verify the row limit is respected

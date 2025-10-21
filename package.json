@@ -1,6 +1,6 @@
 {
   "name": "qvd4vscode",
-  "displayName": "QVD Viewer for VS Code",
+  "displayName": "Ctrl-Q QVD Viewer",
   "description": "View Qlik Sense and QlikView QVD files from within VS Code",
   "version": "0.0.1",
   "publisher": "ptarmiganlabs",
@@ -14,6 +14,8 @@
     "qlik",
     "qlik sense",
     "qlikview",
+    "ctrl-q",
+    "butler",
     "data viewer",
     "file viewer"
   ],
@@ -38,7 +40,7 @@
     "customEditors": [
       {
         "viewType": "qvd4vscode.qvdEditor",
-        "displayName": "QVD Viewer",
+        "displayName": "Ctrl-Q QVD Viewer",
         "selector": [
           {
             "filenamePattern": "*.qvd"
@@ -51,7 +53,7 @@
       }
     ],
     "configuration": {
-      "title": "QVD Viewer",
+      "title": "Ctrl-Q QVD Viewer",
       "properties": {
         "qvd4vscode.maxPreviewRows": {
           "type": "number",
