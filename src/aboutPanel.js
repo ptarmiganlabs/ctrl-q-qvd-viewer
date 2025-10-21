@@ -392,10 +392,11 @@ class AboutPanel {
                         <p>The Butler family includes tools for automation, monitoring, DevOps, and data management for Qlik Sense environments.</p>
                         <p><strong>Explore the suite:</strong></p>
                         <ul style="margin-left: 20px; line-height: 1.8;">
-                            <li><strong><a href="#" onclick="openExternal('https://github.com/ptarmiganlabs/ctrl-q'); return false;" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Ctrl-Q CLI</a></strong> - Command-line tool for managing Qlik Sense environments</li>
-                            <li><strong><a href="#" onclick="openExternal('https://github.com/ptarmiganlabs/butler'); return false;" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler</a></strong> - DevOps automation and advanced features for Qlik Sense</li>
-                            <li><strong><a href="#" onclick="openExternal('https://github.com/ptarmiganlabs/butler-sos'); return false;" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler SOS</a></strong> - Real-time monitoring and operational metrics</li>
-                            <li><strong><a href="#" onclick="openExternal('https://github.com/ptarmiganlabs/butler-sheet-icons'); return false;" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler Sheet Icons</a></strong> - Thumbnail management for Qlik Sense sheets</li>
+                            <li><strong><a href="#" onclick="openExternal('https://github.com/ptarmiganlabs/ctrl-q'); return false;" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Ctrl-Q CLI</a></strong> - Command-line tool for automating tedious and error prone Qlik Sense admin tasks</li>
+                            <li><strong><a href="#" onclick="openExternal('https://github.com/ptarmiganlabs/butler'); return false;" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler</a></strong> - Adding superpowers to Qlik Sense. Real-time task alerts, Windows service monitoring, key-value store and much more</li>
+                            <li><strong><a href="#" onclick="openExternal('https://github.com/ptarmiganlabs/butler-sos'); return false;" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler SOS</a></strong> - Monitor real-time operational Qlik Sense metrics in Grafana</li>
+                            <li><strong><a href="#" onclick="openExternal('https://github.com/ptarmiganlabs/butler-sheet-icons'); return false;" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler Sheet Icons</a></strong> - Automatic thumbnail management for Qlik Sense sheets</li>
+                            <li><strong><a href="#" onclick="openExternal('https://ptarmiganlabs.com/the-butler-family/'); return false;" style="color: var(--vscode-textLink-foreground); text-decoration: none;">And more...</a></strong> - Explore the full range of Butler tools and features</li>
                         </ul>
                     </div>
                 </div>
@@ -414,7 +415,7 @@ class AboutPanel {
                         <button class="link-button" onclick="openExternal('https://github.com/ptarmiganlabs/qvd4vscode/issues')">
                             🐛 Report Issue
                         </button>
-                        <button class="link-button" onclick="openExternal('https://butler.ptarmiganlabs.com/docs/about/butler-family')">
+                        <button class="link-button" onclick="openExternal('https://ptarmiganlabs.com/the-butler-family/')">
                             🛠️ Butler Suite
                         </button>
                         <button class="link-button" onclick="openExternal('https://ptarmiganlabs.com')">
@@ -429,8 +430,6 @@ class AboutPanel {
                         <p><strong>License:</strong> ${this.escapeHtml(
                           license
                         )}</p>
-                        <p><strong>Publisher:</strong> Ptarmigan Labs</p>
-                        <p><strong>Dependencies:</strong> qvd4js (QVD parsing), xml2js (XML processing)</p>
                     </div>
                 </div>
                 
