@@ -389,6 +389,26 @@ class QvdEditorProvider {
             outline: 1px solid var(--vscode-focusBorder);
         }
         
+        .clear-search-btn {
+            background-color: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+            border: none;
+            padding: 6px 12px;
+            border-radius: 2px;
+            cursor: pointer;
+            font-size: 0.85em;
+            white-space: nowrap;
+        }
+        
+        .clear-search-btn:hover {
+            background-color: var(--vscode-button-secondaryHoverBackground);
+        }
+        
+        .clear-search-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
         /* Table container */
         .table-wrapper {
             flex: 1;
@@ -581,6 +601,7 @@ class QvdEditorProvider {
                 }
                 <div class="search-container">
                     <input type="text" class="search-input" id="data-search" placeholder="🔍 Search in data..." />
+                    <button class="clear-search-btn" id="clear-data-search">✕ Clear</button>
                 </div>
                 <div class="table-wrapper">
                     <div id="data-table"></div>
@@ -591,6 +612,7 @@ class QvdEditorProvider {
             <div id="schema-tab" class="tab-content">
                 <div class="search-container">
                     <input type="text" class="search-input" id="schema-search" placeholder="🔍 Search in schema..." />
+                    <button class="clear-search-btn" id="clear-schema-search">✕ Clear</button>
                 </div>
                 <div class="table-wrapper">
                     <div id="schema-table"></div>
@@ -601,6 +623,7 @@ class QvdEditorProvider {
             <div id="metadata-tab" class="tab-content">
                 <div class="search-container">
                     <input type="text" class="search-input" id="metadata-search" placeholder="🔍 Search in metadata..." />
+                    <button class="clear-search-btn" id="clear-metadata-search">✕ Clear</button>
                 </div>
                 <div class="table-wrapper">
                     <div id="metadata-table"></div>
@@ -666,6 +689,40 @@ class QvdEditorProvider {
             if (metadataSearch) {
                 metadataSearch.addEventListener('keyup', function() {
                     filterMetadataTable(this.value);
+                });
+            }
+            
+            // Clear search buttons
+            const clearDataSearch = document.getElementById('clear-data-search');
+            if (clearDataSearch) {
+                clearDataSearch.addEventListener('click', function() {
+                    const searchInput = document.getElementById('data-search');
+                    if (searchInput) {
+                        searchInput.value = '';
+                        filterDataTable('');
+                    }
+                });
+            }
+            
+            const clearSchemaSearch = document.getElementById('clear-schema-search');
+            if (clearSchemaSearch) {
+                clearSchemaSearch.addEventListener('click', function() {
+                    const searchInput = document.getElementById('schema-search');
+                    if (searchInput) {
+                        searchInput.value = '';
+                        filterSchemaTable('');
+                    }
+                });
+            }
+            
+            const clearMetadataSearch = document.getElementById('clear-metadata-search');
+            if (clearMetadataSearch) {
+                clearMetadataSearch.addEventListener('click', function() {
+                    const searchInput = document.getElementById('metadata-search');
+                    if (searchInput) {
+                        searchInput.value = '';
+                        filterMetadataTable('');
+                    }
                 });
             }
             
