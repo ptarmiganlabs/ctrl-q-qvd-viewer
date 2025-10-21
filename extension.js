@@ -9,6 +9,14 @@ const AboutPanel = require('./aboutPanel');
 function activate(context) {
 	console.log('QVD4VSCode extension is now active');
 
+	// Check if this is the first activation and show About page
+	const hasShownAbout = context.globalState.get('hasShownAbout', false);
+	if (!hasShownAbout) {
+		// Show About page on first activation
+		AboutPanel.show(context);
+		context.globalState.update('hasShownAbout', true);
+	}
+
 	// Register the custom editor provider for QVD files
 	const qvdEditorProvider = new QvdEditorProvider(context);
 	
