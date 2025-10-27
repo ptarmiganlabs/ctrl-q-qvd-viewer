@@ -413,6 +413,11 @@ const MAX_COMPARISON_ROWS = 1000; // Configurable setting
 
 // In formatData method:
 const rowsToCompare = Math.min(data.length, MAX_COMPARISON_ROWS);
+
+// Then use rowsToCompare in the loop:
+for (let i = 0; i < rowsToCompare; i++) {
+    // Process each row
+}
 ```
 
 ### 2. Add Summary Statistics
@@ -420,14 +425,23 @@ const rowsToCompare = Math.min(data.length, MAX_COMPARISON_ROWS);
 Before showing row-by-row differences, provide a summary:
 
 ```javascript
-lines.push('=== COMPARISON SUMMARY ===');
-lines.push('');
-lines.push(`File 1 Total Rows: ${totalRows1}`);
-lines.push(`File 2 Total Rows: ${totalRows2}`);
-lines.push(`Row Count Difference: ${Math.abs(totalRows1 - totalRows2)}`);
-lines.push('');
-lines.push(`Comparing first ${MAX_COMPARISON_ROWS} rows...`);
-lines.push('');
+// Example: This would be part of a comparison function that receives both QVD results
+async function generateComparisonSummary(result1, result2) {
+    const { totalRows: totalRows1 } = result1;
+    const { totalRows: totalRows2 } = result2;
+    
+    const lines = [];
+    lines.push('=== COMPARISON SUMMARY ===');
+    lines.push('');
+    lines.push(`File 1 Total Rows: ${totalRows1}`);
+    lines.push(`File 2 Total Rows: ${totalRows2}`);
+    lines.push(`Row Count Difference: ${Math.abs(totalRows1 - totalRows2)}`);
+    lines.push('');
+    lines.push(`Comparing first ${MAX_COMPARISON_ROWS} rows...`);
+    lines.push('');
+    
+    return lines.join('\n');
+}
 ```
 
 ### 3. Provide Difference Filters
