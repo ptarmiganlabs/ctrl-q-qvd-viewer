@@ -87,8 +87,6 @@
     "eslint": "^9.36.0"
   },
   "dependencies": {
-    "qvd4js": "^1.0.5",
-    "qvdjs": "^0.6.2",
-    "xml2js": "^0.6.2"
+    "qvdjs": "^0.6.2"
   }
 }
