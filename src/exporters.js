@@ -1,6 +1,4 @@
-const vscode = require("vscode");
 const fs = require("fs").promises;
-const path = require("path");
 const ExcelJS = require("exceljs");
 const parquet = require("parquetjs");
 const Papa = require("papaparse");
@@ -150,9 +148,13 @@ class DataExporter {
    * @param {Array<Object>} data - Array of row objects
    * @param {string} format - Export format ('csv', 'json', 'excel', 'parquet')
    * @param {string} suggestedFileName - Suggested file name without extension
+   * @param {object} vscode - VS Code API object
+   * @param {string} workspaceFolder - Workspace folder path
    * @returns {Promise<string|null>} Path to saved file or null if cancelled
    */
-  static async exportData(data, format, suggestedFileName) {
+  static async exportData(data, format, suggestedFileName, vscode, workspaceFolder) {
+    const path = require("path");
+    
     const formatConfig = {
       csv: { extension: "csv", filter: "CSV Files", exporter: this.exportToCSV },
       json: { extension: "json", filter: "JSON Files", exporter: this.exportToJSON },
@@ -169,8 +171,7 @@ class DataExporter {
     const defaultFileName = `${suggestedFileName}.${config.extension}`;
     const defaultUri = vscode.Uri.file(
       path.join(
-        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ||
-          require("os").homedir(),
+        workspaceFolder || require("os").homedir(),
         defaultFileName
       )
     );

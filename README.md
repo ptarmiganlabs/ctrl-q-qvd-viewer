@@ -13,6 +13,11 @@ A Visual Studio Code extension for viewing Qlik Sense and QlikView QVD files dir
   - Total number of records
   - Field definitions with types, symbols, and technical details
 - **Data Preview**: View sample data from QVD files in a formatted table with pagination
+- **Export Data**: Export QVD data to multiple formats:
+  - **CSV** - Comma-separated values for universal compatibility
+  - **JSON** - JavaScript Object Notation with pretty formatting
+  - **Excel** - Microsoft Excel (.xlsx) with styled headers
+  - **Parquet** - Apache Parquet for efficient columnar storage
 - **Configurable Display**: Customize the number of rows to load (default: 5,000, range: 100-100,000)
 - **About Panel**: Access information about the Butler family of tools
 - **Read-Only Access**: Safe viewing without modifying original QVD files
@@ -145,6 +150,28 @@ Each field shows:
 #### 3. Data Preview
 
 A formatted table with pagination controls showing the loaded rows with all columns from the QVD file.
+
+### Exporting Data
+
+The Ctrl-Q QVD Viewer allows you to export QVD data to various formats for further analysis or integration with other tools.
+
+#### How to Export
+
+1. Open a QVD file in the viewer
+2. Click the **"📤 Export"** button in the top-right corner
+3. Select your desired format from the dropdown menu:
+   - **Export to CSV** - Universal text format, compatible with Excel and most data tools
+   - **Export to JSON** - Structured format ideal for web applications and APIs
+   - **Export to Excel** - Native Excel format (.xlsx) with formatted headers
+   - **Export to Parquet** - Efficient columnar format for big data and analytics
+4. Choose the destination folder and file name in the save dialog
+5. Click "Save" to complete the export
+
+#### Export Details
+
+- **All data is exported**: The export includes all rows from the QVD file, not just the preview data shown in the viewer
+- **Automatic schema inference**: Data types are automatically detected and preserved in supported formats (Parquet, Excel)
+- **Progress notification**: You'll see a confirmation message with an option to open the folder containing the exported file
 
 ### Example Output
 

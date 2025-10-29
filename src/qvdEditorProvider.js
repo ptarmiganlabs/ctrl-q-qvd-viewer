@@ -80,10 +80,13 @@ class QvdEditorProvider {
             }
 
             const fileName = path.basename(filePath, path.extname(filePath));
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
             const savedPath = await DataExporter.exportData(
               result.data,
               message.format,
-              fileName
+              fileName,
+              vscode,
+              workspaceFolder
             );
 
             if (savedPath) {
