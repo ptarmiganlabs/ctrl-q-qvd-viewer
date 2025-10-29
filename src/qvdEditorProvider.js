@@ -1,5 +1,6 @@
 const vscode = require("vscode");
 const QvdReader = require("./qvdReader");
+const DataExporter = require("./exporters");
 const fs = require("fs");
 const path = require("path");
 
@@ -66,6 +67,42 @@ class QvdEditorProvider {
         case "copyToClipboard":
           // Copy text to clipboard using VS Code API
           await vscode.env.clipboard.writeText(message.text);
+          break;
+        case "exportData":
+          // Export data to selected format
+          try {
+            const result = await this.qvdReader.read(filePath, 0); // Read all data
+            if (result.error) {
+              vscode.window.showErrorMessage(
+                `Failed to read QVD for export: ${result.error}`
+              );
+              break;
+            }
+
+            const fileName = path.basename(filePath, path.extname(filePath));
+            const savedPath = await DataExporter.exportData(
+              result.data,
+              message.format,
+              fileName
+            );
+
+            if (savedPath) {
+              const action = await vscode.window.showInformationMessage(
+                `Data exported to ${savedPath}`,
+                "Open Folder"
+              );
+
+              if (action === "Open Folder") {
+                const folderPath = path.dirname(savedPath);
+                vscode.commands.executeCommand(
+                  "revealFileInOS",
+                  vscode.Uri.file(folderPath)
+                );
+              }
+            }
+          } catch (error) {
+            vscode.window.showErrorMessage(`Export failed: ${error.message}`);
+          }
           break;
       }
     });
@@ -562,6 +599,41 @@ class QvdEditorProvider {
             background-color: var(--vscode-menu-selectionBackground);
             color: var(--vscode-menu-selectionForeground);
         }
+        
+        /* Export dropdown menu */
+        .export-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .export-dropdown-content {
+            display: none;
+            position: absolute;
+            right: 0;
+            background-color: var(--vscode-menu-background);
+            border: 1px solid var(--vscode-menu-border);
+            border-radius: 2px;
+            padding: 4px 0;
+            z-index: 10000;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            min-width: 140px;
+        }
+        
+        .export-dropdown-content.show {
+            display: block;
+        }
+        
+        .export-dropdown-item {
+            padding: 6px 16px;
+            cursor: pointer;
+            color: var(--vscode-menu-foreground);
+            font-size: 0.9em;
+        }
+        
+        .export-dropdown-item:hover {
+            background-color: var(--vscode-menu-selectionBackground);
+            color: var(--vscode-menu-selectionForeground);
+        }
     </style>
 </head>
 <body>
@@ -569,6 +641,15 @@ class QvdEditorProvider {
         <div class="header-container">
             <h1><img src="${logoUri}" alt="Ctrl-Q Logo" class="logo" />Ctrl-Q QVD File Viewer</h1>
             <div class="header-buttons">
+                <div class="export-dropdown">
+                    <button class="header-button" id="export-btn">📤 Export ▼</button>
+                    <div class="export-dropdown-content" id="export-dropdown">
+                        <div class="export-dropdown-item" data-format="csv">Export to CSV</div>
+                        <div class="export-dropdown-item" data-format="json">Export to JSON</div>
+                        <div class="export-dropdown-item" data-format="excel">Export to Excel</div>
+                        <div class="export-dropdown-item" data-format="parquet">Export to Parquet</div>
+                    </div>
+                </div>
                 <button class="header-button" id="about-btn">ℹ️ About</button>
                 <button class="header-button" id="settings-btn">⚙️ Settings</button>
             </div>
@@ -796,6 +877,33 @@ class QvdEditorProvider {
             const settingsBtn = document.getElementById('settings-btn');
             if (settingsBtn) {
                 settingsBtn.addEventListener('click', openSettings);
+            }
+            
+            // Export button and dropdown
+            const exportBtn = document.getElementById('export-btn');
+            const exportDropdown = document.getElementById('export-dropdown');
+            if (exportBtn && exportDropdown) {
+                exportBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    exportDropdown.classList.toggle('show');
+                });
+                
+                // Close dropdown when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (!e.target.closest('.export-dropdown')) {
+                        exportDropdown.classList.remove('show');
+                    }
+                });
+                
+                // Handle export format selection
+                const exportItems = document.querySelectorAll('.export-dropdown-item');
+                exportItems.forEach(item => {
+                    item.addEventListener('click', function() {
+                        const format = this.getAttribute('data-format');
+                        exportDropdown.classList.remove('show');
+                        exportData(format);
+                    });
+                });
             }
             
             // Load more buttons
@@ -1031,6 +1139,13 @@ class QvdEditorProvider {
         
         function openSettings() {
             vscode.postMessage({ command: 'openSettings' });
+        }
+        
+        function exportData(format) {
+            vscode.postMessage({ 
+                command: 'exportData',
+                format: format
+            });
         }
         
         function loadMoreRows() {
