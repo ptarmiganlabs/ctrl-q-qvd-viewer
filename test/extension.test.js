@@ -1,12 +1,16 @@
 const assert = require("assert");
 const vscode = require("vscode");
 const path = require("path");
-const QvdReader = require("../src/qvdReader");
+
+// Make vscode available globally for ESM modules
+globalThis.vscode = vscode;
 
 suite("Extension Test Suite", () => {
   vscode.window.showInformationMessage("Start all tests.");
 
   test("QVD Reader - Metadata Extraction", async () => {
+    // Dynamically import the ESM module
+    const { QvdReader } = await import("../src/qvdReader.mjs");
     const reader = new QvdReader();
     const testFilePath = path.join(
       __dirname,
@@ -27,6 +31,8 @@ suite("Extension Test Suite", () => {
   });
 
   test("QVD Reader - Field Information", async () => {
+    // Dynamically import the ESM module
+    const { QvdReader } = await import("../src/qvdReader.mjs");
     const reader = new QvdReader();
     const testFilePath = path.join(
       __dirname,
