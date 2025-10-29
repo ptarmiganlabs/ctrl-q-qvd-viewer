@@ -11,23 +11,37 @@ async function exportToArrow(data, filePath) {
   try {
     if (data.length === 0) {
       // Create empty Arrow file
-      const table = arrow.tableFromArrays({ empty: [] });
-      const writer = arrow.RecordBatchFileWriter.writeAll(table);
+      const emptyTable = arrow.tableFromJSON([{ empty: "" }]);
+      const writer = arrow.RecordBatchFileWriter.writeAll(emptyTable);
       const buffer = Buffer.from(await writer.toUint8Array());
       await fs.writeFile(filePath, buffer);
       return;
     }
 
-    // Convert data to columnar format
-    const columns = {};
-    const firstRow = data[0];
+    // Normalize data to ensure all values are JSON-compatible
+    const normalizedData = data.map((row) => {
+      const normalizedRow = {};
+      Object.keys(row).forEach((key) => {
+        const value = row[key];
 
-    Object.keys(firstRow).forEach((key) => {
-      columns[key] = data.map((row) => row[key]);
+        if (value === null || value === undefined) {
+          normalizedRow[key] = null;
+        } else if (value instanceof Date) {
+          // Convert dates to ISO strings for better compatibility
+          normalizedRow[key] = value.toISOString();
+        } else if (typeof value === "object") {
+          // Convert any other objects to strings
+          normalizedRow[key] = JSON.stringify(value);
+        } else {
+          // Keep primitives (string, number, boolean) as-is
+          normalizedRow[key] = value;
+        }
+      });
+      return normalizedRow;
     });
 
-    // Create Arrow table
-    const table = arrow.tableFromArrays(columns);
+    // Create Arrow table from JSON (this method is most reliable)
+    const table = arrow.tableFromJSON(normalizedData);
 
     // Write to file
     const writer = arrow.RecordBatchFileWriter.writeAll(table);
