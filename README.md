@@ -18,6 +18,11 @@ A Visual Studio Code extension for viewing Qlik Sense and QlikView QVD files dir
   - **JSON** - JavaScript Object Notation with pretty formatting
   - **Excel** - Microsoft Excel (.xlsx) with styled headers
   - **Parquet** - Apache Parquet for efficient columnar storage
+  - **YAML** - Human-readable structured data format
+  - **Avro** - Compact binary format with schema evolution support
+  - **Apache Arrow** - High-performance columnar format for analytics
+  - **SQLite** - Portable database file with SQL query support
+  - **XML** - Extensible markup language for enterprise systems
 - **Configurable Display**: Customize the number of rows to load (default: 5,000, range: 100-100,000)
 - **About Panel**: Access information about the Butler family of tools
 - **Read-Only Access**: Safe viewing without modifying original QVD files
@@ -164,13 +169,18 @@ The Ctrl-Q QVD Viewer allows you to export QVD data to various formats for furth
    - **Export to JSON** - Structured format ideal for web applications and APIs
    - **Export to Excel** - Native Excel format (.xlsx) with formatted headers
    - **Export to Parquet** - Efficient columnar format for big data and analytics
+   - **Export to YAML** - Human-readable format for configuration and data exchange
+   - **Export to Avro** - Binary format with schema for Hadoop/Kafka ecosystems
+   - **Export to Arrow** - High-performance columnar format for analytical workloads
+   - **Export to SQLite** - Self-contained database file with SQL support
+   - **Export to XML** - Structured markup for enterprise integration
 4. Choose the destination folder and file name in the save dialog
 5. Click "Save" to complete the export
 
 #### Export Details
 
 - **All data is exported**: The export includes all rows from the QVD file, not just the preview data shown in the viewer
-- **Automatic schema inference**: Data types are automatically detected and preserved in supported formats (Parquet, Excel)
+- **Automatic schema inference**: Data types are automatically detected and preserved in supported formats (Parquet, Excel, Avro, Arrow, SQLite)
 - **Progress notification**: You'll see a confirmation message with an option to open the folder containing the exported file
 
 ### Example Output

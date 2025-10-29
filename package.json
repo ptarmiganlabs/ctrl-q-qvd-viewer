@@ -87,9 +87,14 @@
     "eslint": "^9.36.0"
   },
   "dependencies": {
+    "apache-arrow": "^21.1.0",
+    "avsc": "^5.7.9",
+    "better-sqlite3": "^12.4.1",
     "exceljs": "^4.4.0",
+    "js-yaml": "^4.1.0",
     "papaparse": "^5.5.3",
     "parquetjs": "^0.11.2",
-    "qvdjs": "^0.6.2"
+    "qvdjs": "^0.6.2",
+    "xml-js": "^1.6.11"
   }
 }

@@ -651,6 +651,11 @@ class QvdEditorProvider {
                         <div class="export-dropdown-item" data-format="json">Export to JSON</div>
                         <div class="export-dropdown-item" data-format="excel">Export to Excel</div>
                         <div class="export-dropdown-item" data-format="parquet">Export to Parquet</div>
+                        <div class="export-dropdown-item" data-format="yaml">Export to YAML</div>
+                        <div class="export-dropdown-item" data-format="avro">Export to Avro</div>
+                        <div class="export-dropdown-item" data-format="arrow">Export to Arrow</div>
+                        <div class="export-dropdown-item" data-format="sqlite">Export to SQLite</div>
+                        <div class="export-dropdown-item" data-format="xml">Export to XML</div>
                     </div>
                 </div>
                 <button class="header-button" id="about-btn">ℹ️ About</button>
