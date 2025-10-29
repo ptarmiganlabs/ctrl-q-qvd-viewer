@@ -88,7 +88,7 @@ async function exportToParquet(data, filePath) {
     // Write rows with type conversion
     for (const row of data) {
       const processedRow = {};
-      
+
       columnNames.forEach((key) => {
         const value = row[key];
         const typeInfo = columnTypes[key];
@@ -118,7 +118,7 @@ async function exportToParquet(data, filePath) {
     } catch {
       // Ignore cleanup errors, throw original error
     }
-    
+
     throw new Error(`Parquet export failed: ${error.message}`);
   }
 }

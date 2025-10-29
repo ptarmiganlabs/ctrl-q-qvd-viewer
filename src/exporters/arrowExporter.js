@@ -61,14 +61,18 @@ async function exportToArrow(data, filePath) {
     // Normalize data to ensure type consistency within each column
     const normalizedData = data.map((row) => {
       const normalizedRow = {};
-      
+
       columnNames.forEach((key) => {
         const value = row[key];
         const typeInfo = columnTypes[key];
 
         if (value === null || value === undefined) {
           normalizedRow[key] = null;
-        } else if (typeInfo.hasString || typeInfo.hasObject || (typeInfo.hasNumber && typeInfo.hasBoolean)) {
+        } else if (
+          typeInfo.hasString ||
+          typeInfo.hasObject ||
+          (typeInfo.hasNumber && typeInfo.hasBoolean)
+        ) {
           // If column has mixed types or strings, convert everything to string
           if (value instanceof Date) {
             normalizedRow[key] = value.toISOString();
@@ -85,7 +89,7 @@ async function exportToArrow(data, filePath) {
           normalizedRow[key] = value;
         }
       });
-      
+
       return normalizedRow;
     });
 
@@ -106,7 +110,7 @@ async function exportToArrow(data, filePath) {
     } catch {
       // Ignore cleanup errors, throw original error
     }
-    
+
     throw new Error(`Arrow export failed: ${error.message}`);
   }
 }
