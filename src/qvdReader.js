@@ -84,13 +84,9 @@ class QvdReader {
       };
 
       // Convert data from array of arrays to array of objects
-      const data = df.data.map((row) => {
-        const rowObj = {};
-        columns.forEach((col, idx) => {
-          rowObj[col] = row[idx];
-        });
-        return rowObj;
-      });
+      const data = df.data.map((row) =>
+        Object.fromEntries(columns.map((col, idx) => [col, row[idx]]))
+      );
 
       return {
         metadata,
