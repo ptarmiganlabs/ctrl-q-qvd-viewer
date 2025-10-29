@@ -1,5 +1,5 @@
-const fs = require("fs").promises;
-const Papa = require("papaparse");
+import { promises as fs } from 'fs';
+import Papa from 'papaparse';
 
 /**
  * Export data to CSV format
@@ -7,7 +7,7 @@ const Papa = require("papaparse");
  * @param {string} filePath - Destination file path
  * @returns {Promise<void>}
  */
-async function exportToCSV(data, filePath) {
+export async function exportToCSV(data, filePath) {
   try {
     // Add header comment (with # prefix, commonly recognized in CSV parsers)
     const header = [
@@ -34,5 +34,3 @@ async function exportToCSV(data, filePath) {
     throw new Error(`CSV export failed: ${error.message}`);
   }
 }
-
-module.exports = { exportToCSV };

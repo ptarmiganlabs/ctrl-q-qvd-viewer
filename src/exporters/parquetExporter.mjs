@@ -1,5 +1,5 @@
-const parquet = require("parquetjs");
-const fs = require("fs");
+import parquet from 'parquetjs';
+import { existsSync, unlinkSync } from 'fs';
 
 /**
  * Export data to Parquet format
@@ -7,7 +7,7 @@ const fs = require("fs");
  * @param {string} filePath - Destination file path
  * @returns {Promise<void>}
  */
-async function exportToParquet(data, filePath) {
+export async function exportToParquet(data, filePath) {
   try {
     if (data.length === 0) {
       // Create empty parquet file with minimal schema
@@ -112,8 +112,8 @@ async function exportToParquet(data, filePath) {
   } catch (error) {
     // Clean up the partially created file on error
     try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      if (existsSync(filePath)) {
+        unlinkSync(filePath);
       }
     } catch {
       // Ignore cleanup errors, throw original error
@@ -122,5 +122,3 @@ async function exportToParquet(data, filePath) {
     throw new Error(`Parquet export failed: ${error.message}`);
   }
 }
-
-module.exports = { exportToParquet };

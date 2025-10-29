@@ -1,12 +1,14 @@
-// The module 'vscode' contains the VS Code extensibility API
-const vscode = require('vscode');
-const QvdEditorProvider = require('./qvdEditorProvider');
-const AboutPanel = require('./aboutPanel');
+// ESM implementation of the VS Code extension
+import * as vscode from 'vscode';
+import QvdEditorProvider from './qvdEditorProvider.mjs';
+import AboutPanel from './aboutPanel.mjs';
 
 /**
- * @param {vscode.ExtensionContext} context
+ * Activate the extension
+ * @param {vscode.ExtensionContext} context - VS Code extension context
+ * @returns {Promise<void>}
  */
-function activate(context) {
+export async function activate(context) {
 	console.log('Ctrl-Q QVD Viewer extension is now active');
 
 	// Check if this is the first activation and show About page
@@ -59,10 +61,8 @@ function activate(context) {
 	context.subscriptions.push(aboutCommand);
 }
 
-// This method is called when your extension is deactivated
-function deactivate() {}
-
-module.exports = {
-	activate,
-	deactivate
-}
+/**
+ * Deactivate the extension
+ * @returns {void}
+ */
+export function deactivate() {}

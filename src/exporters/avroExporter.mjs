@@ -1,5 +1,5 @@
-const avro = require("avsc");
-const fs = require("fs");
+import avro from 'avsc';
+import { existsSync, unlinkSync } from 'fs';
 
 /**
  * Export data to Avro format
@@ -7,7 +7,7 @@ const fs = require("fs");
  * @param {string} filePath - Destination file path
  * @returns {Promise<void>}
  */
-async function exportToAvro(data, filePath) {
+export async function exportToAvro(data, filePath) {
   try {
     if (data.length === 0) {
       // Create empty Avro file with minimal schema
@@ -131,8 +131,8 @@ async function exportToAvro(data, filePath) {
   } catch (error) {
     // Clean up the partially created file on error
     try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      if (existsSync(filePath)) {
+        unlinkSync(filePath);
       }
     } catch {
       // Ignore cleanup errors, throw original error
@@ -140,5 +140,3 @@ async function exportToAvro(data, filePath) {
     throw new Error(`Avro export failed: ${error.message}`);
   }
 }
-
-module.exports = { exportToAvro };

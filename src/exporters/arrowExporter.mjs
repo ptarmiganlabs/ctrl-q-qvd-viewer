@@ -1,6 +1,5 @@
-const fs = require("fs").promises;
-const fsSync = require("fs");
-const arrow = require("apache-arrow");
+import { promises as fs, existsSync, unlinkSync } from 'fs';
+import * as arrow from 'apache-arrow';
 
 /**
  * Export data to Apache Arrow format
@@ -8,7 +7,7 @@ const arrow = require("apache-arrow");
  * @param {string} filePath - Destination file path
  * @returns {Promise<void>}
  */
-async function exportToArrow(data, filePath) {
+export async function exportToArrow(data, filePath) {
   try {
     if (data.length === 0) {
       // Create empty Arrow file
@@ -104,8 +103,8 @@ async function exportToArrow(data, filePath) {
   } catch (error) {
     // Clean up the partially created file on error
     try {
-      if (fsSync.existsSync(filePath)) {
-        fsSync.unlinkSync(filePath);
+      if (existsSync(filePath)) {
+        unlinkSync(filePath);
       }
     } catch {
       // Ignore cleanup errors, throw original error
@@ -114,5 +113,3 @@ async function exportToArrow(data, filePath) {
     throw new Error(`Arrow export failed: ${error.message}`);
   }
 }
-
-module.exports = { exportToArrow };

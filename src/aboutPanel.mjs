@@ -1,4 +1,10 @@
-const vscode = require("vscode");
+import * as vscode from 'vscode';
+import { readFile } from 'fs/promises';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /**
  * Manages the About panel webview
@@ -35,6 +41,8 @@ class AboutPanel {
 
   /**
    * Show the About panel
+   * @param {vscode.ExtensionContext} context - Extension context
+   * @returns {void}
    */
   static show(context) {
     const column = vscode.window.activeTextEditor
@@ -63,6 +71,7 @@ class AboutPanel {
 
   /**
    * Clean up resources
+   * @returns {void}
    */
   dispose() {
     AboutPanel.currentPanel = undefined;
@@ -80,6 +89,7 @@ class AboutPanel {
 
   /**
    * Update the webview content
+   * @returns {void}
    */
   _update() {
     this._panel.title = "About Ctrl-Q QVD Viewer";
@@ -88,15 +98,30 @@ class AboutPanel {
 
   /**
    * Get the HTML content for the About page
+   * @returns {string} HTML content
    */
   _getHtmlContent() {
     // Get the extension version from package.json
-    const packageJson = require("../package.json");
-    const version = packageJson.version;
-    const displayName = packageJson.displayName;
-    const description = packageJson.description;
-    const repository = packageJson.repository.url;
-    const license = packageJson.license;
+    // In ESM, we need to read package.json dynamically
+    const packageJsonPath = join(__dirname, "..", "package.json");
+    let version = "unknown";
+    let displayName = "Ctrl-Q QVD Viewer";
+    let description = "View Qlik Sense and QlikView QVD files from within VS Code";
+    let repository = "https://github.com/ptarmiganlabs/qvd4vscode";
+    let license = "MIT";
+
+    try {
+      // Synchronous read for simplicity in this context
+      const fs = require("fs");
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+      version = packageJson.version;
+      displayName = packageJson.displayName;
+      description = packageJson.description;
+      repository = packageJson.repository.url;
+      license = packageJson.license;
+    } catch (error) {
+      console.error("Failed to read package.json:", error);
+    }
 
     // Get URIs for logo images
     const ctrlqLogoUri = this._panel.webview.asWebviewUri(
@@ -455,6 +480,8 @@ class AboutPanel {
 
   /**
    * Escape HTML special characters
+   * @param {string} text - Text to escape
+   * @returns {string} Escaped text
    */
   escapeHtml(text) {
     const map = {
@@ -468,4 +495,4 @@ class AboutPanel {
   }
 }
 
-module.exports = AboutPanel;
+export default AboutPanel;

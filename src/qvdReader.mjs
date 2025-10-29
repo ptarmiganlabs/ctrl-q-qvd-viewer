@@ -1,5 +1,5 @@
-const { QvdDataFrame } = require("qvdjs");
-const path = require("path");
+import { QvdDataFrame } from 'qvdjs';
+import { dirname } from 'path';
 
 /**
  * Reads and parses QVD file metadata and data
@@ -7,7 +7,6 @@ const path = require("path");
 class QvdReader {
   /**
    * Read QVD file and return metadata and data
-   *
    * @param {string} filePath - Path to the QVD file
    * @param {number} maxRows - Maximum number of rows to read (default: 25, 0 = all rows)
    * @returns {Promise<{metadata: object, data: Array, error: string|null}>}
@@ -20,7 +19,7 @@ class QvdReader {
       // path traversal protection within that directory
       const loadOptions = {
         ...(maxRows === 0 ? {} : { maxRows }),
-        allowedDir: path.dirname(filePath),
+        allowedDir: dirname(filePath),
       };
       const df = await QvdDataFrame.fromQvd(filePath, loadOptions);
 
@@ -118,14 +117,13 @@ class QvdReader {
 
   /**
    * Read a specific page of data from the QVD file
-   *
-   * @param {string} filePath - Path to the QVD file
-   * @param {number} page - Page number (0-indexed)
-   * @param {number} pageSize - Rows per page
+   * @param {string} _filePath - Path to the QVD file
+   * @param {number} _page - Page number (0-indexed)
+   * @param {number} _pageSize - Rows per page
    * @returns {Promise<{metadata: object, data: Array, columns: Array, totalRows: number, page: number, pageSize: number, error: string|null}>}
+   * @throws {Error} Not yet implemented - waiting for qvdjs streaming support
    */
-  // eslint-disable-next-line no-unused-vars
-  async readPage(filePath, page, pageSize) {
+  async readPage(_filePath, _page, _pageSize) {
     // TODO: Implement when qvdjs supports streaming
     // For now, this would still load the full file and slice the data
     // const metadata = await this.extractMetadata(filePath);
@@ -151,4 +149,4 @@ class QvdReader {
   }
 }
 
-module.exports = QvdReader;
+export default QvdReader;

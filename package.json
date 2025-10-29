@@ -29,7 +29,7 @@
     "Other"
   ],
   "activationEvents": [],
-  "main": "./src/extension.js",
+  "main": "./src/extension.cjs",
   "contributes": {
     "commands": [
       {

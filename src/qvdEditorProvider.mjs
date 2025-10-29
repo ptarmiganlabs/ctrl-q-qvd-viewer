@@ -1,8 +1,8 @@
-const vscode = require("vscode");
-const QvdReader = require("./qvdReader");
-const DataExporter = require("./exporters/index");
-const fs = require("fs");
-const path = require("path");
+import * as vscode from "vscode";
+import QvdReader from "./qvdReader.mjs";
+import DataExporter from "./exporters/index.mjs";
+import { readFileSync } from "fs";
+import { basename, dirname, extname, join } from "path";
 
 /**
  * Provider for QVD file custom editor with tabbed interface and Tabulator
@@ -138,7 +138,7 @@ class QvdEditorProvider {
               }
             }
 
-            const fileName = path.basename(filePath, path.extname(filePath));
+            const fileName = basename(filePath, extname(filePath));
             const workspaceFolder =
               vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
             const savedPath = await DataExporter.exportData(
@@ -157,7 +157,7 @@ class QvdEditorProvider {
               );
 
               if (action === "Open Folder") {
-                const folderPath = path.dirname(savedPath);
+                const folderPath = dirname(savedPath);
                 vscode.commands.executeCommand(
                   "revealFileInOS",
                   vscode.Uri.file(folderPath)
@@ -242,26 +242,26 @@ class QvdEditorProvider {
    * Get Tabulator library inlined as string
    */
   getTabulatorJs() {
-    const tabulatorPath = path.join(
+    const tabulatorPath = join(
       this.context.extensionPath,
       "media",
       "tabulator",
       "tabulator.min.js"
     );
-    return fs.readFileSync(tabulatorPath, "utf8");
+    return readFileSync(tabulatorPath, "utf8");
   }
 
   /**
    * Get Tabulator CSS inlined as string
    */
   getTabulatorCss() {
-    const tabulatorCssPath = path.join(
+    const tabulatorCssPath = join(
       this.context.extensionPath,
       "media",
       "tabulator",
       "tabulator.min.css"
     );
-    return fs.readFileSync(tabulatorCssPath, "utf8");
+    return readFileSync(tabulatorCssPath, "utf8");
   }
 
   /**
@@ -1325,4 +1325,4 @@ class QvdEditorProvider {
   }
 }
 
-module.exports = QvdEditorProvider;
+export default QvdEditorProvider;
