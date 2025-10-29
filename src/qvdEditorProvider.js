@@ -81,14 +81,17 @@ class QvdEditorProvider {
 
             let maxRows = 0; // Default: export all rows
 
-            // For Qlik inline script, ask for row count
-            if (message.format === "qlik") {
+            // For Qlik inline script and PostgreSQL, ask for row count
+            if (message.format === "qlik" || message.format === "postgres") {
               const totalRows = result.data.length;
+              const formatLabel =
+                message.format === "qlik" ? "Qlik Inline Script" : "PostgreSQL";
               const rowCountInput = await vscode.window.showQuickPick(
                 [
-                  { label: "10 rows", value: "10" },
                   { label: "100 rows", value: "100" },
+                  { label: "500 rows", value: "500" },
                   { label: "1,000 rows", value: "1000" },
+                  { label: "5,000 rows", value: "5000" },
                   { label: "10,000 rows", value: "10000" },
                   {
                     label: `All rows (${totalRows.toLocaleString()})`,
@@ -97,9 +100,8 @@ class QvdEditorProvider {
                   { label: "Custom...", value: "custom" },
                 ],
                 {
-                  placeHolder:
-                    "Select number of rows to include in inline table",
-                  title: "Qlik Inline Script Export",
+                  placeHolder: "Select number of rows to export",
+                  title: `${formatLabel} Export`,
                 }
               );
 

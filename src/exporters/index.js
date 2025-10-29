@@ -9,6 +9,7 @@ const { exportToArrow } = require("./arrowExporter");
 const { exportToSQLite } = require("./sqliteExporter");
 const { exportToXML } = require("./xmlExporter");
 const { exportToQlikInline } = require("./qlikInlineExporter");
+const { exportToPostgres } = require("./postgresExporter");
 
 /**
  * Main DataExporter class that coordinates all export operations
@@ -26,6 +27,7 @@ class DataExporter {
       { name: "excel", label: "Export to Excel", beta: false },
       { name: "json", label: "Export to JSON", beta: false },
       { name: "parquet", label: "Export to Parquet", beta: false },
+      { name: "postgres", label: "Export to PostgreSQL", beta: true },
       { name: "qlik", label: "Export to Qlik Inline Script", beta: false },
       { name: "sqlite", label: "Export to SQLite", beta: true },
       { name: "xml", label: "Export to XML", beta: false },
@@ -36,11 +38,11 @@ class DataExporter {
   /**
    * Show save dialog and export data to the selected format
    * @param {Array<Object>} data - Array of row objects
-   * @param {string} format - Export format ('csv', 'json', 'excel', 'parquet', 'yaml', 'avro', 'arrow', 'sqlite', 'xml', 'qlik')
+   * @param {string} format - Export format ('csv', 'json', 'excel', 'parquet', 'yaml', 'avro', 'arrow', 'sqlite', 'xml', 'qlik', 'postgres')
    * @param {string} suggestedFileName - Suggested file name without extension
    * @param {object} vscode - VS Code API object
    * @param {string} workspaceFolder - Workspace folder path
-   * @param {number} maxRows - Maximum number of rows (for Qlik format)
+   * @param {number} maxRows - Maximum number of rows (for Qlik and PostgreSQL formats)
    * @returns {Promise<string|null>} Path to saved file or null if cancelled
    */
   static async exportData(
@@ -88,6 +90,12 @@ class DataExporter {
         exporter: exportToParquet,
         beta: false,
       },
+      postgres: {
+        extension: "sql",
+        filter: "SQL Files",
+        exporter: exportToPostgres,
+        beta: true,
+      },
       qlik: {
         extension: "qvs",
         filter: "Qlik Script Files",
@@ -121,6 +129,8 @@ class DataExporter {
 
     // Handle Qlik inline format with delimiter selection BEFORE file dialog
     let selectedDelimiter = null;
+    let postgresOptions = null;
+
     if (format === "qlik") {
       // Get default delimiter from settings
       const vscodeConfig =
@@ -175,6 +185,86 @@ class DataExporter {
       }
     }
 
+    // Handle PostgreSQL format with options BEFORE file dialog
+    if (format === "postgres") {
+      // Ask if CREATE TABLE should be included
+      const createTableChoice = await vscode.window.showQuickPick(
+        [
+          {
+            label: "Yes",
+            description: "Include CREATE TABLE statement",
+            value: true,
+          },
+          {
+            label: "No",
+            description: "Only generate INSERT statements",
+            value: false,
+          },
+        ],
+        {
+          placeHolder: "Include CREATE TABLE statement?",
+          title: "PostgreSQL Export - CREATE TABLE",
+        }
+      );
+
+      if (createTableChoice === undefined) {
+        return null; // User cancelled
+      }
+
+      const createTable = createTableChoice.value;
+      let tableName = "qvd_data";
+      let dropTable = false;
+
+      // If creating table, ask for table name and drop option
+      if (createTable) {
+        // Ask for table name
+        const tableNameInput = await vscode.window.showInputBox({
+          prompt: "Enter the PostgreSQL table name",
+          value: "qvd_data",
+          placeHolder: "qvd_data",
+          title: "PostgreSQL Export - Table Name",
+        });
+
+        if (tableNameInput === undefined) {
+          return null; // User cancelled
+        }
+
+        tableName = tableNameInput || "qvd_data";
+
+        // Ask if existing table should be dropped
+        const dropTableChoice = await vscode.window.showQuickPick(
+          [
+            {
+              label: "No",
+              description: "Keep existing table if it exists (default)",
+              value: false,
+            },
+            {
+              label: "Yes",
+              description: "Drop existing table before creating new one",
+              value: true,
+            },
+          ],
+          {
+            placeHolder: "Drop existing table if it exists?",
+            title: "PostgreSQL Export - DROP TABLE",
+          }
+        );
+
+        if (dropTableChoice === undefined) {
+          return null; // User cancelled
+        }
+
+        dropTable = dropTableChoice.value;
+      }
+
+      postgresOptions = {
+        createTable,
+        tableName,
+        dropTable,
+      };
+    }
+
     // Show save dialog
     const defaultFileName = `${suggestedFileName}.${config.extension}`;
     const defaultUri = vscode.Uri.file(
@@ -202,6 +292,9 @@ class DataExporter {
         maxRows,
         selectedDelimiter.value
       );
+    } else if (format === "postgres") {
+      // Pass options to PostgreSQL exporter
+      await config.exporter(data, fileUri.fsPath, maxRows, postgresOptions);
     } else {
       // Other formats don't need delimiter or maxRows
       await config.exporter(data, fileUri.fsPath);

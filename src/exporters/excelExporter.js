@@ -9,6 +9,18 @@ const ExcelJS = require("exceljs");
 async function exportToExcel(data, filePath) {
   try {
     const workbook = new ExcelJS.Workbook();
+
+    // Add metadata to workbook properties
+    workbook.creator = "Ctrl-Q QVD Viewer for VS Code";
+    workbook.created = new Date();
+    workbook.modified = new Date();
+    workbook.properties.description = [
+      "Excel Data Export",
+      "Created by: Ctrl-Q QVD Viewer for VS Code",
+      "VS Code Extension: https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer",
+      "GitHub: https://github.com/ptarmiganlabs/qvd4vscode",
+    ].join("\n");
+
     const worksheet = workbook.addWorksheet("Data");
 
     if (data.length === 0) {

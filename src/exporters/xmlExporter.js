@@ -16,6 +16,14 @@ async function exportToXML(data, filePath) {
           encoding: "UTF-8",
         },
       },
+      _comment: [
+        "XML Data Export",
+        "Created by: Ctrl-Q QVD Viewer for VS Code",
+        "VS Code Extension: https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer",
+        "GitHub: https://github.com/ptarmiganlabs/qvd4vscode",
+        `Generated: ${new Date().toISOString()}`,
+        `Rows: ${data.length}`,
+      ].join("\n"),
       data: {
         record: data.map((row) => {
           const record = {};
@@ -38,7 +46,7 @@ async function exportToXML(data, filePath) {
     const xml = xmljs.js2xml(xmlObj, {
       compact: true,
       spaces: 2,
-      ignoreComment: true,
+      ignoreComment: false,
     });
 
     await fs.writeFile(filePath, xml, "utf8");
