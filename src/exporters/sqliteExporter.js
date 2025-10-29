@@ -1,4 +1,6 @@
-const Database = require("better-sqlite3");
+const initSqlJs = require("sql.js");
+const fs = require("fs");
+const path = require("path");
 
 /**
  * Export data to SQLite database format
@@ -8,29 +10,81 @@ const Database = require("better-sqlite3");
  */
 async function exportToSQLite(data, filePath) {
   try {
-    // Create database
-    const db = new Database(filePath);
+    // Initialize SQL.js with WASM file
+    // In Node.js, we need to point to the wasm file in node_modules
+    const SQL = await initSqlJs({
+      locateFile: (file) => {
+        return path.join(__dirname, "../../node_modules/sql.js/dist", file);
+      },
+    });
+
+    // Create a new database
+    const db = new SQL.Database();
 
     if (data.length === 0) {
+      // Export empty database
+      const binaryArray = db.export();
+      const buffer = Buffer.from(binaryArray);
+      fs.writeFileSync(filePath, buffer);
       db.close();
       return;
     }
 
-    // Infer schema from first row
+    // Get column names from first row
     const firstRow = data[0];
-    const columns = Object.keys(firstRow)
+    const columnNames = Object.keys(firstRow);
+
+    // Track type information for each column across all rows
+    const columnTypes = {};
+    columnNames.forEach((key) => {
+      columnTypes[key] = {
+        hasNull: false,
+        hasNumber: false,
+        hasString: false,
+        hasBoolean: false,
+        hasDate: false,
+        allIntegers: true,
+      };
+    });
+
+    // Scan all rows to determine the most compatible type for each column
+    for (const row of data) {
+      for (const key of columnNames) {
+        const value = row[key];
+        const typeInfo = columnTypes[key];
+
+        if (value === null || value === undefined) {
+          typeInfo.hasNull = true;
+        } else if (typeof value === "number") {
+          typeInfo.hasNumber = true;
+          if (!Number.isInteger(value)) {
+            typeInfo.allIntegers = false;
+          }
+        } else if (typeof value === "string") {
+          typeInfo.hasString = true;
+        } else if (typeof value === "boolean") {
+          typeInfo.hasBoolean = true;
+        } else if (value instanceof Date) {
+          typeInfo.hasDate = true;
+        }
+      }
+    }
+
+    // Determine SQLite type for each column based on collected type information
+    const columns = columnNames
       .map((key) => {
-        const value = firstRow[key];
+        const typeInfo = columnTypes[key];
         let sqlType = "TEXT"; // Default to TEXT
 
-        if (value !== null && value !== undefined) {
-          if (typeof value === "number") {
-            sqlType = Number.isInteger(value) ? "INTEGER" : "REAL";
-          } else if (typeof value === "boolean") {
-            sqlType = "INTEGER"; // SQLite uses 0/1 for booleans
-          } else if (value instanceof Date) {
-            sqlType = "TEXT"; // Store dates as ISO strings
-          }
+        // If column has mixed types, use TEXT as most compatible
+        if (typeInfo.hasString || (typeInfo.hasNumber && typeInfo.hasBoolean)) {
+          sqlType = "TEXT";
+        } else if (typeInfo.hasDate) {
+          sqlType = "TEXT"; // Store dates as ISO strings
+        } else if (typeInfo.hasNumber) {
+          sqlType = typeInfo.allIntegers ? "INTEGER" : "REAL";
+        } else if (typeInfo.hasBoolean) {
+          sqlType = "INTEGER"; // SQLite uses 0/1 for booleans
         }
 
         return `"${key}" ${sqlType}`;
@@ -38,37 +92,54 @@ async function exportToSQLite(data, filePath) {
       .join(", ");
 
     // Create table
-    db.exec(`CREATE TABLE data (${columns})`);
+    db.run(`CREATE TABLE data (${columns})`);
 
-    // Insert data
-    const columnNames = Object.keys(firstRow);
+    // Prepare insert statement
     const placeholders = columnNames.map(() => "?").join(", ");
-    const insertStmt = db.prepare(
-      `INSERT INTO data (${columnNames
-        .map((c) => `"${c}"`)
-        .join(", ")}) VALUES (${placeholders})`
-    );
+    const insertSQL = `INSERT INTO data (${columnNames
+      .map((c) => `"${c}"`)
+      .join(", ")}) VALUES (${placeholders})`;
 
-    const insertMany = db.transaction((rows) => {
-      for (const row of rows) {
-        const values = columnNames.map((col) => {
-          const value = row[col];
-          if (typeof value === "boolean") {
-            return value ? 1 : 0;
-          }
-          if (value instanceof Date) {
-            return value.toISOString();
-          }
-          return value;
-        });
-        insertStmt.run(values);
-      }
-    });
+    // Insert all rows
+    for (const row of data) {
+      const values = columnNames.map((col) => {
+        const value = row[col];
+        const typeInfo = columnTypes[col];
 
-    insertMany(data);
+        // Convert values based on schema expectations
+        if (value === null || value === undefined) {
+          return null;
+        } else if (typeInfo.hasString) {
+          // If schema expects TEXT, convert everything to string
+          return String(value);
+        } else if (typeof value === "boolean") {
+          return value ? 1 : 0;
+        } else if (value instanceof Date) {
+          return value.toISOString();
+        }
+        return value;
+      });
 
+      db.run(insertSQL, values);
+    }
+
+    // Export the database to a binary array and write to file
+    const binaryArray = db.export();
+    const buffer = Buffer.from(binaryArray);
+    fs.writeFileSync(filePath, buffer);
+
+    // Close the database
     db.close();
   } catch (error) {
+    // Clean up the partially created file on error
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch {
+      // Ignore cleanup errors, throw original error
+    }
+
     throw new Error(`SQLite export failed: ${error.message}`);
   }
 }

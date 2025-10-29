@@ -27,7 +27,7 @@ class DataExporter {
       { name: "json", label: "Export to JSON", beta: false },
       { name: "parquet", label: "Export to Parquet", beta: false },
       { name: "qlik", label: "Export to Qlik Inline Script", beta: false },
-      { name: "sqlite", label: "Export to SQLite", beta: false },
+      { name: "sqlite", label: "Export to SQLite", beta: true },
       { name: "xml", label: "Export to XML", beta: false },
       { name: "yaml", label: "Export to YAML", beta: false },
     ];
@@ -98,7 +98,7 @@ class DataExporter {
         extension: "db",
         filter: "SQLite Database",
         exporter: exportToSQLite,
-        beta: false,
+        beta: true,
       },
       xml: {
         extension: "xml",
