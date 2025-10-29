@@ -1,4 +1,5 @@
 const avro = require("avsc");
+const fs = require("fs");
 
 /**
  * Export data to Avro format
@@ -25,20 +26,67 @@ async function exportToAvro(data, filePath) {
       return;
     }
 
-    // Infer schema from first row
+    // Infer schema by scanning all rows to determine compatible types
     const firstRow = data[0];
-    const fields = Object.keys(firstRow).map((key) => {
-      const value = firstRow[key];
-      let avroType = "string"; // Default to string
+    const columnNames = Object.keys(firstRow);
 
-      if (value === null || value === undefined) {
-        avroType = ["null", "string"];
-      } else if (typeof value === "number") {
-        avroType = Number.isInteger(value) ? "long" : "double";
-      } else if (typeof value === "boolean") {
+    // Track type information for each column across all rows
+    const columnTypes = {};
+    columnNames.forEach((key) => {
+      columnTypes[key] = {
+        hasNull: false,
+        hasNumber: false,
+        hasString: false,
+        hasBoolean: false,
+        hasDate: false,
+        allIntegers: true,
+      };
+    });
+
+    // Scan all rows to determine the most compatible type for each column
+    for (const row of data) {
+      for (const key of columnNames) {
+        const value = row[key];
+        const typeInfo = columnTypes[key];
+
+        if (value === null || value === undefined) {
+          typeInfo.hasNull = true;
+        } else if (typeof value === "number") {
+          typeInfo.hasNumber = true;
+          if (!Number.isInteger(value)) {
+            typeInfo.allIntegers = false;
+          }
+        } else if (typeof value === "string") {
+          typeInfo.hasString = true;
+        } else if (typeof value === "boolean") {
+          typeInfo.hasBoolean = true;
+        } else if (value instanceof Date) {
+          typeInfo.hasDate = true;
+        }
+      }
+    }
+
+    // Determine Avro type for each field based on collected type information
+    const fields = columnNames.map((key) => {
+      const typeInfo = columnTypes[key];
+      let avroType;
+
+      // If column has mixed types or strings, use string as most compatible
+      if (typeInfo.hasString || (typeInfo.hasNumber && typeInfo.hasBoolean)) {
+        avroType = "string";
+      } else if (typeInfo.hasDate) {
+        avroType = "long"; // Store dates as timestamps
+      } else if (typeInfo.hasNumber) {
+        avroType = typeInfo.allIntegers ? "long" : "double";
+      } else if (typeInfo.hasBoolean) {
         avroType = "boolean";
-      } else if (value instanceof Date) {
-        avroType = "long"; // Store as timestamp
+      } else {
+        avroType = "string"; // Default fallback
+      }
+
+      // Make nullable if the column has null values
+      if (typeInfo.hasNull) {
+        avroType = ["null", avroType];
       }
 
       return { name: key, type: avroType };
@@ -58,12 +106,19 @@ async function exportToAvro(data, filePath) {
 
       // Write rows
       for (const row of data) {
-        // Convert dates to timestamps
+        // Convert dates to timestamps and ensure type compatibility
         const processedRow = {};
         Object.keys(row).forEach((key) => {
           const value = row[key];
-          if (value instanceof Date) {
+          const typeInfo = columnTypes[key];
+
+          if (value === null || value === undefined) {
+            processedRow[key] = null;
+          } else if (value instanceof Date) {
             processedRow[key] = value.getTime();
+          } else if (typeInfo.hasString) {
+            // If schema expects string, convert everything to string
+            processedRow[key] = String(value);
           } else {
             processedRow[key] = value;
           }
@@ -74,6 +129,14 @@ async function exportToAvro(data, filePath) {
       encoder.end();
     });
   } catch (error) {
+    // Clean up the partially created file on error
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch {
+      // Ignore cleanup errors, throw original error
+    }
     throw new Error(`Avro export failed: ${error.message}`);
   }
 }
