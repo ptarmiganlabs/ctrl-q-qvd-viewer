@@ -402,6 +402,71 @@ class DataExporter {
   }
 
   /**
+   * Export data to Qlik Sense inline load script format
+   * @param {Array<Object>} data - Array of row objects
+   * @param {string} filePath - Destination file path
+   * @param {number} maxRows - Maximum number of rows to include (0 = all)
+   * @returns {Promise<void>}
+   */
+  static async exportToQlikInline(data, filePath, maxRows = 0) {
+    try {
+      if (data.length === 0) {
+        await fs.writeFile(filePath, "// No data to export", "utf8");
+        return;
+      }
+
+      // Limit data if maxRows is specified
+      const exportData = maxRows > 0 ? data.slice(0, maxRows) : data;
+
+      // Get column names from first row
+      const columns = Object.keys(exportData[0]);
+
+      // Build the inline load script
+      const lines = [];
+      
+      // Add header comment
+      lines.push("// Qlik Sense Inline Load Script");
+      lines.push(`// Generated: ${new Date().toISOString()}`);
+      lines.push(`// Rows: ${exportData.length}`);
+      lines.push("");
+      
+      // Start the LOAD statement
+      lines.push("DataTable:");
+      lines.push("LOAD * INLINE [");
+      
+      // Add column headers (tab-separated)
+      lines.push(columns.join("\t"));
+      
+      // Add data rows (tab-separated)
+      exportData.forEach((row) => {
+        const values = columns.map((col) => {
+          const value = row[col];
+          
+          // Handle different value types
+          if (value === null || value === undefined) {
+            return "";
+          } else if (typeof value === "string") {
+            // Escape special characters in strings
+            return value.replace(/\t/g, " ").replace(/\n/g, " ").replace(/\r/g, "");
+          } else if (value instanceof Date) {
+            return value.toISOString();
+          } else {
+            return String(value);
+          }
+        });
+        lines.push(values.join("\t"));
+      });
+      
+      // Close the inline load
+      lines.push("];");
+
+      await fs.writeFile(filePath, lines.join("\n"), "utf8");
+    } catch (error) {
+      throw new Error(`Qlik Sense inline script export failed: ${error.message}`);
+    }
+  }
+
+  /**
    * Show save dialog and export data to the selected format
    * @param {Array<Object>} data - Array of row objects
    * @param {string} format - Export format ('csv', 'json', 'excel', 'parquet')
@@ -410,17 +475,18 @@ class DataExporter {
    * @param {string} workspaceFolder - Workspace folder path
    * @returns {Promise<string|null>} Path to saved file or null if cancelled
    */
-  static async exportData(data, format, suggestedFileName, vscode, workspaceFolder) {
+  static async exportData(data, format, suggestedFileName, vscode, workspaceFolder, maxRows) {
     const formatConfig = {
-      csv: { extension: "csv", filter: "CSV Files", exporter: this.exportToCSV },
-      json: { extension: "json", filter: "JSON Files", exporter: this.exportToJSON },
-      excel: { extension: "xlsx", filter: "Excel Files", exporter: this.exportToExcel },
-      parquet: { extension: "parquet", filter: "Parquet Files", exporter: this.exportToParquet },
-      yaml: { extension: "yaml", filter: "YAML Files", exporter: this.exportToYAML },
-      avro: { extension: "avro", filter: "Avro Files", exporter: this.exportToAvro },
       arrow: { extension: "arrow", filter: "Arrow Files", exporter: this.exportToArrow },
+      avro: { extension: "avro", filter: "Avro Files", exporter: this.exportToAvro },
+      csv: { extension: "csv", filter: "CSV Files", exporter: this.exportToCSV },
+      excel: { extension: "xlsx", filter: "Excel Files", exporter: this.exportToExcel },
+      json: { extension: "json", filter: "JSON Files", exporter: this.exportToJSON },
+      parquet: { extension: "parquet", filter: "Parquet Files", exporter: this.exportToParquet },
+      qlik: { extension: "qvs", filter: "Qlik Script Files", exporter: this.exportToQlikInline },
       sqlite: { extension: "db", filter: "SQLite Database", exporter: this.exportToSQLite },
       xml: { extension: "xml", filter: "XML Files", exporter: this.exportToXML },
+      yaml: { extension: "yaml", filter: "YAML Files", exporter: this.exportToYAML },
     };
 
     const config = formatConfig[format];
@@ -450,7 +516,12 @@ class DataExporter {
     }
 
     // Perform export
-    await config.exporter.call(this, data, fileUri.fsPath);
+    if (format === "qlik") {
+      // Pass maxRows for Qlik inline format
+      await config.exporter.call(this, data, fileUri.fsPath, maxRows);
+    } else {
+      await config.exporter.call(this, data, fileUri.fsPath);
+    }
 
     return fileUri.fsPath;
   }

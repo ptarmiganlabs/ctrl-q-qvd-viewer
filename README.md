@@ -14,15 +14,16 @@ A Visual Studio Code extension for viewing Qlik Sense and QlikView QVD files dir
   - Field definitions with types, symbols, and technical details
 - **Data Preview**: View sample data from QVD files in a formatted table with pagination
 - **Export Data**: Export QVD data to multiple formats:
-  - **CSV** - Comma-separated values for universal compatibility
-  - **JSON** - JavaScript Object Notation with pretty formatting
-  - **Excel** - Microsoft Excel (.xlsx) with styled headers
-  - **Parquet** - Apache Parquet for efficient columnar storage
-  - **YAML** - Human-readable structured data format
-  - **Avro** - Compact binary format with schema evolution support
   - **Apache Arrow** - High-performance columnar format for analytics
+  - **Avro** - Compact binary format with schema evolution support
+  - **CSV** - Comma-separated values for universal compatibility
+  - **Excel** - Microsoft Excel (.xlsx) with styled headers
+  - **JSON** - JavaScript Object Notation with pretty formatting
+  - **Parquet** - Apache Parquet for efficient columnar storage
+  - **Qlik Sense Inline Script** - Qlik load script with inline table (with row limit selection)
   - **SQLite** - Portable database file with SQL query support
   - **XML** - Extensible markup language for enterprise systems
+  - **YAML** - Human-readable structured data format
 - **Configurable Display**: Customize the number of rows to load (default: 5,000, range: 100-100,000)
 - **About Panel**: Access information about the Butler family of tools
 - **Read-Only Access**: Safe viewing without modifying original QVD files
@@ -164,22 +165,26 @@ The Ctrl-Q QVD Viewer allows you to export QVD data to various formats for furth
 
 1. Open a QVD file in the viewer
 2. Click the **"📤 Export"** button in the top-right corner
-3. Select your desired format from the dropdown menu:
-   - **Export to CSV** - Universal text format, compatible with Excel and most data tools
-   - **Export to JSON** - Structured format ideal for web applications and APIs
-   - **Export to Excel** - Native Excel format (.xlsx) with formatted headers
-   - **Export to Parquet** - Efficient columnar format for big data and analytics
-   - **Export to YAML** - Human-readable format for configuration and data exchange
-   - **Export to Avro** - Binary format with schema for Hadoop/Kafka ecosystems
+3. Select your desired format from the dropdown menu (sorted alphabetically):
    - **Export to Arrow** - High-performance columnar format for analytical workloads
+   - **Export to Avro** - Binary format with schema for Hadoop/Kafka ecosystems
+   - **Export to CSV** - Universal text format, compatible with Excel and most data tools
+   - **Export to Excel** - Native Excel format (.xlsx) with formatted headers
+   - **Export to JSON** - Structured format ideal for web applications and APIs
+   - **Export to Parquet** - Efficient columnar format for big data and analytics
+   - **Export to Qlik Inline Script** - Qlik Sense load script with inline table
    - **Export to SQLite** - Self-contained database file with SQL support
    - **Export to XML** - Structured markup for enterprise integration
-4. Choose the destination folder and file name in the save dialog
-5. Click "Save" to complete the export
+   - **Export to YAML** - Human-readable format for configuration and data exchange
+4. For **Qlik Inline Script** exports, you'll be prompted to select the number of rows:
+   - Choose from predefined options: 10, 100, 1,000, 10,000, or All rows
+   - Or enter a custom value (validated as a positive integer)
+5. Choose the destination folder and file name in the save dialog
+6. Click "Save" to complete the export
 
 #### Export Details
 
-- **All data is exported**: The export includes all rows from the QVD file, not just the preview data shown in the viewer
+- **All data is exported**: The export includes all rows from the QVD file, not just the preview data shown in the viewer (except for Qlik Inline Script where you can limit rows)
 - **Automatic schema inference**: Data types are automatically detected and preserved in supported formats (Parquet, Excel, Avro, Arrow, SQLite)
 - **Progress notification**: You'll see a confirmation message with an option to open the folder containing the exported file
 

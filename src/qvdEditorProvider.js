@@ -79,6 +79,59 @@ class QvdEditorProvider {
               break;
             }
 
+            let maxRows = 0; // Default: export all rows
+            
+            // For Qlik inline script, ask for row count
+            if (message.format === "qlik") {
+              const totalRows = result.data.length;
+              const rowCountInput = await vscode.window.showQuickPick(
+                [
+                  { label: "10 rows", value: "10" },
+                  { label: "100 rows", value: "100" },
+                  { label: "1,000 rows", value: "1000" },
+                  { label: "10,000 rows", value: "10000" },
+                  { label: `All rows (${totalRows.toLocaleString()})`, value: "0" },
+                  { label: "Custom...", value: "custom" }
+                ],
+                {
+                  placeHolder: "Select number of rows to include in inline table",
+                  title: "Qlik Inline Script Export"
+                }
+              );
+              
+              if (!rowCountInput) {
+                // User cancelled
+                break;
+              }
+              
+              if (rowCountInput.value === "custom") {
+                // Ask for custom value
+                const customInput = await vscode.window.showInputBox({
+                  prompt: "Enter number of rows to export",
+                  placeHolder: "e.g., 500",
+                  validateInput: (value) => {
+                    const num = parseInt(value, 10);
+                    if (isNaN(num) || num < 1) {
+                      return "Please enter a positive integer";
+                    }
+                    if (num > totalRows) {
+                      return `Value cannot exceed total rows (${totalRows})`;
+                    }
+                    return null;
+                  }
+                });
+                
+                if (!customInput) {
+                  // User cancelled
+                  break;
+                }
+                
+                maxRows = parseInt(customInput, 10);
+              } else {
+                maxRows = parseInt(rowCountInput.value, 10);
+              }
+            }
+
             const fileName = path.basename(filePath, path.extname(filePath));
             const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
             const savedPath = await DataExporter.exportData(
@@ -86,7 +139,8 @@ class QvdEditorProvider {
               message.format,
               fileName,
               vscode,
-              workspaceFolder
+              workspaceFolder,
+              maxRows
             );
 
             if (savedPath) {
@@ -647,15 +701,16 @@ class QvdEditorProvider {
                 <div class="export-dropdown">
                     <button class="header-button" id="export-btn">📤 Export ▼</button>
                     <div class="export-dropdown-content" id="export-dropdown">
-                        <div class="export-dropdown-item" data-format="csv">Export to CSV</div>
-                        <div class="export-dropdown-item" data-format="json">Export to JSON</div>
-                        <div class="export-dropdown-item" data-format="excel">Export to Excel</div>
-                        <div class="export-dropdown-item" data-format="parquet">Export to Parquet</div>
-                        <div class="export-dropdown-item" data-format="yaml">Export to YAML</div>
-                        <div class="export-dropdown-item" data-format="avro">Export to Avro</div>
                         <div class="export-dropdown-item" data-format="arrow">Export to Arrow</div>
+                        <div class="export-dropdown-item" data-format="avro">Export to Avro</div>
+                        <div class="export-dropdown-item" data-format="csv">Export to CSV</div>
+                        <div class="export-dropdown-item" data-format="excel">Export to Excel</div>
+                        <div class="export-dropdown-item" data-format="json">Export to JSON</div>
+                        <div class="export-dropdown-item" data-format="parquet">Export to Parquet</div>
+                        <div class="export-dropdown-item" data-format="qlik">Export to Qlik Inline Script</div>
                         <div class="export-dropdown-item" data-format="sqlite">Export to SQLite</div>
                         <div class="export-dropdown-item" data-format="xml">Export to XML</div>
+                        <div class="export-dropdown-item" data-format="yaml">Export to YAML</div>
                     </div>
                 </div>
                 <button class="header-button" id="about-btn">ℹ️ About</button>
