@@ -1,4 +1,5 @@
 const fs = require("fs").promises;
+const path = require("path");
 const ExcelJS = require("exceljs");
 const parquet = require("parquetjs");
 const Papa = require("papaparse");
@@ -153,8 +154,6 @@ class DataExporter {
    * @returns {Promise<string|null>} Path to saved file or null if cancelled
    */
   static async exportData(data, format, suggestedFileName, vscode, workspaceFolder) {
-    const path = require("path");
-    
     const formatConfig = {
       csv: { extension: "csv", filter: "CSV Files", exporter: this.exportToCSV },
       json: { extension: "json", filter: "JSON Files", exporter: this.exportToJSON },
