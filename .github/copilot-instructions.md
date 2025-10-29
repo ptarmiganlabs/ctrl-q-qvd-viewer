@@ -6,7 +6,7 @@ This is a Visual Studio Code extension for viewing Qlik Sense and QlikView QVD f
 
 - QVD file viewing with metadata display
 - Data preview with pagination
-- Export functionality to multiple formats (CSV, Excel, JSON, Parquet, Arrow, Avro, SQLite, XML, YAML, Qlik Inline Script)
+- Export functionality to multiple formats (CSV, Excel, JSON, Parquet, Arrow, Avro, SQLite, PostgreSQL, XML, YAML, Qlik Inline Script)
 - Custom editor for `.qvd` files
 
 ## Technology Stack
@@ -161,6 +161,7 @@ This creates a `.vsix` file that can be installed in VS Code.
 3. Add the new format to the export dropdown in the webview
 4. Update README.md with the new format
 5. Test with various QVD files
+6. Update this Copilot instructions file to include the new format
 
 ### Modifying the UI
 
