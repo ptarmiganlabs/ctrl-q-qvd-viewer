@@ -1,5 +1,6 @@
 const vscode = require("vscode");
 const QvdReader = require("./qvdReader");
+const DataExporter = require("./exporters/index");
 const fs = require("fs");
 const path = require("path");
 
@@ -66,6 +67,106 @@ class QvdEditorProvider {
         case "copyToClipboard":
           // Copy text to clipboard using VS Code API
           await vscode.env.clipboard.writeText(message.text);
+          break;
+        case "exportData":
+          // Export data to selected format
+          try {
+            const result = await this.qvdReader.read(filePath, 0); // Read all data
+            if (result.error) {
+              vscode.window.showErrorMessage(
+                `Failed to read QVD for export: ${result.error}`
+              );
+              break;
+            }
+
+            let maxRows = 0; // Default: export all rows
+
+            // For Qlik inline script and PostgreSQL, ask for row count
+            if (message.format === "qlik" || message.format === "postgres") {
+              const totalRows = result.data.length;
+              const formatLabel =
+                message.format === "qlik" ? "Qlik Inline Script" : "PostgreSQL";
+              const rowCountInput = await vscode.window.showQuickPick(
+                [
+                  { label: "100 rows", value: "100" },
+                  { label: "500 rows", value: "500" },
+                  { label: "1,000 rows", value: "1000" },
+                  { label: "5,000 rows", value: "5000" },
+                  { label: "10,000 rows", value: "10000" },
+                  {
+                    label: `All rows (${totalRows.toLocaleString()})`,
+                    value: "0",
+                  },
+                  { label: "Custom...", value: "custom" },
+                ],
+                {
+                  placeHolder: "Select number of rows to export",
+                  title: `${formatLabel} Export`,
+                }
+              );
+
+              if (!rowCountInput) {
+                // User cancelled
+                break;
+              }
+
+              if (rowCountInput.value === "custom") {
+                // Ask for custom value
+                const customInput = await vscode.window.showInputBox({
+                  prompt: "Enter number of rows to export",
+                  placeHolder: "e.g., 500",
+                  validateInput: (value) => {
+                    const num = parseInt(value, 10);
+                    if (isNaN(num) || num < 1) {
+                      return "Please enter a positive integer";
+                    }
+                    if (num > totalRows) {
+                      return `Value cannot exceed total rows (${totalRows})`;
+                    }
+                    return null;
+                  },
+                });
+
+                if (!customInput) {
+                  // User cancelled
+                  break;
+                }
+
+                maxRows = parseInt(customInput, 10);
+              } else {
+                maxRows = parseInt(rowCountInput.value, 10);
+              }
+            }
+
+            const fileName = path.basename(filePath, path.extname(filePath));
+            const workspaceFolder =
+              vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            const savedPath = await DataExporter.exportData(
+              result.data,
+              message.format,
+              fileName,
+              vscode,
+              workspaceFolder,
+              maxRows
+            );
+
+            if (savedPath) {
+              const action = await vscode.window.showInformationMessage(
+                `Data exported to ${savedPath}`,
+                "Open Folder"
+              );
+
+              if (action === "Open Folder") {
+                const folderPath = path.dirname(savedPath);
+                vscode.commands.executeCommand(
+                  "revealFileInOS",
+                  vscode.Uri.file(folderPath)
+                );
+              }
+            }
+          } catch (error) {
+            vscode.window.showErrorMessage(`Export failed: ${error.message}`);
+          }
           break;
       }
     });
@@ -252,6 +353,31 @@ class QvdEditorProvider {
         });
       });
     }
+
+    // Generate export menu items dynamically
+    const exportFormats = DataExporter.getExportFormats();
+    const stableFormats = exportFormats
+      .filter((f) => !f.beta)
+      .sort((a, b) => a.label.localeCompare(b.label));
+    const betaFormats = exportFormats
+      .filter((f) => f.beta)
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    const exportMenuItems = [
+      ...stableFormats.map(
+        (format) =>
+          `<div class="export-dropdown-item" data-format="${format.name}">${format.label}</div>`
+      ),
+      betaFormats.length > 0
+        ? '<div class="export-dropdown-separator"></div>'
+        : "",
+      ...betaFormats.map(
+        (format) =>
+          `<div class="export-dropdown-item" data-format="${format.name}">${format.label} <span class="beta-badge">BETA</span></div>`
+      ),
+    ]
+      .filter(Boolean)
+      .join("\n                        ");
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -562,6 +688,61 @@ class QvdEditorProvider {
             background-color: var(--vscode-menu-selectionBackground);
             color: var(--vscode-menu-selectionForeground);
         }
+        
+        /* Export dropdown menu */
+        .export-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .export-dropdown-content {
+            display: none;
+            position: absolute;
+            right: 0;
+            background-color: var(--vscode-menu-background);
+            border: 1px solid var(--vscode-menu-border);
+            border-radius: 2px;
+            padding: 4px 0;
+            z-index: 10000;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            min-width: 240px;
+            white-space: nowrap;
+        }
+        
+        .export-dropdown-content.show {
+            display: block;
+        }
+        
+        .export-dropdown-item {
+            padding: 6px 16px;
+            cursor: pointer;
+            color: var(--vscode-menu-foreground);
+            font-size: 0.9em;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .export-dropdown-item:hover {
+            background-color: var(--vscode-menu-selectionBackground);
+            color: var(--vscode-menu-selectionForeground);
+        }
+
+        .export-dropdown-separator {
+            height: 1px;
+            background-color: var(--vscode-menu-border);
+            margin: 4px 0;
+        }
+
+        .beta-badge {
+            font-size: 0.7em;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-left: 8px;
+            background-color: var(--vscode-statusBarItem-warningBackground, #f59e0b);
+            color: var(--vscode-statusBarItem-warningForeground, #000);
+        }
     </style>
 </head>
 <body>
@@ -569,6 +750,12 @@ class QvdEditorProvider {
         <div class="header-container">
             <h1><img src="${logoUri}" alt="Ctrl-Q Logo" class="logo" />Ctrl-Q QVD File Viewer</h1>
             <div class="header-buttons">
+                <div class="export-dropdown">
+                    <button class="header-button" id="export-btn">📤 Export ▼</button>
+                    <div class="export-dropdown-content" id="export-dropdown">
+                        ${exportMenuItems}
+                    </div>
+                </div>
                 <button class="header-button" id="about-btn">ℹ️ About</button>
                 <button class="header-button" id="settings-btn">⚙️ Settings</button>
             </div>
@@ -796,6 +983,33 @@ class QvdEditorProvider {
             const settingsBtn = document.getElementById('settings-btn');
             if (settingsBtn) {
                 settingsBtn.addEventListener('click', openSettings);
+            }
+            
+            // Export button and dropdown
+            const exportBtn = document.getElementById('export-btn');
+            const exportDropdown = document.getElementById('export-dropdown');
+            if (exportBtn && exportDropdown) {
+                exportBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    exportDropdown.classList.toggle('show');
+                });
+                
+                // Close dropdown when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (!e.target.closest('.export-dropdown')) {
+                        exportDropdown.classList.remove('show');
+                    }
+                });
+                
+                // Handle export format selection
+                const exportItems = document.querySelectorAll('.export-dropdown-item');
+                exportItems.forEach(item => {
+                    item.addEventListener('click', function() {
+                        const format = this.getAttribute('data-format');
+                        exportDropdown.classList.remove('show');
+                        exportData(format);
+                    });
+                });
             }
             
             // Load more buttons
@@ -1031,6 +1245,13 @@ class QvdEditorProvider {
         
         function openSettings() {
             vscode.postMessage({ command: 'openSettings' });
+        }
+        
+        function exportData(format) {
+            vscode.postMessage({ 
+                command: 'exportData',
+                format: format
+            });
         }
         
         function loadMoreRows() {
