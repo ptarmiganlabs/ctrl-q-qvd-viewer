@@ -4,6 +4,12 @@ A Visual Studio Code extension for viewing Qlik Sense and QlikView QVD files dir
 
 **Sponsored by [Ptarmigan Labs](https://ptarmiganlabs.com)**
 
+## See It in Action
+
+![QVD Viewer in Action](media/gifs/qvd-viewer-in-action.gif)
+
+*The extension automatically displays file metadata, field information, and data preview with pagination controls.*
+
 ## Features
 
 - **View QVD Files**: Open and view QVD files created by Qlik Sense or QlikView
@@ -128,12 +134,16 @@ The extension displays QVD files in three sections:
 
 #### 1. File Metadata
 
+![Metadata View](media/screenshots/metadata-view.png)
+
 - Creator document name
 - Creation date and time (UTC)
 - Table creator information
 - Total number of records
 
 #### 2. Field Information
+
+![Fields View](media/screenshots/fields-view.png)
 
 Each field shows:
 
@@ -144,11 +154,13 @@ Each field shows:
 
 #### 3. Data Preview
 
+![Data Preview](media/screenshots/data-preview-small.png)
+
 A formatted table with pagination controls showing the loaded rows with all columns from the QVD file.
 
 ### Example Output
 
-When you open a QVD file, you'll see:
+When you open a QVD file, you'll see all three sections displayed in a clean, VS Code-themed interface:
 
 - File metadata at the top
 - Field information with types and statistics

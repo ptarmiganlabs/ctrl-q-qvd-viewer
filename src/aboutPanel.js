@@ -354,6 +354,26 @@ class AboutPanel {
                 </div>
                 
                 <div class="section">
+                    <h2>See It in Action</h2>
+                    <div class="info-box">
+                        <p><strong>The extension in action:</strong></p>
+                        <img src="${this._panel.webview.asWebviewUri(
+                          vscode.Uri.joinPath(
+                            this._context.extensionUri,
+                            "media",
+                            "gifs",
+                            "qvd-viewer-in-action.gif"
+                          )
+                        )}" 
+                             alt="QVD Viewer in Action" 
+                             style="width: 100%; max-width: 800px; border-radius: 6px; margin-top: 15px; border: 1px solid var(--vscode-panel-border);">
+                        <p style="margin-top: 15px; font-style: italic; color: var(--vscode-descriptionForeground);">
+                            Automatically displays file metadata, field information, and data preview with pagination controls.
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="section">
                     <h2>QVD Viewing Features</h2>
                     <ul class="feature-list">
                         <li>View QVD files created by Qlik Sense or QlikView directly in VS Code</li>
