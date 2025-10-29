@@ -1,15 +1,15 @@
 /**
  * QVD file custom editor provider (ESM)
- * 
+ *
  * Provides a custom editor for viewing QVD files with tabbed interface and Tabulator.
  */
 
 // Access vscode API via globalThis (injected by the CommonJS wrapper)
 const vscode = globalThis.vscode;
 
-import { QvdReader } from './qvdReader.mjs';
-import fs from 'fs';
-import path from 'path';
+import { QvdReader } from "./qvdReader.mjs";
+import fs from "fs";
+import path from "path";
 
 /**
  * Provider for QVD file custom editor with tabbed interface and Tabulator
@@ -512,7 +512,7 @@ export class QvdEditorProvider {
         }
         
         .tabulator-row.tabulator-row-even {
-            background-color: var(--vscode-editor-inactiveSelectionBackground);
+            background-color: rgba(127, 127, 127, 0.15);
         }
         
         .tabulator-row:hover {
