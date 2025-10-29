@@ -1,4 +1,5 @@
 const { QvdDataFrame } = require("qvdjs");
+const path = require("path");
 
 /**
  * Reads and parses QVD file metadata and data
@@ -6,6 +7,7 @@ const { QvdDataFrame } = require("qvdjs");
 class QvdReader {
   /**
    * Read QVD file and return metadata and data
+   *
    * @param {string} filePath - Path to the QVD file
    * @param {number} maxRows - Maximum number of rows to read (default: 25, 0 = all rows)
    * @returns {Promise<{metadata: object, data: Array, error: string|null}>}
@@ -13,7 +15,13 @@ class QvdReader {
   async read(filePath, maxRows = 25) {
     try {
       // Load the QVD file using qvdjs
-      const loadOptions = maxRows === 0 ? {} : { maxRows };
+      // Configure allowedDir to the parent directory of the file being opened
+      // This allows qvdjs to read files from anywhere while still maintaining
+      // path traversal protection within that directory
+      const loadOptions = {
+        ...(maxRows === 0 ? {} : { maxRows }),
+        allowedDir: path.dirname(filePath),
+      };
       const df = await QvdDataFrame.fromQvd(filePath, loadOptions);
 
       // Get columns from the DataFrame
@@ -21,7 +29,7 @@ class QvdReader {
 
       // Get file-level metadata
       const fileMetadata = df.fileMetadata || {};
-      
+
       // Get field metadata
       const allFieldMetadata = df.getAllFieldMetadata();
 
@@ -110,6 +118,7 @@ class QvdReader {
 
   /**
    * Read a specific page of data from the QVD file
+   *
    * @param {string} filePath - Path to the QVD file
    * @param {number} page - Page number (0-indexed)
    * @param {number} pageSize - Rows per page
