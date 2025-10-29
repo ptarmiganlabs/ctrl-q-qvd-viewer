@@ -223,17 +223,26 @@ A sample QVD file is provided in `test-data/sample.qvd` for testing the metadata
 2. Use the qvdjs library programmatically
 3. Use other QVD creation tools
 
-### ESM Migration Investigation
+### ESM Migration Status
 
-An investigation has been completed regarding migrating this extension from CommonJS to ES Modules (ESM). Key findings:
+✅ **Migration Complete!** This extension now uses ES Modules (ESM) with a hybrid approach:
 
-- VS Code extensions cannot be fully ESM as of 2025 (entry point must remain CommonJS)
-- A hybrid approach is recommended: CommonJS wrapper + ESM modules
-- Migration is feasible and would provide modern JavaScript benefits
+- **Entry Point**: `src/extension.cjs` (CommonJS wrapper - VS Code requirement)
+- **Business Logic**: ESM modules (`.mjs` files) for all core functionality
+- **Architecture**: 95% of code written in modern ESM, with small CJS wrapper for VS Code compatibility
 
-📄 See detailed reports:
-- [ESM Migration Investigation](./docs/ESM_MIGRATION_INVESTIGATION.md) - Comprehensive analysis
-- [ESM Migration Summary](./docs/ESM_MIGRATION_SUMMARY.md) - Quick reference guide
+**Benefits:**
+- Modern JavaScript module syntax
+- Native ESM execution (no build step)
+- Future-proof for when VS Code adds full ESM support
+- Clean module system
+
+📄 **Documentation:**
+- [ESM Migration Investigation](./docs/ESM_MIGRATION_INVESTIGATION.md) - Original research and analysis
+- [ESM Migration Summary](./docs/ESM_MIGRATION_SUMMARY.md) - Implementation guide
+
+**Technical Details:**
+The CommonJS wrapper (`extension.cjs`) loads the vscode API and passes it to ESM modules via `globalThis`. All business logic in `extension.mjs`, `qvdReader.mjs`, `qvdEditorProvider.mjs`, and `aboutPanel.mjs` runs as native ESM.
 
 ## Known Issues
 
