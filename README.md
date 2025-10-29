@@ -223,6 +223,18 @@ A sample QVD file is provided in `test-data/sample.qvd` for testing the metadata
 2. Use the qvdjs library programmatically
 3. Use other QVD creation tools
 
+### ESM Migration Investigation
+
+An investigation has been completed regarding migrating this extension from CommonJS to ES Modules (ESM). Key findings:
+
+- VS Code extensions cannot be fully ESM as of 2025 (entry point must remain CommonJS)
+- A hybrid approach is recommended: CommonJS wrapper + ESM modules
+- Migration is feasible and would provide modern JavaScript benefits
+
+📄 See detailed reports:
+- [ESM Migration Investigation](./docs/ESM_MIGRATION_INVESTIGATION.md) - Comprehensive analysis
+- [ESM Migration Summary](./docs/ESM_MIGRATION_SUMMARY.md) - Quick reference guide
+
 ## Known Issues
 
 - Large QVD files may take long to load; use the maxPreviewRows setting to limit display
