@@ -15,6 +15,25 @@ const { exportToQlikInline } = require("./qlikInlineExporter");
  */
 class DataExporter {
   /**
+   * Get the list of available export formats with metadata
+   * @returns {Array<Object>} Array of format objects with name, label, and beta status
+   */
+  static getExportFormats() {
+    return [
+      { name: "arrow", label: "Export to Arrow", beta: true },
+      { name: "avro", label: "Export to Avro", beta: true },
+      { name: "csv", label: "Export to CSV", beta: false },
+      { name: "excel", label: "Export to Excel", beta: false },
+      { name: "json", label: "Export to JSON", beta: false },
+      { name: "parquet", label: "Export to Parquet", beta: false },
+      { name: "qlik", label: "Export to Qlik Inline Script", beta: false },
+      { name: "sqlite", label: "Export to SQLite", beta: false },
+      { name: "xml", label: "Export to XML", beta: false },
+      { name: "yaml", label: "Export to YAML", beta: false },
+    ];
+  }
+
+  /**
    * Show save dialog and export data to the selected format
    * @param {Array<Object>} data - Array of row objects
    * @param {string} format - Export format ('csv', 'json', 'excel', 'parquet', 'yaml', 'avro', 'arrow', 'sqlite', 'xml', 'qlik')
@@ -37,51 +56,61 @@ class DataExporter {
         extension: "arrow",
         filter: "Arrow Files",
         exporter: exportToArrow,
+        beta: true,
       },
       avro: {
         extension: "avro",
         filter: "Avro Files",
         exporter: exportToAvro,
+        beta: true,
       },
       csv: {
         extension: "csv",
         filter: "CSV Files",
         exporter: exportToCSV,
+        beta: false,
       },
       excel: {
         extension: "xlsx",
         filter: "Excel Files",
         exporter: exportToExcel,
+        beta: false,
       },
       json: {
         extension: "json",
         filter: "JSON Files",
         exporter: exportToJSON,
+        beta: false,
       },
       parquet: {
         extension: "parquet",
         filter: "Parquet Files",
         exporter: exportToParquet,
+        beta: false,
       },
       qlik: {
         extension: "qvs",
         filter: "Qlik Script Files",
         exporter: exportToQlikInline,
+        beta: false,
       },
       sqlite: {
         extension: "db",
         filter: "SQLite Database",
         exporter: exportToSQLite,
+        beta: false,
       },
       xml: {
         extension: "xml",
         filter: "XML Files",
         exporter: exportToXML,
+        beta: false,
       },
       yaml: {
         extension: "yaml",
         filter: "YAML Files",
         exporter: exportToYAML,
+        beta: false,
       },
     };
 

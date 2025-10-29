@@ -352,6 +352,31 @@ class QvdEditorProvider {
       });
     }
 
+    // Generate export menu items dynamically
+    const exportFormats = DataExporter.getExportFormats();
+    const stableFormats = exportFormats
+      .filter((f) => !f.beta)
+      .sort((a, b) => a.label.localeCompare(b.label));
+    const betaFormats = exportFormats
+      .filter((f) => f.beta)
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    const exportMenuItems = [
+      ...stableFormats.map(
+        (format) =>
+          `<div class="export-dropdown-item" data-format="${format.name}">${format.label}</div>`
+      ),
+      betaFormats.length > 0
+        ? '<div class="export-dropdown-separator"></div>'
+        : "",
+      ...betaFormats.map(
+        (format) =>
+          `<div class="export-dropdown-item" data-format="${format.name}">${format.label} <span class="beta-badge">BETA</span></div>`
+      ),
+    ]
+      .filter(Boolean)
+      .join("\n                        ");
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -678,7 +703,8 @@ class QvdEditorProvider {
             padding: 4px 0;
             z-index: 10000;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-            min-width: 140px;
+            min-width: 240px;
+            white-space: nowrap;
         }
         
         .export-dropdown-content.show {
@@ -690,11 +716,30 @@ class QvdEditorProvider {
             cursor: pointer;
             color: var(--vscode-menu-foreground);
             font-size: 0.9em;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         
         .export-dropdown-item:hover {
             background-color: var(--vscode-menu-selectionBackground);
             color: var(--vscode-menu-selectionForeground);
+        }
+
+        .export-dropdown-separator {
+            height: 1px;
+            background-color: var(--vscode-menu-border);
+            margin: 4px 0;
+        }
+
+        .beta-badge {
+            font-size: 0.7em;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-left: 8px;
+            background-color: var(--vscode-statusBarItem-warningBackground, #f59e0b);
+            color: var(--vscode-statusBarItem-warningForeground, #000);
         }
     </style>
 </head>
@@ -706,16 +751,7 @@ class QvdEditorProvider {
                 <div class="export-dropdown">
                     <button class="header-button" id="export-btn">📤 Export ▼</button>
                     <div class="export-dropdown-content" id="export-dropdown">
-                        <div class="export-dropdown-item" data-format="arrow">Export to Arrow</div>
-                        <div class="export-dropdown-item" data-format="avro">Export to Avro</div>
-                        <div class="export-dropdown-item" data-format="csv">Export to CSV</div>
-                        <div class="export-dropdown-item" data-format="excel">Export to Excel</div>
-                        <div class="export-dropdown-item" data-format="json">Export to JSON</div>
-                        <div class="export-dropdown-item" data-format="parquet">Export to Parquet</div>
-                        <div class="export-dropdown-item" data-format="qlik">Export to Qlik Inline Script</div>
-                        <div class="export-dropdown-item" data-format="sqlite">Export to SQLite</div>
-                        <div class="export-dropdown-item" data-format="xml">Export to XML</div>
-                        <div class="export-dropdown-item" data-format="yaml">Export to YAML</div>
+                        ${exportMenuItems}
                     </div>
                 </div>
                 <button class="header-button" id="about-btn">ℹ️ About</button>
