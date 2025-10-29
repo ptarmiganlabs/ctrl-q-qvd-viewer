@@ -115,7 +115,7 @@
 
 - Still manageable memory footprint
 - Can be adjusted in settings if needed
-- When qvd4js adds streaming, this becomes the page cache size
+- When qvdjs adds streaming, this becomes the page cache size
 
 ### Performance
 
@@ -210,7 +210,7 @@ New installations will automatically use 5000 as the default.
 
 ## Future Enhancements
 
-When qvd4js adds streaming support:
+When qvdjs adds streaming support:
 
 - `maxPreviewRows` becomes the "page cache size"
 - Extension only loads pages as needed

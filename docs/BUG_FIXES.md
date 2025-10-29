@@ -138,7 +138,7 @@ To verify the fixes:
 
 ## Future Considerations
 
-When qvd4js adds streaming support:
+When qvdjs adds streaming support:
 
 - The `totalRowsInFile` property is already in place
 - Can easily adapt to show server-side pagination status

@@ -27,7 +27,7 @@ This extension now includes **lightweight client-side pagination** for viewing Q
 ### Current Flow (Client-Side Pagination)
 
 ```
-1. Extension loads data via qvd4js (currently loads entire file)
+1. Extension loads data via qvdjs (currently loads entire file)
 2. Data is sent to webview as JSON
 3. Pagination class in webview handles:
    - Slicing data into pages
@@ -39,7 +39,7 @@ This extension now includes **lightweight client-side pagination** for viewing Q
 
 ```
 ┌─────────────────┐
-│  qvdReader.js   │  ← Loads QVD data via qvd4js
+│  qvdReader.js   │  ← Loads QVD data via qvdjs
 └────────┬────────┘
          │
          ↓
@@ -60,12 +60,12 @@ This extension now includes **lightweight client-side pagination** for viewing Q
 
 ## Future: Server-Side Pagination
 
-When `qvd4js` adds streaming/lazy loading support, the extension is architected to easily switch to server-side pagination:
+When `qvdjs` adds streaming/lazy loading support, the extension is architected to easily switch to server-side pagination:
 
 ### Future Flow (Server-Side Pagination)
 
 ```
-1. Extension loads only requested page via qvd4js
+1. Extension loads only requested page via qvdjs
 2. Webview requests new page via postMessage
 3. Extension responds with page data
 4. Webview updates display
@@ -175,13 +175,13 @@ To test the pagination:
 
 ### Current Limitations
 
-- Still loads entire QVD file into memory (qvd4js limitation)
+- Still loads entire QVD file into memory (qvdjs limitation)
 - For very large files (>100K rows), initial load may be slow
 - Memory usage proportional to file size
 
 ### Future Improvements
 
-- When qvd4js supports streaming:
+- When qvdjs supports streaming:
   - Only load requested pages
   - Dramatically reduce memory usage
   - Faster initial load times

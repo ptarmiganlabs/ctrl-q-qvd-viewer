@@ -65,8 +65,7 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 - Sponsored by Ptarmigan Labs
 
 ### Technical Details
-- Uses qvd4js library for QVD file parsing
-- XML metadata extraction using xml2js
+- Uses qvdjs library for QVD file parsing
 - Custom editor provider using VS Code webview API
 - Theme-aware styling with VS Code CSS variables
 - Error handling for invalid or corrupted files

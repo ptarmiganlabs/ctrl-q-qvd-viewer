@@ -220,7 +220,7 @@ To change this setting:
 A sample QVD file is provided in `test-data/sample.qvd` for testing the metadata display. To create your own test QVD files, you can:
 
 1. Export data as QVD from Qlik Sense or QlikView
-2. Use the qvd4js library programmatically
+2. Use the qvdjs library programmatically
 3. Use other QVD creation tools
 
 ## Known Issues
