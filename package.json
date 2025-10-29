@@ -67,6 +67,25 @@
           "description": "Maximum number of rows to load from the QVD file for preview and pagination",
           "minimum": 100,
           "maximum": 100000
+        },
+        "ctrl-q-qvd-viewer.qlikInlineDelimiter": {
+          "type": "string",
+          "default": "tab",
+          "enum": [
+            "tab",
+            "pipe",
+            "comma",
+            "semicolon",
+            "auto-detect"
+          ],
+          "enumDescriptions": [
+            "Tab character (\\t) - Good general purpose delimiter",
+            "Pipe character (|) - Recommended when data contains commas",
+            "Comma (,) - Standard CSV-style, but may conflict with data",
+            "Semicolon (;) - Alternative to comma",
+            "Auto-detect - Automatically choose the best delimiter based on data content"
+          ],
+          "description": "Default delimiter for Qlik Sense inline load script exports. You can override this during each export."
         }
       }
     }

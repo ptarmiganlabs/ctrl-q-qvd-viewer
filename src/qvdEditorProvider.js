@@ -1,6 +1,6 @@
 const vscode = require("vscode");
 const QvdReader = require("./qvdReader");
-const DataExporter = require("./exporters");
+const DataExporter = require("./exporters/index");
 const fs = require("fs");
 const path = require("path");
 
@@ -80,7 +80,7 @@ class QvdEditorProvider {
             }
 
             let maxRows = 0; // Default: export all rows
-            
+
             // For Qlik inline script, ask for row count
             if (message.format === "qlik") {
               const totalRows = result.data.length;
@@ -90,20 +90,24 @@ class QvdEditorProvider {
                   { label: "100 rows", value: "100" },
                   { label: "1,000 rows", value: "1000" },
                   { label: "10,000 rows", value: "10000" },
-                  { label: `All rows (${totalRows.toLocaleString()})`, value: "0" },
-                  { label: "Custom...", value: "custom" }
+                  {
+                    label: `All rows (${totalRows.toLocaleString()})`,
+                    value: "0",
+                  },
+                  { label: "Custom...", value: "custom" },
                 ],
                 {
-                  placeHolder: "Select number of rows to include in inline table",
-                  title: "Qlik Inline Script Export"
+                  placeHolder:
+                    "Select number of rows to include in inline table",
+                  title: "Qlik Inline Script Export",
                 }
               );
-              
+
               if (!rowCountInput) {
                 // User cancelled
                 break;
               }
-              
+
               if (rowCountInput.value === "custom") {
                 // Ask for custom value
                 const customInput = await vscode.window.showInputBox({
@@ -118,14 +122,14 @@ class QvdEditorProvider {
                       return `Value cannot exceed total rows (${totalRows})`;
                     }
                     return null;
-                  }
+                  },
                 });
-                
+
                 if (!customInput) {
                   // User cancelled
                   break;
                 }
-                
+
                 maxRows = parseInt(customInput, 10);
               } else {
                 maxRows = parseInt(rowCountInput.value, 10);
@@ -133,7 +137,8 @@ class QvdEditorProvider {
             }
 
             const fileName = path.basename(filePath, path.extname(filePath));
-            const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            const workspaceFolder =
+              vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
             const savedPath = await DataExporter.exportData(
               result.data,
               message.format,
