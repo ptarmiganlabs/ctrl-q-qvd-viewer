@@ -53,6 +53,7 @@ Once you've set up the `VSCE_PAT` secret:
 4. The extension will automatically publish when a release is created
 
 **How it works:**
+
 - Release Please creates a release PR when you push conventional commits
 - When you merge the PR, it creates a GitHub release
 - The CI workflow automatically packages and publishes the extension
@@ -63,22 +64,27 @@ Once you've set up the `VSCE_PAT` secret:
 If you prefer manual control:
 
 1. Install vsce globally:
+
    ```bash
    npm install -g @vscode/vsce
    ```
 
 2. Login to the marketplace:
+
    ```bash
    vsce login ptarmiganlabs
    ```
+
    (Enter your PAT when prompted)
 
 3. Publish the extension:
+
    ```bash
    vsce publish
    ```
 
    Or publish a specific version:
+
    ```bash
    vsce publish minor  # Bumps minor version
    vsce publish 1.0.0  # Publishes specific version
@@ -154,11 +160,13 @@ Follow [VS Code Publishing Guidelines](https://code.visualstudio.com/api/referen
 ### Local Testing
 
 1. Package the extension:
+
    ```bash
    vsce package
    ```
 
 2. Install locally:
+
    ```bash
    code --install-extension ctrl-q-qvd-viewer-X.Y.Z.vsix
    ```
@@ -193,15 +201,18 @@ Simply push new commits with conventional commit messages. Release Please handle
 ### Common Issues
 
 **Error: "Failed to publish: Permission denied"**
+
 - Verify your PAT has "Marketplace: Manage" scope
 - Check that the PAT hasn't expired
 - Ensure the publisher ID matches your account
 
 **Error: "Extension already published with this version"**
+
 - Bump the version in `package.json`
 - Or use `vsce publish patch/minor/major`
 
 **Error: "Publisher not found"**
+
 - Create the publisher account first
 - Verify the publisher ID in `package.json` matches
 

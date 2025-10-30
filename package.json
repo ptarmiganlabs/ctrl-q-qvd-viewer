@@ -17,8 +17,17 @@
     "qlikview",
     "ctrl-q",
     "butler",
+    "vscode",
+    "extension",
     "data viewer",
-    "file viewer"
+    "file viewer",
+    "parquet",
+    "avro",
+    "arrow",
+    "excel",
+    "csv",
+    "json",
+    "xml"
   ],
   "engines": {
     "vscode": "^1.105.0"
