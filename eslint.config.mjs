@@ -2,15 +2,11 @@ import globals from "globals";
 
 export default [
   {
+    ignores: ["node_modules/**", "out/**", "dist/**", ".vscode-test/**"],
+  },
+  {
     files: ["**/*.js"],
-    ignores: [
-      "node_modules/**",
-      "out/**",
-      ".vscode-test/**",
-      "**/*.min.js",
-      "**/*bundle*.js",
-      "**/*.qvd",
-    ],
+    ignores: ["**/*.min.js", "**/*bundle*.js", "**/*.qvd"],
     languageOptions: {
       globals: {
         ...globals.commonjs,
