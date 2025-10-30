@@ -105,7 +105,7 @@
     "watch": "node esbuild.js --watch",
     "package": "node esbuild.js --production",
     "compile-tests": "tsc -p . --outDir out",
-    "pretest": "npm run compile-tests && npm run lint",
+    "pretest": "npm run lint",
     "test": "vscode-test",
     "lint": "eslint ."
   },
