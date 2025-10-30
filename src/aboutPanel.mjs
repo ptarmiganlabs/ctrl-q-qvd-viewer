@@ -1,7 +1,7 @@
-import * as vscode from 'vscode';
-import { readFile } from 'fs/promises';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import * as vscode from "vscode";
+import { readFile } from "fs/promises";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -89,31 +89,32 @@ class AboutPanel {
 
   /**
    * Update the webview content
-   * @returns {void}
+   * @returns {Promise<void>}
    */
-  _update() {
+  async _update() {
     this._panel.title = "About Ctrl-Q QVD Viewer";
-    this._panel.webview.html = this._getHtmlContent();
+    this._panel.webview.html = await this._getHtmlContent();
   }
 
   /**
    * Get the HTML content for the About page
-   * @returns {string} HTML content
+   * @returns {Promise<string>} HTML content
    */
-  _getHtmlContent() {
+  async _getHtmlContent() {
     // Get the extension version from package.json
     // In ESM, we need to read package.json dynamically
     const packageJsonPath = join(__dirname, "..", "package.json");
     let version = "unknown";
     let displayName = "Ctrl-Q QVD Viewer";
-    let description = "View Qlik Sense and QlikView QVD files from within VS Code";
+    let description =
+      "View Qlik Sense and QlikView QVD files from within VS Code";
     let repository = "https://github.com/ptarmiganlabs/qvd4vscode";
     let license = "MIT";
 
     try {
-      // Synchronous read for simplicity in this context
-      const fs = require("fs");
-      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+      // Use async readFile from fs/promises
+      const packageJsonContent = await readFile(packageJsonPath, "utf8");
+      const packageJson = JSON.parse(packageJsonContent);
       version = packageJson.version;
       displayName = packageJson.displayName;
       description = packageJson.description;

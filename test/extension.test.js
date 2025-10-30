@@ -1,10 +1,17 @@
 const assert = require("assert");
 const vscode = require("vscode");
 const path = require("path");
-const QvdReader = require("../src/qvdReader");
+
+// QvdReader is async because it's a CJS wrapper around ESM
+let QvdReader;
 
 suite("Extension Test Suite", () => {
   vscode.window.showInformationMessage("Start all tests.");
+
+  // Load QvdReader before running tests
+  suiteSetup(async () => {
+    QvdReader = await require("../src/qvdReader.cjs");
+  });
 
   test("QVD Reader - Metadata Extraction", async () => {
     const reader = new QvdReader();
