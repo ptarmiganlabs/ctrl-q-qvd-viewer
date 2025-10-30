@@ -19,3 +19,8 @@ package-lock.json
 **/*.vsix
 **/*.tsbuildinfo
 .git
+node_modules/**
+src/**
+out/**
+esbuild.js
+tsconfig.json
