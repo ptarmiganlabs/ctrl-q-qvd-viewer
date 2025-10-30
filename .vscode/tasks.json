@@ -4,7 +4,7 @@
     {
       "type": "npm",
       "script": "watch",
-      "problemMatcher": [],
+      "problemMatcher": "$esbuild-watch",
       "isBackground": true,
       "label": "npm: watch",
       "group": {
@@ -15,21 +15,21 @@
     {
       "type": "npm",
       "script": "compile",
-      "problemMatcher": [],
+      "problemMatcher": "$esbuild",
       "label": "npm: compile",
       "group": "build"
     },
     {
       "type": "npm",
       "script": "compile-tests",
-      "problemMatcher": [],
+      "problemMatcher": "$esbuild",
       "label": "npm: compile-tests",
       "group": "build"
     },
     {
       "type": "npm",
       "script": "package",
-      "problemMatcher": [],
+      "problemMatcher": "$esbuild",
       "label": "npm: package",
       "group": "build"
     }
