@@ -32,6 +32,9 @@ jobs:
 
       - name: Run tests
         run: xvfb-run -a npm test
+        env:
+          DISPLAY: ':99.0'
+          DBUS_SESSION_BUS_ADDRESS: '/dev/null'
 
       - name: Check package can be built
         run: |
