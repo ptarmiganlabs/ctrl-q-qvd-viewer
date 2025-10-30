@@ -4,6 +4,24 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [0.0.5](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v0.0.4...v0.0.5) (2025-10-30)
+
+
+### Features
+
+* **tests:** Add test QVD and CSV files, Lego dataset and Stockholm historical temperatures ([d1e16ac](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/d1e16ac65dfb32fab0ec7926b9b4399bee2f6a95))
+
+
+### Bug Fixes
+
+* enhance error display for corrupted QVD files with detailed messages ([4e5d1cc](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/4e5d1ccc32053bcc412e8d54f83d47383cfdfda5))
+* Failing tests due to test data files were moved ([6c4e33a](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/6c4e33a810d541ba16b788311bfe4de5be9c5612))
+
+
+### Miscellaneous
+
+* add problem matchers for npm tasks in VSCode configuration ([0bf5d1c](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/0bf5d1c0c3a38df9b649f11afbb0e329596a77d1))
+
 ## [0.0.4](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v0.0.3...v0.0.4) (2025-10-30)
 
 
