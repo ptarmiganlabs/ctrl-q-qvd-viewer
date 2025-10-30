@@ -380,16 +380,88 @@ class AboutPanel {
                 </div>
                 
                 <div class="section">
-                    <h2>QVD Viewing Features</h2>
+                    <h2>Key Features at a Glance</h2>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 20px 0;">
+                        <div class="info-box">
+                            <h3 style="margin: 0 0 10px 0; font-size: 1.1em;">📊 Rich Data Viewing</h3>
+                            <p style="margin: 5px 0;">View QVD metadata, field details, and paginated data previews with configurable row limits.</p>
+                        </div>
+                        <div class="info-box">
+                            <h3 style="margin: 0 0 10px 0; font-size: 1.1em;">📤 11 Export Formats</h3>
+                            <p style="margin: 5px 0;">Export to CSV, Excel, JSON, Parquet, Arrow, Avro, SQLite, PostgreSQL, XML, YAML, and Qlik scripts.</p>
+                        </div>
+                        <div class="info-box">
+                            <h3 style="margin: 0 0 10px 0; font-size: 1.1em;">⚡ High Performance</h3>
+                            <p style="margin: 5px 0;">Efficient pagination and configurable preview limits handle large datasets smoothly.</p>
+                        </div>
+                        <div class="info-box">
+                            <h3 style="margin: 0 0 10px 0; font-size: 1.1em;">🔒 Safe & Secure</h3>
+                            <p style="margin: 5px 0;">Read-only access ensures your original QVD files are never modified.</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h2>Core QVD Viewing Features</h2>
                     <ul class="feature-list">
                         <li>View QVD files created by Qlik Sense or QlikView directly in VS Code</li>
-                        <li>Display full metadata including file creation info and field definitions</li>
-                        <li>Preview data with configurable row limits</li>
-                        <li>View field types, symbols, and technical details</li>
-                        <li>Load all data for complete file viewing when needed</li>
-                        <li>Safe read-only access to QVD files</li>
-                        <li>Efficient pagination for large datasets</li>
+                        <li>Display comprehensive metadata including file creation info, table creator, and record counts</li>
+                        <li>View detailed field information with data types, symbols, and technical details</li>
+                        <li>Data preview with configurable row limits (100-100,000 rows, default: 5,000)</li>
+                        <li>Efficient pagination controls for navigating through large datasets</li>
+                        <li>Safe read-only access to QVD files - no risk of modifying original data</li>
                     </ul>
+                </div>
+                
+                <div class="section">
+                    <h2>Data Export Features</h2>
+                    <p style="color: var(--vscode-descriptionForeground); margin-bottom: 15px;">Export QVD data to multiple formats for analysis and integration with other tools:</p>
+                    
+                    <h3 style="font-size: 1.1em; margin: 20px 0 10px 0; color: var(--vscode-foreground);">Production-Ready Formats</h3>
+                    <ul class="feature-list">
+                        <li><strong>CSV</strong> - Universal text format compatible with Excel and most data tools</li>
+                        <li><strong>Excel (XLSX)</strong> - Native Excel format with styled headers and proper data types</li>
+                        <li><strong>JSON</strong> - Structured format with pretty formatting, ideal for web applications and APIs</li>
+                        <li><strong>Parquet</strong> - Efficient columnar format optimized for big data analytics</li>
+                        <li><strong>Qlik Inline Script</strong> - Generate Qlik Sense/QlikView load scripts with inline tables (customizable row limits)</li>
+                        <li><strong>XML</strong> - Structured markup format for enterprise integration</li>
+                        <li><strong>YAML</strong> - Human-readable format perfect for configuration and data exchange</li>
+                    </ul>
+                    
+                    <h3 style="font-size: 1.1em; margin: 20px 0 10px 0; color: var(--vscode-foreground);">Beta Export Formats</h3>
+                    <ul class="feature-list">
+                        <li><strong>Apache Arrow</strong> - High-performance columnar format for analytical workloads and in-memory processing</li>
+                        <li><strong>Avro</strong> - Compact binary format with schema evolution support for Hadoop/Kafka ecosystems</li>
+                        <li><strong>PostgreSQL</strong> - Direct export to PostgreSQL databases (beta destination)</li>
+                        <li><strong>SQLite</strong> - Portable database files with full SQL query support</li>
+                    </ul>
+                    
+                    <div class="info-box" style="margin-top: 15px;">
+                        <p><strong>Export Notes:</strong></p>
+                        <ul style="margin-left: 20px; line-height: 1.6;">
+                            <li>All exports include the complete dataset from the QVD file</li>
+                            <li>Data types are automatically detected and preserved in supported formats</li>
+                            <li>Qlik Inline Script export allows you to select the number of rows (10, 100, 1K, 10K, All, or custom)</li>
+                            <li>Beta formats are fully functional but may receive additional enhancements</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h2>Configuration & Settings</h2>
+                    <div class="info-box">
+                        <p><strong>Customize your viewing experience:</strong></p>
+                        <ul style="margin-left: 20px; line-height: 1.8;">
+                            <li><strong>Max Preview Rows</strong> - Control how many rows to load for preview and pagination
+                                <ul style="margin-left: 20px; margin-top: 5px;">
+                                    <li>Default: 5,000 rows</li>
+                                    <li>Range: 100 - 100,000 rows</li>
+                                    <li>Access via: Settings → Search "Ctrl-Q QVD Viewer"</li>
+                                </ul>
+                            </li>
+                        </ul>
+                        <p style="margin-top: 10px;"><em>Tip: Lower values improve performance for very large files, while higher values provide more data visibility.</em></p>
+                    </div>
                 </div>
                 
                 <div class="section">
@@ -408,7 +480,12 @@ class AboutPanel {
                         <li>Or use Command Palette (Ctrl+Shift+P / Cmd+Shift+P) → "QVD: Open QVD File"</li>
                         <li>View metadata, field information, and data preview</li>
                         <li>Use pagination controls to navigate through larger datasets</li>
+                        <li>Click the 📤 Export button to save data in various formats</li>
                     </ol>
+                    
+                    <div class="info-box" style="margin-top: 15px;">
+                        <p><strong>💡 Pro Tip:</strong> Adjust the preview row limit in Settings (search for "Ctrl-Q QVD") to balance between performance and data visibility. Default is 5,000 rows.</p>
+                    </div>
                 </div>
                 
                 <div class="section">
