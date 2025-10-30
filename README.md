@@ -12,6 +12,7 @@ A Visual Studio Code extension for viewing Qlik Sense and QlikView QVD files dir
   - Table creator details
   - Total number of records
   - Field definitions with types, symbols, and technical details
+  - Lineage information (if available in the QVD file)
 - **Data Preview**: View sample data from QVD files in a formatted table with pagination
 - **Export Data**: Export QVD data to multiple formats:
   - **Apache Arrow** - High-performance columnar format for analytics
