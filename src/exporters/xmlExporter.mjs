@@ -1,5 +1,5 @@
-const fs = require("fs").promises;
-const xmljs = require("xml-js");
+import { promises as fs } from 'fs';
+import xmljs from 'xml-js';
 
 /**
  * Export data to XML format
@@ -7,7 +7,7 @@ const xmljs = require("xml-js");
  * @param {string} filePath - Destination file path
  * @returns {Promise<void>}
  */
-async function exportToXML(data, filePath) {
+export async function exportToXML(data, filePath) {
   try {
     const xmlObj = {
       _declaration: {
@@ -54,5 +54,3 @@ async function exportToXML(data, filePath) {
     throw new Error(`XML export failed: ${error.message}`);
   }
 }
-
-module.exports = { exportToXML };

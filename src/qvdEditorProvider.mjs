@@ -1,8 +1,8 @@
-const vscode = require("vscode");
-const QvdReader = require("./qvdReader");
-const DataExporter = require("./exporters/index");
-const fs = require("fs");
-const path = require("path");
+import * as vscode from "vscode";
+import QvdReader from "./qvdReader.mjs";
+import DataExporter from "./exporters/index.mjs";
+import { readFileSync } from "fs";
+import { basename, dirname, extname, join } from "path";
 
 /**
  * Provider for QVD file custom editor with tabbed interface and Tabulator
@@ -138,7 +138,7 @@ class QvdEditorProvider {
               }
             }
 
-            const fileName = path.basename(filePath, path.extname(filePath));
+            const fileName = basename(filePath, extname(filePath));
             const workspaceFolder =
               vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
             const savedPath = await DataExporter.exportData(
@@ -157,7 +157,7 @@ class QvdEditorProvider {
               );
 
               if (action === "Open Folder") {
-                const folderPath = path.dirname(savedPath);
+                const folderPath = dirname(savedPath);
                 vscode.commands.executeCommand(
                   "revealFileInOS",
                   vscode.Uri.file(folderPath)
@@ -242,26 +242,26 @@ class QvdEditorProvider {
    * Get Tabulator library inlined as string
    */
   getTabulatorJs() {
-    const tabulatorPath = path.join(
+    const tabulatorPath = join(
       this.context.extensionPath,
       "media",
       "tabulator",
       "tabulator.min.js"
     );
-    return fs.readFileSync(tabulatorPath, "utf8");
+    return readFileSync(tabulatorPath, "utf8");
   }
 
   /**
    * Get Tabulator CSS inlined as string
    */
   getTabulatorCss() {
-    const tabulatorCssPath = path.join(
+    const tabulatorCssPath = join(
       this.context.extensionPath,
       "media",
       "tabulator",
       "tabulator.min.css"
     );
-    return fs.readFileSync(tabulatorCssPath, "utf8");
+    return readFileSync(tabulatorCssPath, "utf8");
   }
 
   /**
@@ -605,18 +605,19 @@ class QvdEditorProvider {
         }
         
         .tabulator .tabulator-header {
-            background-color: var(--vscode-editor-selectionBackground);
-            border-bottom: 2px solid var(--vscode-panel-border);
+            background-color: var(--vscode-list-activeSelectionBackground);
+            border-bottom: 2px solid var(--vscode-contrastBorder, var(--vscode-panel-border));
         }
         
         .tabulator .tabulator-header .tabulator-col {
-            background-color: var(--vscode-editor-selectionBackground);
-            border-right: 1px solid var(--vscode-panel-border);
+            background-color: var(--vscode-list-activeSelectionBackground);
+            border-right: 1px solid var(--vscode-contrastBorder, var(--vscode-panel-border));
         }
         
         .tabulator .tabulator-header .tabulator-col .tabulator-col-content {
             padding: 8px;
-            color: var(--vscode-foreground);
+            color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
+            font-weight: 600;
         }
         
         .tabulator .tabulator-tableholder .tabulator-table {
@@ -625,45 +626,105 @@ class QvdEditorProvider {
         }
         
         .tabulator-row {
-            background-color: var(--vscode-editor-background);
-            border-bottom: 1px solid var(--vscode-panel-border);
+            background-color: var(--vscode-list-inactiveSelectionBackground, rgba(128, 128, 128, 0.15));
+            border-bottom: 1px solid var(--vscode-contrastBorder, var(--vscode-panel-border));
+            color: var(--vscode-foreground);
         }
         
         .tabulator-row.tabulator-row-even {
-            background-color: var(--vscode-editor-inactiveSelectionBackground);
+            background-color: var(--vscode-list-inactiveSelectionBackground, rgba(128, 128, 128, 0.25));
         }
         
         .tabulator-row:hover {
             background-color: var(--vscode-list-hoverBackground) !important;
+            color: var(--vscode-list-hoverForeground, var(--vscode-foreground)) !important;
         }
         
         .tabulator-cell {
-            border-right: 1px solid var(--vscode-panel-border);
+            border-right: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
             padding: 6px 8px;
+            color: var(--vscode-foreground);
         }
         
         .tabulator-footer {
-            background-color: var(--vscode-editor-inactiveSelectionBackground);
-            border-top: 2px solid var(--vscode-panel-border);
-            color: var(--vscode-foreground);
-            padding: 8px;
+            background-color: var(--vscode-sideBar-background, var(--vscode-editor-background)) !important;
+            border-top: 2px solid var(--vscode-contrastBorder, var(--vscode-panel-border)) !important;
+            color: var(--vscode-foreground) !important;
+            padding: 10px 8px !important;
+            font-weight: 600 !important;
         }
         
         .tabulator-footer .tabulator-page {
-            background-color: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
-            border: 1px solid var(--vscode-button-border);
-            margin: 0 2px;
-            border-radius: 2px;
-            padding: 4px 8px;
+            background-color: var(--vscode-button-background) !important;
+            color: var(--vscode-button-foreground) !important;
+            border: 1px solid var(--vscode-contrastBorder, var(--vscode-button-border)) !important;
+            margin: 0 3px;
+            border-radius: 3px;
+            padding: 6px 10px;
+            font-weight: 600 !important;
+            min-width: 32px;
+            text-align: center;
+        }
+        
+        .tabulator-footer .tabulator-page:not(.disabled) {
+            cursor: pointer;
         }
         
         .tabulator-footer .tabulator-page:not(.disabled):hover {
-            background-color: var(--vscode-button-hoverBackground);
+            background-color: var(--vscode-button-hoverBackground) !important;
+            border-color: var(--vscode-focusBorder, var(--vscode-button-border)) !important;
         }
         
         .tabulator-footer .tabulator-page.active {
-            background-color: var(--vscode-button-hoverBackground);
+            background-color: var(--vscode-button-hoverBackground) !important;
+            border-color: var(--vscode-focusBorder) !important;
+            font-weight: 700 !important;
+        }
+        
+        .tabulator-footer .tabulator-page.disabled {
+            opacity: 0.4 !important;
+            cursor: not-allowed;
+        }
+        
+        /* Override Tabulator's hardcoded #555 color for paginator */
+        .tabulator .tabulator-footer .tabulator-paginator {
+            color: var(--vscode-foreground) !important;
+        }
+        
+        /* Improve pagination text visibility */
+        .tabulator .tabulator-footer .tabulator-page-counter {
+            color: var(--vscode-foreground) !important;
+            font-weight: 600 !important;
+            opacity: 1 !important;
+        }
+        
+        .tabulator .tabulator-footer .tabulator-page-size {
+            color: var(--vscode-foreground) !important;
+            font-weight: 600 !important;
+        }
+        
+        .tabulator .tabulator-footer .tabulator-page-size label {
+            color: var(--vscode-foreground) !important;
+            font-weight: 600 !important;
+            margin-right: 6px;
+        }
+        
+        .tabulator .tabulator-footer .tabulator-page-size select {
+            background-color: var(--vscode-dropdown-background) !important;
+            color: var(--vscode-dropdown-foreground) !important;
+            border: 1px solid var(--vscode-dropdown-border, var(--vscode-contrastBorder)) !important;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-weight: 600;
+        }
+        
+        .tabulator-footer .tabulator-pages {
+            margin: 0 10px;
+        }
+        
+        /* Force all footer text elements to be visible */
+        .tabulator-footer * {
+            color: var(--vscode-foreground) !important;
         }
         
         /* Context menu */
@@ -1325,4 +1386,4 @@ class QvdEditorProvider {
   }
 }
 
-module.exports = QvdEditorProvider;
+export default QvdEditorProvider;

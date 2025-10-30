@@ -1,6 +1,10 @@
-const initSqlJs = require("sql.js");
-const fs = require("fs");
-const path = require("path");
+import initSqlJs from 'sql.js';
+import { existsSync, unlinkSync, writeFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /**
  * Export data to SQLite database format
@@ -8,13 +12,13 @@ const path = require("path");
  * @param {string} filePath - Destination file path
  * @returns {Promise<void>}
  */
-async function exportToSQLite(data, filePath) {
+export async function exportToSQLite(data, filePath) {
   try {
     // Initialize SQL.js with WASM file
     // In Node.js, we need to point to the wasm file in node_modules
     const SQL = await initSqlJs({
       locateFile: (file) => {
-        return path.join(__dirname, "../../node_modules/sql.js/dist", file);
+        return join(__dirname, "../../node_modules/sql.js/dist", file);
       },
     });
 
@@ -25,7 +29,7 @@ async function exportToSQLite(data, filePath) {
       // Export empty database
       const binaryArray = db.export();
       const buffer = Buffer.from(binaryArray);
-      fs.writeFileSync(filePath, buffer);
+      writeFileSync(filePath, buffer);
       db.close();
       return;
     }
@@ -126,15 +130,15 @@ async function exportToSQLite(data, filePath) {
     // Export the database to a binary array and write to file
     const binaryArray = db.export();
     const buffer = Buffer.from(binaryArray);
-    fs.writeFileSync(filePath, buffer);
+    writeFileSync(filePath, buffer);
 
     // Close the database
     db.close();
   } catch (error) {
     // Clean up the partially created file on error
     try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      if (existsSync(filePath)) {
+        unlinkSync(filePath);
       }
     } catch {
       // Ignore cleanup errors, throw original error
@@ -143,5 +147,3 @@ async function exportToSQLite(data, filePath) {
     throw new Error(`SQLite export failed: ${error.message}`);
   }
 }
-
-module.exports = { exportToSQLite };

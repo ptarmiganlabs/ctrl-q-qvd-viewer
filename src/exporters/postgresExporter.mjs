@@ -1,4 +1,4 @@
-const fs = require("fs");
+import { existsSync, unlinkSync, writeFileSync } from 'fs';
 
 /**
  * Export data to PostgreSQL SQL format
@@ -11,7 +11,7 @@ const fs = require("fs");
  * @param {boolean} options.dropTable - Whether to include DROP TABLE IF EXISTS
  * @returns {Promise<void>}
  */
-async function exportToPostgres(data, filePath, maxRows, options) {
+export async function exportToPostgres(data, filePath, maxRows, options) {
   try {
     const {
       createTable = true,
@@ -25,7 +25,7 @@ async function exportToPostgres(data, filePath, maxRows, options) {
     if (exportData.length === 0) {
       // Create empty SQL file with comment
       const content = `-- Empty dataset\n-- No data to export\n`;
-      fs.writeFileSync(filePath, content, "utf8");
+      writeFileSync(filePath, content, "utf8");
       return;
     }
 
@@ -194,12 +194,12 @@ async function exportToPostgres(data, filePath, maxRows, options) {
     sqlContent.push(`-- End of script`);
 
     // Write to file
-    fs.writeFileSync(filePath, sqlContent.join("\n"), "utf8");
+    writeFileSync(filePath, sqlContent.join("\n"), "utf8");
   } catch (error) {
     // Clean up the partially created file on error
     try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      if (existsSync(filePath)) {
+        unlinkSync(filePath);
       }
     } catch {
       // Ignore cleanup errors, throw original error
@@ -208,5 +208,3 @@ async function exportToPostgres(data, filePath, maxRows, options) {
     throw new Error(`PostgreSQL export failed: ${error.message}`);
   }
 }
-
-module.exports = { exportToPostgres };

@@ -17,8 +17,17 @@
     "qlikview",
     "ctrl-q",
     "butler",
+    "vscode",
+    "extension",
     "data viewer",
-    "file viewer"
+    "file viewer",
+    "parquet",
+    "avro",
+    "arrow",
+    "excel",
+    "csv",
+    "json",
+    "xml"
   ],
   "engines": {
     "vscode": "^1.105.0"
@@ -29,7 +38,7 @@
     "Other"
   ],
   "activationEvents": [],
-  "main": "./src/extension.js",
+  "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
@@ -91,10 +100,14 @@
     }
   },
   "scripts": {
-    "lint": "eslint .",
-    "pretest": "npm run lint",
+    "vscode:prepublish": "npm run package",
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "node esbuild.js --production",
+    "compile-tests": "tsc -p . --outDir out",
+    "pretest": "npm run compile-tests && npm run lint",
     "test": "vscode-test",
-    "package": "vsce package"
+    "lint": "eslint ."
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
@@ -103,7 +116,9 @@
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.6.2",
-    "eslint": "^9.36.0"
+    "esbuild": "^0.25.11",
+    "eslint": "^9.36.0",
+    "npm-run-all": "^4.1.5"
   },
   "dependencies": {
     "apache-arrow": "^21.1.0",

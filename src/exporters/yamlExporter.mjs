@@ -1,5 +1,5 @@
-const fs = require("fs").promises;
-const yaml = require("js-yaml");
+import { promises as fs } from 'fs';
+import yaml from 'js-yaml';
 
 /**
  * Export data to YAML format
@@ -7,7 +7,7 @@ const yaml = require("js-yaml");
  * @param {string} filePath - Destination file path
  * @returns {Promise<void>}
  */
-async function exportToYAML(data, filePath) {
+export async function exportToYAML(data, filePath) {
   try {
     // Add header comment
     const header = [
@@ -31,5 +31,3 @@ async function exportToYAML(data, filePath) {
     throw new Error(`YAML export failed: ${error.message}`);
   }
 }
-
-module.exports = { exportToYAML };

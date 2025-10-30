@@ -1,4 +1,4 @@
-const ExcelJS = require("exceljs");
+import ExcelJS from 'exceljs';
 
 /**
  * Export data to Excel (.xlsx) format
@@ -6,7 +6,7 @@ const ExcelJS = require("exceljs");
  * @param {string} filePath - Destination file path
  * @returns {Promise<void>}
  */
-async function exportToExcel(data, filePath) {
+export async function exportToExcel(data, filePath) {
   try {
     const workbook = new ExcelJS.Workbook();
 
@@ -55,5 +55,3 @@ async function exportToExcel(data, filePath) {
     throw new Error(`Excel export failed: ${error.message}`);
   }
 }
-
-module.exports = { exportToExcel };

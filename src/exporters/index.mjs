@@ -1,15 +1,15 @@
-const path = require("path");
-const { exportToCSV } = require("./csvExporter");
-const { exportToJSON } = require("./jsonExporter");
-const { exportToExcel } = require("./excelExporter");
-const { exportToParquet } = require("./parquetExporter");
-const { exportToYAML } = require("./yamlExporter");
-const { exportToAvro } = require("./avroExporter");
-const { exportToArrow } = require("./arrowExporter");
-const { exportToSQLite } = require("./sqliteExporter");
-const { exportToXML } = require("./xmlExporter");
-const { exportToQlikInline } = require("./qlikInlineExporter");
-const { exportToPostgres } = require("./postgresExporter");
+import { join } from 'path';
+import { exportToCSV } from './csvExporter.mjs';
+import { exportToJSON } from './jsonExporter.mjs';
+import { exportToExcel } from './excelExporter.mjs';
+import { exportToParquet } from './parquetExporter.mjs';
+import { exportToYAML } from './yamlExporter.mjs';
+import { exportToAvro } from './avroExporter.mjs';
+import { exportToArrow } from './arrowExporter.mjs';
+import { exportToSQLite } from './sqliteExporter.mjs';
+import { exportToXML } from './xmlExporter.mjs';
+import { exportToQlikInline } from './qlikInlineExporter.mjs';
+import { exportToPostgres } from './postgresExporter.mjs';
 
 /**
  * Main DataExporter class that coordinates all export operations
@@ -267,8 +267,10 @@ class DataExporter {
 
     // Show save dialog
     const defaultFileName = `${suggestedFileName}.${config.extension}`;
+    // Need to use require for os.homedir() since it's not exported as ESM
+    const os = await import('os');
     const defaultUri = vscode.Uri.file(
-      path.join(workspaceFolder || require("os").homedir(), defaultFileName)
+      join(workspaceFolder || os.homedir(), defaultFileName)
     );
 
     const fileUri = await vscode.window.showSaveDialog({
@@ -304,4 +306,4 @@ class DataExporter {
   }
 }
 
-module.exports = DataExporter;
+export default DataExporter;

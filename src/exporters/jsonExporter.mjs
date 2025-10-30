@@ -1,4 +1,4 @@
-const fs = require("fs").promises;
+import { promises as fs } from 'fs';
 
 /**
  * Export data to JSON format
@@ -6,7 +6,7 @@ const fs = require("fs").promises;
  * @param {string} filePath - Destination file path
  * @returns {Promise<void>}
  */
-async function exportToJSON(data, filePath) {
+export async function exportToJSON(data, filePath) {
   try {
     // Create JSON with metadata
     const output = {
@@ -28,5 +28,3 @@ async function exportToJSON(data, filePath) {
     throw new Error(`JSON export failed: ${error.message}`);
   }
 }
-
-module.exports = { exportToJSON };

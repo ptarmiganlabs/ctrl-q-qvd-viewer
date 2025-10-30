@@ -1,4 +1,4 @@
-const fs = require("fs").promises;
+import { promises as fs } from 'fs';
 
 /**
  * Auto-detect the best delimiter for the data
@@ -74,7 +74,7 @@ function getDelimiterConfig(delimiterChoice, data) {
  * @param {string} delimiter - Delimiter choice ('tab', 'pipe', 'comma', 'semicolon', 'auto-detect')
  * @returns {Promise<void>}
  */
-async function exportToQlikInline(
+export async function exportToQlikInline(
   data,
   filePath,
   maxRows = 0,
@@ -159,5 +159,3 @@ async function exportToQlikInline(
     throw new Error(`Qlik Sense inline script export failed: ${error.message}`);
   }
 }
-
-module.exports = { exportToQlikInline };
