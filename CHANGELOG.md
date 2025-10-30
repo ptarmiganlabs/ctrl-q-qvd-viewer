@@ -4,6 +4,55 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [0.0.4](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v0.0.3...v0.0.4) (2025-10-30)
+
+
+### Features
+
+* Add clear search button on all tabs ([97906d4](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/97906d438ba4fbf8ef939a55d6ff1ef0b5837418))
+* add guidelines various Agent types ([d98f0e0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/d98f0e0a95dd0d9343b8825b605fdfae4b43cd32))
+* Add new lineage tab in UI ([992248f](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/992248fc64aa80843ad05369c2d3f91a4e4a7ebc))
+* Add support for additional export formats (inline script, Avro, Arrow, XML, SQLite ([bb9821f](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/bb9821f40446953caf616d36c2c0286e2f70a3ae))
+* Dynamically generate export menu items and improve UI for export options ([8037b51](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/8037b51f24cf4408dbf28ca4a661137511054fac))
+* Enhance Avro export by inferring schema from all rows and ensuring type compatibility ([a2514b5](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/a2514b58f3cf40b12ee72ae735fd2b9e53e7500b))
+* implement extension bundling to minimize size and compatibility ([ee9f1c2](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/ee9f1c227cd46228b32574a1da3c1b5c9b829481))
+* implement extension bundling to minimize size and compatibility ([a12ffce](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/a12ffce6dd9d0157ce0a3be47a8324b95767f2a3))
+* Implement PostgreSQL export functionality with metadata and options ([8bb28e2](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/8bb28e2fc37742f0e279daea8765fc7dc851e1d4))
+* Replace better-sqlite3 with sql.js for SQLite export and mark as beta ([89bc4a8](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/89bc4a8c2f2286a29ab11e2e880a12e015648e81))
+
+
+### Bug Fixes
+
+* Add allowedDir configuration for path traversal protection and improve documentation ([3a8cd65](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/3a8cd652937c5f08a7ac0e3ae4037cf749c28395))
+* Change to Ctrl-Q icon viewer header text ([f50f60e](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/f50f60e0733953b9f5f3b924bd7877d382897893))
+* Fix broken tests ([3220edc](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/3220edc83472da1993c32e7ae8b4165b11f9bb74))
+* move build step for extension before linter in PR validation workflow ([74fe890](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/74fe89065ab10b50a65c3335f90d237b96a9178a))
+* remove unnecessary compile-tests from pretest script ([62798d9](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/62798d9484aaf86df668c9a51aa9951f8d118522))
+* set environment variables for virtual display in CI workflows ([74ed692](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/74ed692ee5ab699e4433bc085a67850dfbb23491))
+* simplify launch arguments for VSCode test configuration ([6a92b0c](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/6a92b0c71257ecc7b5ba5ef741e2294d0c3b4200))
+* streamline virtual display setup for CI tests and enhance test configuration ([3b4f067](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/3b4f067334473a2e20600aa428718287afa12d09))
+
+
+### Miscellaneous
+
+* **deps:** update dependency @types/node to v22.18.12 ([ea60b32](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/ea60b3241236f03ab5d0c7dba30d0d23153e9045))
+* **deps:** update dependency @types/node to v22.18.13 ([e7b4c33](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/e7b4c3387ad8427ac83a45049ce590d30ef95401))
+* **deps:** update dependency @types/node to v22.18.13 ([51f764b](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/51f764be05eb937072e0a0d80bca6121a632a268))
+* **deps:** update googleapis/release-please-action action to v4.4.0 ([4fcdcf1](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/4fcdcf129775920e23e9ddafc96f03a921396aed))
+* **deps:** update googleapis/release-please-action action to v4.4.0 ([22fa671](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/22fa671571b7e12cfe5ef1c6a5a3b46595b1a830))
+* **deps:** update ncipollo/release-action action to v1.20.0 ([924bcbe](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/924bcbea0e2983a03afd9b9ac3c182ff31174cdd))
+* **deps:** update ncipollo/release-action action to v1.20.0 ([ef87a11](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/ef87a11cac1b55007520148755f90c5d9ab050f5))
+* pin action versions in CI workflows ([d367cd4](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/d367cd4ec0e5ed4093fa8769917d5f17087e2540))
+* pin action versions in CI workflows ([7a2ae44](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/7a2ae44ae77b4640d25670a3a30ec00268563217))
+
+
+### Code Refactoring
+
+* Clean up old doc files ([f555300](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/f555300dcb0a8031f071196274b15c25c882cff5))
+* Clean up whitespace in Arrow and Parquet export functions ([c802f1e](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/c802f1e2088b97c43e6a5378caa84b5f16ffb626))
+* Normalize data handling in Arrow export function ([47683d5](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/47683d5aceb59102d9de0a35e04545624782dfda))
+* Update imports to use consistent quotes and convert synchronous file read to async in AboutPanel ([05a71fc](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/05a71fc1729485cb04f620786a39618c6e8b46e7))
+
 ## [0.0.3](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v0.0.2...v0.0.3) (2025-10-21)
 
 
