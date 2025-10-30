@@ -31,14 +31,12 @@ jobs:
 
       - name: Setup virtual display for VS Code tests
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb
+          /usr/bin/Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
 
       - name: Run tests
-        run: xvfb-run -a npm test
+        run: npm test
         env:
           DISPLAY: ':99.0'
-          DBUS_SESSION_BUS_ADDRESS: '/dev/null'
 
   # Release Please handles version bumps and changelog
   release-please:
