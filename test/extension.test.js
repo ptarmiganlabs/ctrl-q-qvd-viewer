@@ -19,6 +19,7 @@ suite("Extension Test Suite", () => {
       __dirname,
       "..",
       "test-data",
+      "stockholm_temp",
       "stockholm_temp.qvd"
     );
 
@@ -39,6 +40,7 @@ suite("Extension Test Suite", () => {
       __dirname,
       "..",
       "test-data",
+      "stockholm_temp",
       "stockholm_temp.qvd"
     );
 
