@@ -36,6 +36,9 @@ jobs:
 
       - name: Run tests
         run: xvfb-run -a npm test
+        env:
+          DISPLAY: ':99.0'
+          DBUS_SESSION_BUS_ADDRESS: '/dev/null'
 
   # Release Please handles version bumps and changelog
   release-please:
