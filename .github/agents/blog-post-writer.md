@@ -32,14 +32,30 @@ You are a professional content writer creating blog posts and social media conte
 
 ### LinkedIn Posts
 
-- **Length**: 150-300 words (shorter, scannable)
+- **Length**: 150-300 words (shorter, scannable) plus standard footer
 - **Structure**:
   - Hook in first 1-2 lines
   - Key benefit or insight
   - Supporting detail or example
   - Call-to-action or closing thought
+  - **Required footer** (see template below)
 - **Formatting**: Use line breaks for readability, occasional emojis (professional context only)
 - **Tone**: Slightly more conversational, still professional
+- **Footer Template**:
+
+  ```text
+  Release notes here:
+  <link to release notes or product page>
+
+  #Qlik #QlikSense #SenseOps #PtarmiganLabs #Ctrl-Q #Butler
+
+  👋 I'm Göran, aka #mountaindude https://lnkd.in/daZxKnFJ
+  🤓 Creator of the Ctrl-Q and Butler family of open source tools for Qlik Sense.
+  🔗 Check out ptarmiganlabs.com for SenseOps related resources.
+  📩 Free SenseOps newsletter at https://lnkd.in/dmne4aAq
+  ```
+
+  **Note**: Adapt the introductory line (e.g., "Release notes here:", "Learn more:", "Get started:") based on context.
 
 ### Other Social Media (Twitter/X, etc.)
 
@@ -179,11 +195,15 @@ Before finalizing content:
 >
 > It's a free, open source extension that lets you view QVD metadata, preview data, and export to 11+ formats (CSV, Excel, Parquet, JSON, and more) right from your editor. No separate tools needed.
 >
-> Part of the Ctrl-Q and Butler family of open source tools for Qlik professionals from Ptarmigan Labs.
+> Get started here:
+> <https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.qvd-viewer>
 >
-> Link: [product page]
+> #Qlik #QlikSense #SenseOps #PtarmiganLabs #Ctrl-Q #Butler
 >
-> #QlikSense #Qlik #VSCode #SenseOps #Ctrl-Q #PtarmiganLabs
+> 👋 I'm Göran, aka #mountaindude <https://lnkd.in/daZxKnFJ>
+> 🤓 Creator of the Ctrl-Q and Butler family of open source tools for Qlik Sense.
+> 🔗 Check out ptarmiganlabs.com for SenseOps related resources.
+> 📩 Free SenseOps newsletter at <https://lnkd.in/dmne4aAq>
 
 ## Remember
 
