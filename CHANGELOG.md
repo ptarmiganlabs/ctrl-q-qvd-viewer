@@ -4,6 +4,14 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [1.0.1](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.0.0...v1.0.1) (2025-10-31)
+
+
+### Bug Fixes
+
+* update image links to use absolute URLs in README.md ([ca9769b](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/ca9769bdf0128628d15487843ecdd5459ed527ba))
+* update image links to use absolute URLs in README.md ([0515048](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/05150487daff16298bb6af7670bb6648d3853eb3))
+
 ## [1.0.0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v0.1.0...v1.0.0) (2025-10-31)
 
 
