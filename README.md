@@ -37,14 +37,15 @@ Open source with a permissive MIT license.<br>
   - Lineage information (if available in the QVD file)
 - **Data Preview**: View sample data from QVD files in a formatted table with pagination
 - **Export Data**: Export QVD data to multiple formats:
-  - **Apache Arrow** - High-performance columnar format for analytics
-  - **Avro** - Compact binary format with schema evolution support
+  - **Apache Arrow** - High-performance columnar format for analytics (Beta)
+  - **Avro** - Compact binary format with schema evolution support (Beta)
   - **CSV** - Comma-separated values for universal compatibility
   - **Excel** - Microsoft Excel (.xlsx) with styled headers
   - **JSON** - JavaScript Object Notation with pretty formatting
   - **Parquet** - Apache Parquet for efficient columnar storage
+  - **PostgreSQL** - SQL script for PostgreSQL database import (Beta)
   - **Qlik Sense Inline Script** - Qlik load script with inline table (with row limit selection)
-  - **SQLite** - Portable database file with SQL query support
+  - **SQLite** - Portable database file with SQL query support (Beta)
   - **XML** - Extensible markup language for enterprise systems
   - **YAML** - Human-readable structured data format
 - **Configurable Display**: Customize the number of rows to load (default: 5,000, range: 100-100,000)
@@ -59,9 +60,9 @@ The Butler suite provides a best-in-class set of utilities for managing, monitor
 ### The Butler Family
 
 - **[Butler](https://butler.ptarmiganlabs.com)**: Core monitoring and automation tool for Qlik Sense Enterprise
-- **[Ctrl-Q](https://ctrl-q.ptarmiganlabs.com)**: Command-line tool for Qlik Sense administration and DevOps
 - **[Butler SOS](https://butler-sos.ptarmiganlabs.com)**: Real-time monitoring and metrics for Qlik Sense
 - **[Butler CW](https://butler-cw.ptarmiganlabs.com)**: Cache warming utility for Qlik Sense apps
+- **[Ctrl-Q](https://ctrl-q.ptarmiganlabs.com)**: Command-line tool for Qlik Sense administration and DevOps
 - **Ctrl-Q QVD Viewer** (this extension): View QVD files directly in VS Code
 
 Learn more about the Butler family at [https://ptarmiganlabs.com/the-butler-family/](https://ptarmiganlabs.com/the-butler-family/)
@@ -74,15 +75,15 @@ Learn more about the Butler family at [https://ptarmiganlabs.com/the-butler-fami
 
    - Open VS Code
    - Go to Extensions (`Ctrl+Shift+X` or `Cmd+Shift+X` on Mac)
-   - Search for "Ctrl-Q QVD Viewer"
-   - Click "Install"
+   - Search for "Ctrl-Q QVD Viewer" or just "QVD"
+   - Select the extension, click "Install"
 
 2. **Open a QVD File**
 
    - Click on any `.qvd` file in your workspace
 
 3. **Start Viewing**
-   - The QVD file will open automatically showing metadata and data preview
+   - The QVD file will open and automatically show a data preview, with schema, metadata and lineage information in separate tabs
 
 That's it! You're ready to view QVD files in VS Code.
 
@@ -158,27 +159,38 @@ There are two ways to open a QVD file:
 
 ### What You'll See
 
-The extension displays QVD files in three sections:
+The extension displays QVD files in four tabs:
 
-#### 1. File Metadata
+#### 1. Data Preview
 
-- Creator document name
-- Creation date and time (UTC)
-- Table creator information
-- Total number of records
+A formatted table with pagination controls showing the loaded rows with all columns from the QVD file.
 
-#### 2. Field Information
+#### 2. Field Information / Schema
 
 Each field shows:
 
 - Field name
 - Data type (INTEGER, TEXT, etc.)
 - Number of unique symbols
-- Bit width for data storage
+- Tags
+- ...and other technical details
 
-#### 3. Data Preview
+#### 3. File Metadata
 
-A formatted table with pagination controls showing the loaded rows with all columns from the QVD file.
+- Qlik Sense or QlikView document that created the QVD
+- Creation date and time (UTC)
+- Table name and creator details
+- Total number of records
+- Comments (if any)
+- Tags (if any)
+- ...and more
+
+#### 4. Lineage Information
+
+The lineage is an array of objects, each with `Discriminator` and `Statement` properties.
+
+- Discriminator
+- Statement
 
 ### Exporting Data
 
@@ -189,17 +201,18 @@ The Ctrl-Q QVD Viewer allows you to export QVD data to various formats for furth
 1. Open a QVD file in the viewer
 2. Click the **"📤 Export"** button in the top-right corner
 3. Select your desired format from the dropdown menu (sorted alphabetically):
-   - **Export to Arrow** - High-performance columnar format for analytical workloads
-   - **Export to Avro** - Binary format with schema for Hadoop/Kafka ecosystems
+   - **Export to Arrow** - High-performance columnar format for analytical workloads (Beta)
+   - **Export to Avro** - Binary format with schema for Hadoop/Kafka ecosystems (Beta)
    - **Export to CSV** - Universal text format, compatible with Excel and most data tools
    - **Export to Excel** - Native Excel format (.xlsx) with formatted headers
    - **Export to JSON** - Structured format ideal for web applications and APIs
    - **Export to Parquet** - Efficient columnar format for big data and analytics
+   - **Export to PostgreSQL** - SQL script for importing data into PostgreSQL databases (Beta)
    - **Export to Qlik Inline Script** - Qlik Sense load script with inline table
-   - **Export to SQLite** - Self-contained database file with SQL support
+   - **Export to SQLite** - Self-contained database file with SQL support (Beta)
    - **Export to XML** - Structured markup for enterprise integration
    - **Export to YAML** - Human-readable format for configuration and data exchange
-4. For **Qlik Inline Script** exports, you'll be prompted to select the number of rows:
+4. For **Qlik Inline Script** and **PostgreSQL** exports, you'll be prompted to select the number of rows:
    - Choose from predefined options: 10, 100, 1,000, 10,000, or All rows
    - Or enter a custom value (validated as a positive integer)
 5. Choose the destination folder and file name in the save dialog
@@ -207,17 +220,10 @@ The Ctrl-Q QVD Viewer allows you to export QVD data to various formats for furth
 
 #### Export Details
 
-- **All data is exported**: The export includes all rows from the QVD file, not just the preview data shown in the viewer (except for Qlik Inline Script where you can limit rows)
-- **Automatic schema inference**: Data types are automatically detected and preserved in supported formats (Parquet, Excel, Avro, Arrow, SQLite)
+- **All data is exported**: The export includes all rows from the QVD file, not just the preview data shown in the viewer (except for Qlik Inline Script and PostgreSQL where you can limit rows)
+- **Automatic schema inference**: Data types are automatically detected and preserved in supported formats (Parquet, Excel, Avro, Arrow, SQLite, PostgreSQL)
+- **Beta formats**: Some export formats are marked as Beta, indicating they are fully functional but may receive additional enhancements based on user feedback
 - **Progress notification**: You'll see a confirmation message with an option to open the folder containing the exported file
-
-### Example Output
-
-When you open a QVD file, you'll see:
-
-- File metadata at the top
-- Field information with types and statistics
-- Data preview in a table format below
 
 ## Extension Settings
 
@@ -233,60 +239,18 @@ To change this setting:
 
 ## Development
 
-### Prerequisites
+This section provides a quick overview for developers. For detailed information, see the following documentation:
 
-- Node.js 22.x or later
-- npm 11.x or later
-- Visual Studio Code 1.105.0 or later
+- **[BUILD.md](docs/BUILD.md)** - Comprehensive build and development guide including prerequisites, setup, testing, and debugging
+- **[BUNDLING.md](docs/BUNDLING.md)** - Extension bundling with esbuild, build scripts, and optimization details
+- **[CI_CD.md](docs/CI_CD.md)** - CI/CD setup with GitHub Actions, automated testing, and release workflows
+- **[PUBLISHING.md](docs/PUBLISHING.md)** - Publishing to VS Code Marketplace, including account setup and deployment
 
-### Building the Extension
+### Test Data
 
-1. Clone the repository:
+Sample QVD files are provided in the `test-data/` directory for testing. You can also create your own test QVD files by exporting data from Qlik Sense or QlikView.
 
-   ```bash
-   git clone https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer.git
-   cd ctrl-q-qvd-viewer
-   ```
-
-2. Install dependencies:
-
-   ```bash
-   npm install
-   ```
-
-3. Run linting:
-
-   ```bash
-   npm run lint
-   ```
-
-### Testing the Extension Locally
-
-1. Open the project in VS Code:
-
-   ```bash
-   code .
-   ```
-
-2. Press `F5` to start debugging
-
-   - This will open a new VS Code window with the extension loaded
-   - The extension will be in development mode
-
-3. In the new window:
-
-   - Open a QVD file or use Command Palette → "Open QVD File"
-   - The QVD viewer should display the file contents
-
-4. Make changes to the code and reload the extension window (`Ctrl+R` or `Cmd+R`)
-
-### Creating a Test QVD File
-
-A sample QVD file is provided in `test-data/sample.qvd` for testing the metadata display. To create your own test QVD files, you can:
-
-1. Export data as QVD from Qlik Sense or QlikView
-2. Use the qvdjs library programmatically
-3. Use other QVD creation tools
+For more details on building, testing, and packaging, see **[BUILD.md](docs/BUILD.md)**.
 
 ## Known Issues
 
@@ -307,5 +271,5 @@ MIT. See LICENSE file for details.
 
 ---
 
-**Part of the Butler family of tools for Qlik Sense and QlikView**  
+**Part of the Butler and Ctrl-Q family of tools for Qlik Sense and QlikView**  
 Learn more at [butler.ptarmiganlabs.com](https://butler.ptarmiganlabs.com) | [ptarmiganlabs.com](https://ptarmiganlabs.com)
