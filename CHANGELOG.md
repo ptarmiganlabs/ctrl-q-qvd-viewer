@@ -4,6 +4,27 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [0.1.0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v0.0.5...v0.1.0) (2025-10-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* Go to 1.0.0
+* Go to 1.0.0
+* Going to version 1.0.0
+
+### Features
+
+* Go to 1.0.0 ([3c7700e](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/3c7700ea75ec96d4734b611bc7df81bf0afda2d8))
+* Go to 1.0.0 ([f8a5777](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/f8a577714f9eb24e0f2869936b125759c7480e36))
+* Going to version 1.0.0 ([6343eb8](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/6343eb88f46648660d3cd045204ba0eabf03db4b))
+
+
+### Documentation
+
+* add screenshots showing the VS Code extension in action ([7149e02](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/7149e021865e8216ddaaede878197e5ab3c7284b))
+* Update repo URL ([b22a254](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/b22a2546ad8138e382e0c191bcc96fd17092b7b8))
+
 ## [0.0.5](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v0.0.4...v0.0.5) (2025-10-30)
 
 
