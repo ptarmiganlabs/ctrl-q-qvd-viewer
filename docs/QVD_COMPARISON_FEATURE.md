@@ -1,5 +1,7 @@
 # QVD Comparison Feature - Implementation Guide
 
+> **Note:** This document has been updated to reflect the latest codebase structure (v1.0.2+), which uses ES modules (`.mjs` files) instead of CommonJS. All code examples use `import/export` syntax consistent with the current extension architecture.
+
 ## Overview
 
 This document explains how to implement a QVD comparison feature in the Ctrl-Q QVD Viewer extension by leveraging VS Code's built-in file comparison capabilities.
@@ -24,7 +26,7 @@ VS Code has a built-in command `vscode.diff` that opens the diff editor to compa
 **Basic usage example:**
 
 ```javascript
-const vscode = require('vscode');
+import * as vscode from 'vscode';
 
 async function compareFiles() {
     const uri1 = vscode.Uri.file('/path/to/file1.txt');
@@ -53,7 +55,7 @@ For comparing non-text files or dynamically generated content (like QVD metadata
 **Example implementation:**
 
 ```javascript
-const vscode = require('vscode');
+import * as vscode from 'vscode';
 
 class QvdContentProvider {
     constructor() {
@@ -87,7 +89,7 @@ class QvdContentProvider {
 }
 
 // Register the provider
-function activate(context) {
+export function activate(context) {
     const provider = new QvdContentProvider();
     const registration = vscode.workspace.registerTextDocumentContentProvider(
         'qvd-compare',
@@ -96,6 +98,18 @@ function activate(context) {
     context.subscriptions.push(registration);
 }
 ```
+
+## Current Codebase Context
+
+The Ctrl-Q QVD Viewer extension (v1.0.2+) has the following structure:
+
+- **ES Module Architecture**: Uses `.mjs` files with `import/export` syntax
+- **Main Entry Point**: `src/extension.mjs` (compiled to `dist/extension.js` via esbuild)
+- **QVD Reader**: `src/qvdReader.mjs` - handles QVD file parsing
+- **Editor Provider**: `src/qvdEditorProvider.mjs` - manages custom QVD editor
+- **Export Functionality**: `src/exporters/` - directory with multiple export formats (CSV, JSON, Excel, Parquet, Avro, Arrow, SQLite, PostgreSQL, XML, YAML, Qlik inline script)
+
+The export functionality provides a good reference for how to structure additional features and handle data transformations.
 
 ## Recommended Implementation Approach
 
@@ -125,9 +139,11 @@ Add a new command to `package.json`:
 }
 ```
 
-Implement the command in `extension.js`:
+Implement the command in `extension.mjs`:
 
 ```javascript
+import * as vscode from 'vscode';
+
 const compareQvdCommand = vscode.commands.registerCommand(
     'ctrl-q-qvd-viewer.compareQvd',
     async () => {
@@ -193,11 +209,11 @@ async function showComparisonMenu(file1Uri, file2Uri) {
 
 ### Component 3: Content Provider Implementation
 
-Create a new file `src/qvdCompareProvider.js`:
+Create a new file `src/qvdCompareProvider.mjs`:
 
 ```javascript
-const vscode = require('vscode');
-const QvdReader = require('./qvdReader');
+import * as vscode from 'vscode';
+import QvdReader from './qvdReader.mjs';
 
 class QvdCompareProvider {
     constructor() {
@@ -351,7 +367,7 @@ class QvdCompareProvider {
     }
 }
 
-module.exports = QvdCompareProvider;
+export default QvdCompareProvider;
 ```
 
 ### Component 4: Comparison Functions
@@ -359,6 +375,9 @@ module.exports = QvdCompareProvider;
 Implement the comparison functions:
 
 ```javascript
+import * as vscode from 'vscode';
+import path from 'path';
+
 async function compareMetadata(file1Uri, file2Uri) {
     const file1Name = path.basename(file1Uri.fsPath);
     const file2Name = path.basename(file2Uri.fsPath);
@@ -512,15 +531,18 @@ This provides the best of both worlds.
 
 To implement the QVD comparison feature:
 
-- [ ] Create `src/qvdCompareProvider.js` with `TextDocumentContentProvider` implementation
-- [ ] Register the provider in `src/extension.js` with scheme `qvd-compare`
+- [ ] Create `src/qvdCompareProvider.mjs` with `TextDocumentContentProvider` implementation
+- [ ] Register the provider in `src/extension.mjs` with scheme `qvd-compare`
 - [ ] Add `compareQvd` command to `package.json`
-- [ ] Implement command handler to prompt for two QVD files
+- [ ] Implement command handler in `src/extension.mjs` to prompt for two QVD files
 - [ ] Implement comparison menu with metadata/data/both options
 - [ ] Create `compareMetadata()` and `compareData()` functions
-- [ ] Add configuration settings for max comparison rows
-- [ ] Test with various QVD files
+- [ ] Leverage existing `QvdReader` from `src/qvdReader.mjs` for data extraction
+- [ ] Consider following the pattern used in `src/exporters/` for modular code organization
+- [ ] Add configuration settings for max comparison rows in `package.json`
+- [ ] Test with various QVD files (e.g., files in `test-data/lego/`)
 - [ ] Add error handling for invalid files or comparison failures
+- [ ] Update build configuration in `esbuild.js` if needed for bundling
 - [ ] Document the feature in README.md
 
 ## References
