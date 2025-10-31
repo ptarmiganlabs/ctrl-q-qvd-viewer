@@ -195,8 +195,8 @@ After publishing:
 Add these to your README.md:
 
 ```markdown
-[![CI/CD](https://github.com/ptarmiganlabs/qvd4vscode/actions/workflows/ci.yaml/badge.svg)](https://github.com/ptarmiganlabs/qvd4vscode/actions/workflows/ci.yaml)
-[![PR Validation](https://github.com/ptarmiganlabs/qvd4vscode/actions/workflows/pr-validation.yaml/badge.svg)](https://github.com/ptarmiganlabs/qvd4vscode/actions/workflows/pr-validation.yaml)
+[![CI/CD](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/actions/workflows/ci.yaml/badge.svg)](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/actions/workflows/ci.yaml)
+[![PR Validation](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/actions/workflows/pr-validation.yaml/badge.svg)](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/actions/workflows/pr-validation.yaml)
 ```
 
 ## Troubleshooting

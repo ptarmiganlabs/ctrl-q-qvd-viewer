@@ -1,6 +1,28 @@
-# Ctrl-Q QVD Viewer
+<p align="center"><img src="media/ctrl-q-logo-no-text.png" width="200"><p>
 
-A Visual Studio Code extension for viewing Qlik Sense and QlikView QVD files directly within VS Code.
+<h1 align="center">Ctrl-Q QVD Viewer</h1>
+
+<h2 align="center">A powerful Visual Studio Code extension for viewing and exporting Qlik Sense and QlikView QVD files.<br><br>
+View data, metadata, schema, and lineage information directly within VS Code.</h2>
+
+<p align="center">
+Opening a QVD file and exploring its data, schema, metadata and lineage:
+
+<img src="media/screenshot/ctrl-q-qvd-viewer-in-vs-code-1.gif" width="800">
+</p>
+
+<h2 align="center">Designed for Qlik developers and data engineers.<br>
+Open source with a permissive MIT license.<br>
+</h2>
+
+<p align="center">
+<a href="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer"><img src="https://img.shields.io/badge/Source---" alt="Source"></a>
+<a href="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/actions/workflows/pr-validation.yaml"><img src="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/actions/workflows/pr-validation.yaml/badge.svg" alt="Build status"></a>
+<a href="https://www.repostatus.org/#active"><img src="https://www.repostatus.org/badges/latest/active.svg" alt="Project Status: Active – The project has reached a stable, usable state and is being actively developed." /></a>
+<a href="https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer"><img src="https://img.shields.io/visual-studio-marketplace/v/ptarmiganlabs.ctrl-q-qvd-viewer" alt="VS Marketplace Version"></a>
+</p>
+
+---
 
 **Sponsored by [Ptarmigan Labs](https://ptarmiganlabs.com)**
 

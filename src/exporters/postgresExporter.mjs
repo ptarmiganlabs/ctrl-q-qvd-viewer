@@ -1,4 +1,4 @@
-import { existsSync, unlinkSync, writeFileSync } from 'fs';
+import { existsSync, unlinkSync, writeFileSync } from "fs";
 
 /**
  * Export data to PostgreSQL SQL format
@@ -80,7 +80,9 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
     sqlContent.push(
       `-- VS Code Extension: https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer`
     );
-    sqlContent.push(`-- GitHub: https://github.com/ptarmiganlabs/qvd4vscode`);
+    sqlContent.push(
+      `-- GitHub: https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer`
+    );
     sqlContent.push(`-- Generated: ${new Date().toISOString()}`);
     sqlContent.push(`-- Table: ${tableName}`);
     sqlContent.push(

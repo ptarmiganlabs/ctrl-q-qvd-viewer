@@ -1,4 +1,4 @@
-import { promises as fs } from 'fs';
+import { promises as fs } from "fs";
 
 /**
  * Auto-detect the best delimiter for the data
@@ -104,7 +104,7 @@ export async function exportToQlikInline(
     lines.push(
       "// VS Code Extension: https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer"
     );
-    lines.push("// GitHub: https://github.com/ptarmiganlabs/qvd4vscode");
+    lines.push("// GitHub: https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer");
     lines.push(`// Generated: ${new Date().toISOString()}`);
     lines.push(`// Rows: ${exportData.length}`);
     lines.push(

@@ -108,7 +108,7 @@ class AboutPanel {
     let displayName = "Ctrl-Q QVD Viewer";
     let description =
       "View Qlik Sense and QlikView QVD files from within VS Code";
-    let repository = "https://github.com/ptarmiganlabs/qvd4vscode";
+    let repository = "https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer";
     let license = "MIT";
 
     try {
@@ -515,7 +515,7 @@ class AboutPanel {
                             </svg>
                             GitHub Repository
                         </button>
-                        <button class="link-button" onclick="openExternal('https://github.com/ptarmiganlabs/qvd4vscode/issues')">
+                        <button class="link-button" onclick="openExternal('https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues')">
                             🐛 Report Issue
                         </button>
                         <button class="link-button" onclick="openExternal('https://ptarmiganlabs.com/the-butler-family/')">
