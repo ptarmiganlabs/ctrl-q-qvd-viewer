@@ -4,6 +4,19 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [1.0.0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v0.1.0...v1.0.0) (2025-10-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* This is the first stable 1.0.0 release of Ctrl-Q QVD Viewer.
+* release version 1.0.0 - first stable release
+
+### Features
+
+* release version 1.0.0 - first stable release ([53f4109](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/53f4109f58e74325bfd915bd005cbfcc9f624cce))
+* release version 1.0.0 - first stable release ([91997da](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/91997da7b3e6ca6b211755a36db6445a69d29e2a))
+
 ## [0.1.0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v0.0.5...v0.1.0) (2025-10-31)
 
 
