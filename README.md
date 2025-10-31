@@ -1,4 +1,4 @@
-<p align="center"><img src="media/ctrl-q-logo-no-text.png" width="200"><p>
+<p align="center"><img src="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/blob/main/media/ctrl-q-logo-no-text.png?raw=true" width="200"><p>
 
 <h1 align="center">Ctrl-Q QVD Viewer</h1>
 
@@ -8,7 +8,7 @@ View data, metadata, schema, and lineage information directly within VS Code.</h
 <p align="center">
 Opening a QVD file and exploring its data, schema, metadata and lineage:
 
-<img src="media/screenshot/ctrl-q-qvd-viewer-in-vs-code-1.gif" width="800">
+<img src="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/blob/main/media/screenshot/ctrl-q-qvd-viewer-in-vs-code-1.gif" width="800">
 </p>
 
 <h2 align="center">Designed for Qlik developers and data engineers.<br>
@@ -17,9 +17,7 @@ Open source with a permissive MIT license.<br>
 
 <p align="center">
 <a href="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer"><img src="https://img.shields.io/badge/Source---" alt="Source"></a>
-<a href="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/actions/workflows/pr-validation.yaml"><img src="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/actions/workflows/pr-validation.yaml/badge.svg" alt="Build status"></a>
 <a href="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer"><img src="https://img.shields.io/badge/Project%20Status-Active-brightgreen" alt="Project Status: Active"></a>
-<a href="https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer"><img src="https://img.shields.io/visual-studio-marketplace/v/ptarmiganlabs.ctrl-q-qvd-viewer" alt="VS Marketplace Version"></a>
 </p>
 
 ---
