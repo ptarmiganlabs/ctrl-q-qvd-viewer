@@ -18,7 +18,7 @@ Open source with a permissive MIT license.<br>
 <p align="center">
 <a href="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer"><img src="https://img.shields.io/badge/Source---" alt="Source"></a>
 <a href="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/actions/workflows/pr-validation.yaml"><img src="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/actions/workflows/pr-validation.yaml/badge.svg" alt="Build status"></a>
-<a href="https://www.repostatus.org/#active"><img src="https://www.repostatus.org/badges/latest/active.svg" alt="Project Status: Active – The project has reached a stable, usable state and is being actively developed." /></a>
+<a href="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer"><img src="https://img.shields.io/badge/Project%20Status-Active-brightgreen" alt="Project Status: Active"></a>
 <a href="https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer"><img src="https://img.shields.io/visual-studio-marketplace/v/ptarmiganlabs.ctrl-q-qvd-viewer" alt="VS Marketplace Version"></a>
 </p>
 
