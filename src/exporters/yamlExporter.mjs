@@ -1,5 +1,5 @@
-import { promises as fs } from 'fs';
-import yaml from 'js-yaml';
+import { promises as fs } from "fs";
+import yaml from "js-yaml";
 
 /**
  * Export data to YAML format
@@ -14,7 +14,7 @@ export async function exportToYAML(data, filePath) {
       "# YAML Data Export",
       "# Created by: Ctrl-Q QVD Viewer for VS Code",
       "# VS Code Extension: https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer",
-      "# GitHub: https://github.com/ptarmiganlabs/qvd4vscode",
+      "# GitHub: https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer",
       `# Generated: ${new Date().toISOString()}`,
       `# Rows: ${data.length}`,
       "",

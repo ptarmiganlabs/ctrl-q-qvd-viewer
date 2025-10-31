@@ -1,4 +1,4 @@
-import { promises as fs } from 'fs';
+import { promises as fs } from "fs";
 
 /**
  * Export data to JSON format
@@ -15,7 +15,7 @@ export async function exportToJSON(data, filePath) {
         createdBy: "Ctrl-Q QVD Viewer for VS Code",
         extension:
           "https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer",
-        github: "https://github.com/ptarmiganlabs/qvd4vscode",
+        github: "https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer",
         generated: new Date().toISOString(),
         rows: data.length,
       },

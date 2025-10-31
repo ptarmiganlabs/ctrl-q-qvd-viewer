@@ -1,4 +1,4 @@
-import ExcelJS from 'exceljs';
+import ExcelJS from "exceljs";
 
 /**
  * Export data to Excel (.xlsx) format
@@ -18,7 +18,7 @@ export async function exportToExcel(data, filePath) {
       "Excel Data Export",
       "Created by: Ctrl-Q QVD Viewer for VS Code",
       "VS Code Extension: https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer",
-      "GitHub: https://github.com/ptarmiganlabs/qvd4vscode",
+      "GitHub: https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer",
     ].join("\n");
 
     const worksheet = workbook.addWorksheet("Data");

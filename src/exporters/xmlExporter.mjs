@@ -1,5 +1,5 @@
-import { promises as fs } from 'fs';
-import xmljs from 'xml-js';
+import { promises as fs } from "fs";
+import xmljs from "xml-js";
 
 /**
  * Export data to XML format
@@ -20,7 +20,7 @@ export async function exportToXML(data, filePath) {
         "XML Data Export",
         "Created by: Ctrl-Q QVD Viewer for VS Code",
         "VS Code Extension: https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer",
-        "GitHub: https://github.com/ptarmiganlabs/qvd4vscode",
+        "GitHub: https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer",
         `Generated: ${new Date().toISOString()}`,
         `Rows: ${data.length}`,
       ].join("\n"),
