@@ -131,6 +131,9 @@ dist
 # Qlik Cloud cache directory
 .qlik-cloud-cache/
 
+# Test output directory
+test-output/
+
 # yarn v3
 .pnp.*
 .yarn/*

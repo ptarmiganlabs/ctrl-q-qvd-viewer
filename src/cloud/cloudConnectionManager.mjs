@@ -71,10 +71,11 @@ export class CloudConnectionManager {
       auth.setDefaultHostConfig(this.hostConfig);
 
       // Initialize connection object with API endpoints
+      // Note: dataFiles, spaces, items are modules, not factory functions
       this.connection = {
-        dataFiles: dataFiles(this.hostConfig),
-        spaces: spaces(this.hostConfig),
-        items: items(this.hostConfig),
+        dataFiles: dataFiles,
+        spaces: spaces,
+        items: items,
         config: this.hostConfig,
       };
 

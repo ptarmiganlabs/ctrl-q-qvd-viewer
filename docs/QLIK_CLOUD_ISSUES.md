@@ -85,10 +85,11 @@ Create the connection manager to handle connections to Qlik Cloud tenants using 
 
 **Acceptance Criteria:**
 
-- Can successfully connect to Qlik Cloud with valid credentials
-- Connection errors are handled and reported clearly
-- Connection state is tracked accurately
-- Tests verify connection logic
+- Unit tests verify connection logic and error handling with mocked connections
+- Connection errors are handled and reported clearly with user-friendly messages
+- Connection state is tracked accurately (connected/disconnected)
+- Integration tests can verify real API connectivity when credentials provided via environment variables
+- Tests verify connection prerequisites, state management, and error scenarios
 
 **Labels:** `enhancement`, `qlik-cloud`, `phase-1`
 
@@ -120,11 +121,12 @@ Create the download manager to handle downloading QVD files from Qlik Cloud with
 
 **Acceptance Criteria:**
 
-- Files download successfully from Qlik Cloud
-- Downloaded files are cached in proper location
-- Progress notifications shown during download
-- Cache management functions work correctly
-- Tests verify download and cache logic
+- Unit tests verify download and cache logic with mocked connections
+- Downloaded files are cached in proper location (extension global storage)
+- Progress notifications shown during download with cancellation support
+- Cache management functions work correctly (clear, stats, file checking)
+- Integration tests can verify real file downloads when credentials provided via environment variables
+- Tests verify caching, cache clearing, statistics, and error handling
 
 **Labels:** `enhancement`, `qlik-cloud`, `phase-1`
 

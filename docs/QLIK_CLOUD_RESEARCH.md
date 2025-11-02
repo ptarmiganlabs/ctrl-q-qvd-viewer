@@ -9,6 +9,7 @@
 This document provides comprehensive research on integrating Qlik Sense Cloud access into the Ctrl-Q QVD Viewer VS Code extension. The research covers authentication methods, API capabilities, technical architecture, and implementation recommendations.
 
 **Key Findings:**
+
 - Qlik Sense Cloud provides a comprehensive REST API for accessing data files including QVDs
 - Multiple authentication methods are available, with API Keys being the simplest for initial implementation
 - The `@qlik/api` toolkit provides a well-maintained JavaScript library for API integration
@@ -50,6 +51,7 @@ The Ctrl-Q QVD Viewer currently supports viewing QVD files from the local filesy
 ### User Requirements
 
 Users need to:
+
 1. Browse QVD files in their Qlik Sense Cloud spaces
 2. Open and view QVD files without downloading them first
 3. Export cloud-based QVD files to local formats
@@ -64,6 +66,7 @@ Users need to:
 The `@qlik/api` toolkit is the official JavaScript library for integrating with Qlik Sense Cloud and Qlik Sense Enterprise.
 
 **Key Features:**
+
 - **REST API Integration:** Typed modules for all Qlik Cloud REST endpoints
 - **QIX Engine Access:** Full interface to the Qlik Associative Engine
 - **Authentication Support:** Built-in mechanisms for multiple auth methods
@@ -71,17 +74,19 @@ The `@qlik/api` toolkit is the official JavaScript library for integrating with 
 - **Auto-Generated:** Modules generated from OpenAPI specifications
 
 **Installation:**
+
 ```bash
 npm install @qlik/api
 ```
 
 **Basic Usage:**
+
 ```javascript
-import qlikApi from '@qlik/api';
+import qlikApi from "@qlik/api";
 
 const hostConfig = {
-  host: 'your-tenant.us.qlikcloud.com',
-  apiKey: 'YOUR_API_KEY'
+  host: "your-tenant.us.qlikcloud.com",
+  apiKey: "YOUR_API_KEY",
 };
 
 const spacesApi = qlikApi.rest.spaces(hostConfig);
@@ -89,6 +94,7 @@ const spaces = await spacesApi.list();
 ```
 
 **Documentation:**
+
 - NPM Package: https://www.npmjs.com/package/@qlik/api
 - Developer Portal: https://qlik.dev/toolkits/qlik-api/
 - GitHub Repository: https://github.com/qlik-oss/qlik-api-ts
@@ -102,12 +108,14 @@ Qlik Sense Cloud supports multiple authentication methods, each suited for diffe
 ### 1. API Keys (Recommended for Initial Implementation)
 
 **Overview:**
+
 - Simple token-based authentication
 - Easy to implement and test
 - Suitable for personal use and development
 - Requires "Developer" role in Qlik Cloud
 
 **Pros:**
+
 - ✅ Simplest to implement
 - ✅ No complex OAuth flows needed
 - ✅ Works well for VS Code extensions
@@ -115,25 +123,28 @@ Qlik Sense Cloud supports multiple authentication methods, each suited for diffe
 - ✅ Good for MVP and early adoption
 
 **Cons:**
+
 - ❌ User must manually create and copy API key
 - ❌ Requires "Developer" role access
 - ❌ Less user-friendly than OAuth
 - ❌ Key management is manual
 
 **Implementation Notes:**
+
 ```javascript
 // Store API key securely using VS Code's SecretStorage
-await context.secrets.store('qlik-api-key', apiKey);
+await context.secrets.store("qlik-api-key", apiKey);
 
 // Retrieve and use
-const apiKey = await context.secrets.get('qlik-api-key');
+const apiKey = await context.secrets.get("qlik-api-key");
 const config = {
-  host: 'tenant.qlikcloud.com',
-  apiKey: apiKey
+  host: "tenant.qlikcloud.com",
+  apiKey: apiKey,
 };
 ```
 
 **User Setup Steps:**
+
 1. User logs into Qlik Cloud Management Console
 2. Navigates to API Keys section
 3. Creates new API key with appropriate expiration
@@ -141,46 +152,54 @@ const config = {
 5. Enters into VS Code extension settings
 
 **References:**
+
 - Managing API Keys: https://help.qlik.com/en-US/cloud-services/Subsystems/Hub/Content/Sense_Hub/Admin/mc-generate-api-keys.htm
 - API Key Connector Guide: https://community.qlik.com/t5/Official-Support-Articles/How-to-Getting-started-with-the-API-key-connector-in-Qlik/ta-p/2036563
 
 ### 2. OAuth2 - Machine-to-Machine (M2M)
 
 **Overview:**
+
 - Uses Client Credentials flow
 - Designed for automation and service accounts
 - No user interaction required after initial setup
 - Typically granted Tenant Admin privileges
 
 **Pros:**
+
 - ✅ Automated token management
 - ✅ No user interaction during auth
 - ✅ Good for background tasks
 - ✅ Elevated permissions available
 
 **Cons:**
+
 - ❌ Requires OAuth client registration
 - ❌ More complex setup
 - ❌ May have excessive permissions
 - ❌ Requires tenant admin to create client
 
 **Use Cases:**
+
 - Batch processing
 - Scheduled exports
 - Administrative operations
 
 **References:**
+
 - Get Started with M2M OAuth: https://qlik.dev/authenticate/oauth/getting-started-oauth-m2m/
 
 ### 3. OAuth2 - Authorization Code Flow with PKCE (Best User Experience)
 
 **Overview:**
+
 - Standard OAuth2 flow for user authentication
 - Uses browser-based login
 - Works well with VS Code's Authentication API
 - Tokens scoped to user's permissions
 
 **Pros:**
+
 - ✅ Best user experience
 - ✅ No manual key management
 - ✅ Respects user permissions
@@ -189,17 +208,19 @@ const config = {
 - ✅ VS Code has built-in support
 
 **Cons:**
+
 - ❌ Most complex to implement
 - ❌ Requires OAuth client registration
 - ❌ Need to handle token refresh
 - ❌ Redirect URI configuration needed
 
 **VS Code Authentication API Integration:**
+
 ```javascript
 // Register authentication provider
 const provider = {
-  id: 'qlik-cloud',
-  label: 'Qlik Sense Cloud'
+  id: "qlik-cloud",
+  label: "Qlik Sense Cloud",
 };
 
 vscode.authentication.registerAuthenticationProvider(
@@ -210,13 +231,14 @@ vscode.authentication.registerAuthenticationProvider(
 
 // Get session
 const session = await vscode.authentication.getSession(
-  'qlik-cloud',
-  ['data-files:read'],
+  "qlik-cloud",
+  ["data-files:read"],
   { createIfNone: true }
 );
 ```
 
 **User Flow:**
+
 1. User clicks "Connect to Qlik Cloud" in VS Code
 2. VS Code opens browser to Qlik Cloud login
 3. User authenticates (may use SSO)
@@ -226,6 +248,7 @@ const session = await vscode.authentication.getSession(
 7. Token stored securely in VS Code
 
 **References:**
+
 - OAuth Overview: https://qlik.dev/authenticate/oauth/
 - VS Code Authentication API: https://code.visualstudio.com/api/references/vscode-api#authentication
 - Sample Implementation: https://github.com/microsoft/vscode-extension-samples/tree/main/authenticationprovider-sample
@@ -233,53 +256,61 @@ const session = await vscode.authentication.getSession(
 ### 4. OAuth2 - M2M Impersonation
 
 **Overview:**
+
 - Machine authenticates as service, acts as user
 - Combines automation with user-level permissions
 - Useful for embedded scenarios
 
 **Pros:**
+
 - ✅ Automation with user context
 - ✅ Respects individual permissions
 - ✅ Good for embedded analytics
 
 **Cons:**
+
 - ❌ Most complex authentication method
 - ❌ Requires special OAuth client setup
 - ❌ May be overkill for file viewer
 
 **Use Cases:**
+
 - Embedded analytics portals
 - SSO scenarios
 - Complex multi-tenant applications
 
 **References:**
+
 - M2M Impersonation Guide: https://qlik.dev/authenticate/oauth/create/create-oauth-client-m2m-impersonation/
 - Example Implementation: https://github.com/qlik-oss/qlik-cloud-embed-oauth-impersonation
 
 ### Authentication Method Comparison
 
-| Method | Implementation Complexity | User Experience | Security | Recommended For |
-|--------|--------------------------|-----------------|----------|----------------|
-| **API Keys** | Low | Manual setup | Good | MVP, Development, Power Users |
-| **OAuth2 PKCE** | High | Excellent | Excellent | Production, All Users |
-| **OAuth2 M2M** | Medium | Good (one-time) | Good | Automation, Background Tasks |
-| **M2M Impersonation** | Very High | Depends | Excellent | Embedded Analytics, SSO |
+| Method                | Implementation Complexity | User Experience | Security  | Recommended For               |
+| --------------------- | ------------------------- | --------------- | --------- | ----------------------------- |
+| **API Keys**          | Low                       | Manual setup    | Good      | MVP, Development, Power Users |
+| **OAuth2 PKCE**       | High                      | Excellent       | Excellent | Production, All Users         |
+| **OAuth2 M2M**        | Medium                    | Good (one-time) | Good      | Automation, Background Tasks  |
+| **M2M Impersonation** | Very High                 | Depends         | Excellent | Embedded Analytics, SSO       |
 
 ### Recommended Implementation Phases
 
 **Phase 1: API Keys** (MVP)
+
 - Quickest path to working prototype
 - Lower development effort
 - Validates user demand
 - Good for early adopters
 
 **Phase 2: OAuth2 PKCE** (Production)
+
 - Better user experience
 - Industry-standard authentication
 - More secure and manageable
 - Broader user adoption
 
 **Phase 3: Advanced Features** (Optional)
+
 - M2M for automation scenarios
 - Impersonation if needed
 - Advanced permission handling
@@ -290,7 +321,12 @@ const session = await vscode.authentication.getSession(
 
 The Data Files REST API provides access to QVD and other data files stored in Qlik Sense Cloud.
 
+### Documentation
+
+API reference: https://qlik.dev/apis/rest/data-files/#get-api-v1-data-files
+
 ### API Endpoint Base
+
 ```
 https://{tenant}.{region}.qlikcloud.com/api/v1/data-files
 ```
@@ -302,6 +338,7 @@ https://{tenant}.{region}.qlikcloud.com/api/v1/data-files
 **Endpoint:** `GET /api/v1/data-files`
 
 **Query Parameters:**
+
 - `connectionId` - Filter by connection/space
 - `baseNameWildcard` - File name pattern (e.g., `*.qvd`)
 - `path` - Folder path filter
@@ -311,12 +348,14 @@ https://{tenant}.{region}.qlikcloud.com/api/v1/data-files
 - `next` - Pagination cursor
 
 **Example Request:**
+
 ```http
 GET /api/v1/data-files?baseNameWildcard=*.qvd&limit=50
 Authorization: Bearer {access_token}
 ```
 
 **Example Response:**
+
 ```json
 {
   "data": [
@@ -342,6 +381,7 @@ Authorization: Bearer {access_token}
 **Endpoint:** `GET /api/v1/data-files/{id}`
 
 **Example Request:**
+
 ```http
 GET /api/v1/data-files/64f2a1b8c9d0e1f2a3b4c5d6
 Authorization: Bearer {access_token}
@@ -355,9 +395,11 @@ Returns file metadata and details.
 **Endpoint:** `GET /api/v1/data-files/{id}`
 
 **Query Parameters:**
+
 - `download=true` - Forces download of file content
 
 **Example Request:**
+
 ```http
 GET /api/v1/data-files/64f2a1b8c9d0e1f2a3b4c5d6?download=true
 Authorization: Bearer {access_token}
@@ -367,20 +409,21 @@ Authorization: Bearer {access_token}
 Returns the raw file content (binary for QVD files).
 
 **Implementation Notes:**
+
 ```javascript
-import qlikApi from '@qlik/api';
+import qlikApi from "@qlik/api";
 
 // Configure connection
 const config = {
-  host: 'tenant.us.qlikcloud.com',
-  apiKey: apiKey
+  host: "tenant.us.qlikcloud.com",
+  apiKey: apiKey,
 };
 
 // List QVD files
 const dataFilesApi = qlikApi.rest.dataFiles(config);
 const files = await dataFilesApi.getDataFiles({
-  baseNameWildcard: '*.qvd',
-  limit: 100
+  baseNameWildcard: "*.qvd",
+  limit: 100,
 });
 
 // Download specific file
@@ -404,6 +447,7 @@ const result = await reader.read(tempPath, maxRows);
 5. **Connection IDs:** Files are organized by connections (spaces)
 
 ### References
+
 - Data Files REST API Documentation: https://qlik.dev/apis/rest/data-files/
 - REST APIs Overview: https://qlik.dev/apis/rest/
 
@@ -455,60 +499,65 @@ const result = await reader.read(tempPath, maxRows);
 ### Component Breakdown
 
 #### 1. Authentication Provider
+
 ```javascript
 // src/cloud/qlikAuthProvider.mjs
 /**
  * Handles Qlik Cloud authentication using API Keys or OAuth2
  */
 export class QlikAuthProvider {
-  async authenticate(method) { }
-  async getAccessToken() { }
-  async refreshToken() { }
-  async validateConnection() { }
+  async authenticate(method) {}
+  async getAccessToken() {}
+  async refreshToken() {}
+  async validateConnection() {}
 }
 ```
 
 #### 2. Cloud Connection Manager
+
 ```javascript
 // src/cloud/cloudConnectionManager.mjs
 /**
  * Manages connections to Qlik Cloud tenants
  */
 export class CloudConnectionManager {
-  async connect(config) { }
-  async disconnect() { }
-  async testConnection() { }
-  async getActiveConnection() { }
+  async connect(config) {}
+  async disconnect() {}
+  async testConnection() {}
+  async getActiveConnection() {}
 }
 ```
 
 #### 3. File Browser Service
+
 ```javascript
 // src/cloud/fileBrowserService.mjs
 /**
  * Provides file browsing capabilities for cloud QVD files
  */
 export class FileBrowserService {
-  async listFiles(options) { }
-  async searchFiles(pattern) { }
-  async getFileMetadata(fileId) { }
+  async listFiles(options) {}
+  async searchFiles(pattern) {}
+  async getFileMetadata(fileId) {}
 }
 ```
 
 #### 4. Download Manager
+
 ```javascript
 // src/cloud/downloadManager.mjs
 /**
  * Handles downloading and caching of QVD files from cloud
  */
 export class DownloadManager {
-  async downloadFile(fileId, destination) { }
-  async getCachedFile(fileId) { }
-  async clearCache() { }
+  async downloadFile(fileId, destination) {}
+  async getCachedFile(fileId) {}
+  async clearCache() {}
 }
 ```
 
 #### 5. Cloud QVD Reader (Adapter)
+
 ```javascript
 // src/cloud/cloudQvdReader.mjs
 /**
@@ -576,9 +625,9 @@ To support both local and cloud files transparently, we can introduce a file pro
  * Abstract interface for file access
  */
 export class FileProvider {
-  async exists(uri) { }
-  async read(uri, maxRows) { }
-  async getMetadata(uri) { }
+  async exists(uri) {}
+  async read(uri, maxRows) {}
+  async getMetadata(uri) {}
 }
 
 // src/providers/localFileProvider.mjs
@@ -603,6 +652,7 @@ This abstraction allows the existing `QvdEditorProvider` to work with both local
 **Goal:** Basic cloud connectivity and file access
 
 **Tasks:**
+
 1. Add `@qlik/api` dependency to `package.json`
 2. Create authentication provider for API Keys
 3. Implement connection settings UI
@@ -613,6 +663,7 @@ This abstraction allows the existing `QvdEditorProvider` to work with both local
 **Estimated Effort:** 2-3 days
 
 **Success Criteria:**
+
 - User can configure Qlik Cloud tenant and API key
 - Extension can list QVD files from cloud
 - User can open cloud QVD file in viewer
@@ -623,6 +674,7 @@ This abstraction allows the existing `QvdEditorProvider` to work with both local
 **Goal:** Rich browsing experience for cloud files
 
 **Tasks:**
+
 1. Create TreeView provider for cloud files
 2. Implement search and filter functionality
 3. Add file context menu actions
@@ -633,6 +685,7 @@ This abstraction allows the existing `QvdEditorProvider` to work with both local
 **Estimated Effort:** 3-4 days
 
 **Success Criteria:**
+
 - User sees cloud QVD files in dedicated tree view
 - Files are organized by space/connection
 - Search works efficiently
@@ -644,6 +697,7 @@ This abstraction allows the existing `QvdEditorProvider` to work with both local
 **Goal:** Efficient handling of downloaded files
 
 **Tasks:**
+
 1. Implement cache storage using extension storage API
 2. Add cache expiration policies
 3. Create cache management UI
@@ -654,6 +708,7 @@ This abstraction allows the existing `QvdEditorProvider` to work with both local
 **Estimated Effort:** 2 days
 
 **Success Criteria:**
+
 - Downloaded files are cached intelligently
 - Cache size is managed automatically
 - User can clear cache manually
@@ -664,6 +719,7 @@ This abstraction allows the existing `QvdEditorProvider` to work with both local
 **Goal:** Seamless authentication experience
 
 **Tasks:**
+
 1. Register OAuth client with Qlik Cloud
 2. Implement VS Code Authentication Provider
 3. Handle OAuth2 flow with PKCE
@@ -674,6 +730,7 @@ This abstraction allows the existing `QvdEditorProvider` to work with both local
 **Estimated Effort:** 4-5 days
 
 **Success Criteria:**
+
 - User can authenticate via browser
 - No manual key management needed
 - Tokens refresh automatically
@@ -684,12 +741,14 @@ This abstraction allows the existing `QvdEditorProvider` to work with both local
 For the absolute minimum implementation to validate the concept:
 
 **Required Components:**
+
 1. Settings page for tenant URL and API key
 2. Download manager that fetches file via Data Files API
 3. Modified URI scheme handler to detect cloud files
 4. Temp file cleanup
 
 **Code Changes:**
+
 ```javascript
 // package.json - add dependency
 "dependencies": {
@@ -707,13 +766,13 @@ const cloudUriHandler = vscode.workspace.registerFileSystemProvider(
 export async function readCloudQvd(cloudUri, maxRows) {
   const config = getCloudConfig();
   const api = qlikApi.rest.dataFiles(config);
-  
+
   const fileId = extractFileId(cloudUri);
   const content = await api.getDataFile(fileId);
-  
+
   const tempPath = path.join(os.tmpdir(), `cloud-${fileId}.qvd`);
   await fs.promises.writeFile(tempPath, content);
-  
+
   const reader = new QvdReader();
   return await reader.read(tempPath, maxRows);
 }
@@ -733,6 +792,7 @@ export async function readCloudQvd(cloudUri, maxRows) {
 QVD files can be very large (100s of MB to GBs). Downloading over the network will be slower than local access.
 
 **Mitigations:**
+
 - Implement progress indicators for downloads
 - Cache downloaded files aggressively
 - Consider streaming or partial download (if API supports)
@@ -746,6 +806,7 @@ QVD files can be very large (100s of MB to GBs). Downloading over the network wi
 OAuth tokens expire and need refresh. API keys need secure storage.
 
 **Mitigations:**
+
 - Use VS Code's SecretStorage API for tokens
 - Implement automatic token refresh
 - Handle token expiration gracefully
@@ -758,6 +819,7 @@ OAuth tokens expire and need refresh. API keys need secure storage.
 Qlik Cloud APIs have rate limits that could impact browsing experience.
 
 **Mitigations:**
+
 - Cache file lists and metadata
 - Implement exponential backoff for retries
 - Show rate limit status to user
@@ -770,6 +832,7 @@ Qlik Cloud APIs have rate limits that could impact browsing experience.
 Users may have access to multiple Qlik Cloud tenants.
 
 **Mitigations:**
+
 - Support multiple connection profiles
 - Allow switching between tenants
 - Store credentials per tenant
@@ -781,6 +844,7 @@ Users may have access to multiple Qlik Cloud tenants.
 Extension may be used in environments with intermittent connectivity.
 
 **Mitigations:**
+
 - Maintain local cache of downloaded files
 - Provide offline mode for cached files
 - Show clear online/offline status
@@ -795,6 +859,7 @@ Extension may be used in environments with intermittent connectivity.
 Users need to navigate Qlik Cloud admin console to create API keys.
 
 **Mitigations:**
+
 - Provide detailed setup documentation
 - Add step-by-step wizard in extension
 - Include screenshots and videos
@@ -807,6 +872,7 @@ Users need to navigate Qlik Cloud admin console to create API keys.
 Users will work with both local and cloud QVD files.
 
 **Mitigations:**
+
 - Use distinct icons for cloud vs local files
 - Separate tree views or clear visual distinction
 - Show source location in file properties
@@ -818,6 +884,7 @@ Users will work with both local and cloud QVD files.
 Users may lack permissions to access certain files or spaces.
 
 **Mitigations:**
+
 - Show clear permission error messages
 - Explain required roles/permissions
 - Provide link to request access
@@ -831,6 +898,7 @@ Users may lack permissions to access certain files or spaces.
 Need to store API keys or OAuth tokens securely.
 
 **Solution:**
+
 - Use VS Code's SecretStorage API (uses OS keychain)
 - Never store credentials in workspace settings
 - Never log credentials
@@ -842,6 +910,7 @@ Need to store API keys or OAuth tokens securely.
 Communication must be secure and validated.
 
 **Solution:**
+
 - Always use HTTPS for API calls
 - Validate SSL certificates
 - Use official `@qlik/api` library
@@ -853,6 +922,7 @@ Communication must be secure and validated.
 Downloaded QVD files may contain sensitive data.
 
 **Solution:**
+
 - Clean up temp files after use
 - Encrypt cache if possible
 - Provide manual cache clearing
@@ -889,6 +959,7 @@ Downloaded QVD files may contain sensitive data.
 #### Settings Structure
 
 **Extension Settings (settings.json):**
+
 ```json
 {
   "ctrl-q-qvd-viewer.cloud.enabled": true,
@@ -901,6 +972,7 @@ Downloaded QVD files may contain sensitive data.
 ```
 
 **Secure Storage (SecretStorage):**
+
 - `qlik-cloud-api-key`
 - `qlik-cloud-oauth-token`
 - `qlik-cloud-oauth-refresh-token`
@@ -944,6 +1016,7 @@ The cloud file browser will appear as a **new tree view section in the VS Code E
 ```
 
 **Key Points:**
+
 - **Location:** Left sidebar (Explorer panel), below the regular file tree
 - **Integration:** Appears as a separate collapsible section
 - **Coexistence:** Does NOT replace local files - both local and cloud files visible simultaneously
@@ -962,6 +1035,7 @@ The cloud file browser will appear as a **new tree view section in the VS Code E
   ```
 
 When a user clicks on a QVD file in this cloud tree view:
+
 1. The file downloads to cache (with progress notification)
 2. Opens in the main editor area using the existing QVD viewer UI
 3. Tab title shows a cloud icon (☁️) to indicate it's a cloud file
@@ -989,6 +1063,7 @@ Qlik Cloud Files
 #### Context Menu Actions
 
 Right-click on file:
+
 - **Open** - Opens in QVD viewer
 - **Download to Local...** - Save to local filesystem
 - **Export to...** - Export to format (CSV, Excel, etc.)
@@ -1003,6 +1078,7 @@ Right-click on file:
 ```
 
 Click on status:
+
 - Show connection details
 - Quick switch tenant
 - Open settings
@@ -1086,17 +1162,21 @@ Retry available in: 45 seconds
 ### Credential Management
 
 **Best Practices:**
+
 1. **Use VS Code SecretStorage**
+
    - Leverages OS-level keychain
    - Encrypted at rest
    - Separate from settings.json
 
 2. **Never Log Credentials**
+
    - Redact tokens/keys from logs
    - Use masked display in UI
    - Clear from memory after use
 
 3. **Implement Auto-Logout**
+
    - Clear tokens after inactivity
    - Re-authenticate on sensitive operations
    - Provide manual logout option
@@ -1109,13 +1189,16 @@ Retry available in: 45 seconds
 ### Data Security
 
 **Best Practices:**
+
 1. **Secure Temporary Files**
+
    - Use OS temp directory
    - Set restrictive file permissions
    - Clean up after use
    - Encrypt cache if supported
 
 2. **HTTPS Only**
+
    - Enforce TLS 1.2+
    - Validate certificates
    - Reject insecure connections
@@ -1130,13 +1213,16 @@ Retry available in: 45 seconds
 ### Access Control
 
 **Best Practices:**
+
 1. **Respect Qlik Permissions**
+
    - Show only accessible files
    - Handle permission errors gracefully
    - Don't expose unauthorized data
    - Log access for audit
 
 2. **Principle of Least Privilege**
+
    - Request minimal OAuth scopes
    - API keys with limited permissions
    - Read-only by default
@@ -1151,13 +1237,16 @@ Retry available in: 45 seconds
 ### Code Security
 
 **Best Practices:**
+
 1. **Dependency Management**
+
    - Use official `@qlik/api` library
    - Keep dependencies updated
    - Monitor for vulnerabilities
    - Use lock files
 
 2. **Input Validation**
+
    - Validate all user inputs
    - Sanitize file paths
    - Check URL formats
@@ -1176,6 +1265,7 @@ Retry available in: 45 seconds
 ### Unit Tests
 
 **Coverage Areas:**
+
 1. Authentication provider logic
 2. API client wrapper functions
 3. Cache management
@@ -1183,29 +1273,30 @@ Retry available in: 45 seconds
 5. URI parsing and validation
 
 **Example Tests:**
+
 ```javascript
-describe('QlikAuthProvider', () => {
-  test('stores API key securely', async () => {
-    await authProvider.setApiKey('test-key');
-    const stored = await secrets.get('qlik-api-key');
-    expect(stored).toBe('test-key');
+describe("QlikAuthProvider", () => {
+  test("stores API key securely", async () => {
+    await authProvider.setApiKey("test-key");
+    const stored = await secrets.get("qlik-api-key");
+    expect(stored).toBe("test-key");
   });
 
-  test('validates tenant URL format', () => {
-    expect(validateTenantUrl('tenant.us.qlikcloud.com')).toBe(true);
-    expect(validateTenantUrl('invalid-url')).toBe(false);
+  test("validates tenant URL format", () => {
+    expect(validateTenantUrl("tenant.us.qlikcloud.com")).toBe(true);
+    expect(validateTenantUrl("invalid-url")).toBe(false);
   });
 });
 
-describe('DownloadManager', () => {
-  test('downloads file to temp directory', async () => {
+describe("DownloadManager", () => {
+  test("downloads file to temp directory", async () => {
     const path = await downloadManager.download(fileId);
     expect(fs.existsSync(path)).toBe(true);
   });
 
-  test('uses cached file when available', async () => {
+  test("uses cached file when available", async () => {
     await downloadManager.download(fileId);
-    const spy = jest.spyOn(api, 'getDataFile');
+    const spy = jest.spyOn(api, "getDataFile");
     await downloadManager.download(fileId);
     expect(spy).not.toHaveBeenCalled();
   });
@@ -1215,6 +1306,7 @@ describe('DownloadManager', () => {
 ### Integration Tests
 
 **Coverage Areas:**
+
 1. End-to-end authentication flow
 2. File listing and browsing
 3. File download and reading
@@ -1222,6 +1314,7 @@ describe('DownloadManager', () => {
 5. Cache behavior
 
 **Test Environment:**
+
 - Test Qlik Cloud tenant
 - Test API keys with limited permissions
 - Sample QVD files of various sizes
@@ -1230,11 +1323,13 @@ describe('DownloadManager', () => {
 ### Manual Testing Checklist
 
 **Setup:**
+
 - [ ] Extension installs successfully
 - [ ] Settings UI renders correctly
 - [ ] Help documentation is accessible
 
 **Authentication:**
+
 - [ ] API key authentication works
 - [ ] Invalid key shows clear error
 - [ ] Expired key is detected
@@ -1242,6 +1337,7 @@ describe('DownloadManager', () => {
 - [ ] Logout clears credentials
 
 **File Operations:**
+
 - [ ] File list loads correctly
 - [ ] Search and filter work
 - [ ] Files open in viewer
@@ -1251,18 +1347,21 @@ describe('DownloadManager', () => {
 - [ ] Export functions work
 
 **Cache:**
+
 - [ ] Cached files load instantly
 - [ ] Cache size limit enforced
 - [ ] Manual cache clear works
 - [ ] Temp files cleaned up
 
 **Error Handling:**
+
 - [ ] Network errors handled gracefully
 - [ ] Permission errors clear
 - [ ] Rate limit respected
 - [ ] Offline mode works
 
 **Security:**
+
 - [ ] Credentials not in logs
 - [ ] HTTPS enforced
 - [ ] Temp files have correct permissions
@@ -1271,6 +1370,7 @@ describe('DownloadManager', () => {
 ### Performance Testing
 
 **Metrics to Monitor:**
+
 1. Time to list 100 files
 2. Time to download 10 MB QVD
 3. Time to open cached vs uncached file
@@ -1278,6 +1378,7 @@ describe('DownloadManager', () => {
 5. Cache hit rate
 
 **Performance Targets:**
+
 - File list: < 3 seconds
 - 10 MB download: < 10 seconds (dependent on network)
 - Cached file open: < 1 second
@@ -1288,6 +1389,7 @@ describe('DownloadManager', () => {
 ## Implementation Roadmap
 
 ### Sprint 1: Foundation (Week 1)
+
 - [ ] Add @qlik/api dependency
 - [ ] Create basic authentication provider
 - [ ] Implement API key storage
@@ -1298,6 +1400,7 @@ describe('DownloadManager', () => {
 **Deliverable:** Basic cloud connectivity
 
 ### Sprint 2: File Browser (Week 2)
+
 - [ ] Create cloud file tree view
 - [ ] Implement file listing
 - [ ] Add search and filter
@@ -1308,6 +1411,7 @@ describe('DownloadManager', () => {
 **Deliverable:** Browsable cloud file interface
 
 ### Sprint 3: Integration (Week 3)
+
 - [ ] Integrate cloud reader with existing editor
 - [ ] Implement download manager
 - [ ] Add progress indicators
@@ -1318,6 +1422,7 @@ describe('DownloadManager', () => {
 **Deliverable:** Full feature parity with local files
 
 ### Sprint 4: Polish (Week 4)
+
 - [ ] OAuth2 implementation (optional)
 - [ ] UI/UX improvements
 - [ ] Performance optimization
@@ -1328,6 +1433,7 @@ describe('DownloadManager', () => {
 **Deliverable:** Production-ready release
 
 ### Future Enhancements (Backlog)
+
 - [ ] Multi-tenant account management
 - [ ] Direct export to cloud
 - [ ] Collaboration features
@@ -1345,11 +1451,13 @@ describe('DownloadManager', () => {
 **Idea:** Use web version of extension that runs entirely in browser
 
 **Pros:**
+
 - No VS Code dependency
 - Could be used from any browser
 - Simpler deployment
 
 **Cons:**
+
 - Can't leverage VS Code ecosystem
 - Separate codebase to maintain
 - Different UX paradigm
@@ -1362,11 +1470,13 @@ describe('DownloadManager', () => {
 **Idea:** Create CLI tool for downloading and viewing QVD files
 
 **Pros:**
+
 - Scriptable and automatable
 - Simpler to implement
 - Works in any environment
 
 **Cons:**
+
 - No rich UI
 - Not integrated with VS Code
 - Separate tool to install
@@ -1379,11 +1489,13 @@ describe('DownloadManager', () => {
 **Idea:** Mount Qlik Cloud as virtual filesystem in VS Code
 
 **Pros:**
+
 - Files appear completely local
 - No special handling needed
 - Works with all extensions
 
 **Cons:**
+
 - Complex to implement
 - Performance concerns
 - OS-specific behavior
@@ -1396,11 +1508,13 @@ describe('DownloadManager', () => {
 **Idea:** Local proxy server that translates file:// URLs to API calls
 
 **Pros:**
+
 - Transparent to extension
 - Minimal code changes
 - Could support multiple clients
 
 **Cons:**
+
 - Requires separate server process
 - Complex setup
 - Port conflicts possible
@@ -1415,12 +1529,14 @@ describe('DownloadManager', () => {
 ### Official Qlik Documentation
 
 **APIs and Toolkits:**
+
 - Qlik API Toolkit Overview: https://qlik.dev/toolkits/qlik-api/
 - @qlik/api NPM Package: https://www.npmjs.com/package/@qlik/api
 - Data Files REST API: https://qlik.dev/apis/rest/data-files/
 - REST APIs Overview: https://qlik.dev/apis/rest/
 
 **Authentication:**
+
 - Authentication Overview: https://qlik.dev/authenticate/oauth/
 - OAuth Overview: https://qlik.dev/authenticate/oauth/
 - Get Started with M2M OAuth: https://qlik.dev/authenticate/oauth/getting-started-oauth-m2m/
@@ -1428,6 +1544,7 @@ describe('DownloadManager', () => {
 - Managing API Keys: https://help.qlik.com/en-US/cloud-services/Subsystems/Hub/Content/Sense_Hub/Admin/mc-generate-api-keys.htm
 
 **OAuth Examples:**
+
 - JavaScript OAuth M2M Connect: https://qlik.dev/examples/authenticate-examples/js-oauth-m2m-connect/
 - OAuth M2M Impersonation: https://qlik.dev/examples/authenticate-examples/oauth-m2m-impersonation/
 - Open App No Data Example: https://qlik.dev/examples/qlik-api-examples/open-app-no-data/
@@ -1435,21 +1552,25 @@ describe('DownloadManager', () => {
 ### GitHub Repositories
 
 **Qlik Official:**
+
 - qlik-api-ts: https://github.com/qlik-oss/qlik-api-ts
 - OAuth Impersonation Example: https://github.com/qlik-oss/qlik-cloud-embed-oauth-impersonation
 
 **VS Code Extension Samples:**
+
 - Authentication Provider Sample: https://github.com/microsoft/vscode-extension-samples/tree/main/authenticationprovider-sample
 - Custom OAuth VSCode: https://github.com/lanarimarco/custom-oauth-vscode
 
 ### Community Resources
 
 **Articles and Guides:**
+
 - Setting up Qlik OAuth: https://www.qalyptus.com/blog/setting-up-qlik-oauth-for-authentication
 - Create Authentication Provider for VS Code: https://www.eliostruyf.com/create-authentication-provider-visual-studio-code/
 - Using Microsoft Auth Provider: https://www.eliostruyf.com/microsoft-authentication-provider-visual-studio-code/
 
 **Stack Overflow:**
+
 - Custom AuthenticationProvider Implementation: https://stackoverflow.com/questions/69730194/any-idea-how-to-implement-a-custom-authenticationprovider-for-a-visual-studio-co
 - OAuth 2.0 from VS Code Extension: https://stackoverflow.com/questions/38317735/is-it-possible-to-auth-to-an-oauth-2-0-api-from-inside-a-vscode-extension
 
@@ -1467,7 +1588,7 @@ describe('DownloadManager', () => {
 ### A.1 Basic API Connection
 
 ```javascript
-import qlikApi from '@qlik/api';
+import qlikApi from "@qlik/api";
 
 /**
  * Initialize Qlik API connection
@@ -1478,12 +1599,12 @@ import qlikApi from '@qlik/api';
 function initQlikConnection(tenantUrl, apiKey) {
   const config = {
     host: tenantUrl,
-    apiKey: apiKey
+    apiKey: apiKey,
   };
 
   return {
     dataFiles: qlikApi.rest.dataFiles(config),
-    spaces: qlikApi.rest.spaces(config)
+    spaces: qlikApi.rest.spaces(config),
   };
 }
 ```
@@ -1499,9 +1620,9 @@ function initQlikConnection(tenantUrl, apiKey) {
  */
 async function listQvdFiles(api, options = {}) {
   const params = {
-    baseNameWildcard: '*.qvd',
+    baseNameWildcard: "*.qvd",
     limit: options.limit || 100,
-    ...options
+    ...options,
   };
 
   const response = await api.dataFiles.getDataFiles(params);
@@ -1512,9 +1633,9 @@ async function listQvdFiles(api, options = {}) {
 ### A.3 Download QVD File
 
 ```javascript
-import fs from 'fs/promises';
-import path from 'path';
-import os from 'os';
+import fs from "fs/promises";
+import path from "path";
+import os from "os";
 
 /**
  * Download QVD file from Qlik Cloud to temp directory
@@ -1529,9 +1650,9 @@ async function downloadQvdFile(api, fileId) {
   // Save to temp directory
   const tempDir = os.tmpdir();
   const tempPath = path.join(tempDir, `qlik-cloud-${fileId}.qvd`);
-  
+
   await fs.writeFile(tempPath, content);
-  
+
   return tempPath;
 }
 ```
@@ -1539,7 +1660,7 @@ async function downloadQvdFile(api, fileId) {
 ### A.4 VS Code Authentication Provider Skeleton
 
 ```javascript
-import * as vscode from 'vscode';
+import * as vscode from "vscode";
 
 /**
  * Authentication provider for Qlik Cloud
@@ -1550,23 +1671,23 @@ class QlikCloudAuthProvider {
   }
 
   async getSessions(scopes) {
-    return this._sessions.filter(session => 
-      scopes.every(scope => session.scopes.includes(scope))
+    return this._sessions.filter((session) =>
+      scopes.every((scope) => session.scopes.includes(scope))
     );
   }
 
   async createSession(scopes) {
     // Implement OAuth flow here
     const accessToken = await this.performOAuthFlow(scopes);
-    
+
     const session = {
       id: crypto.randomUUID(),
       accessToken: accessToken,
       scopes: scopes,
       account: {
-        id: 'user-id',
-        label: 'user@example.com'
-      }
+        id: "user-id",
+        label: "user@example.com",
+      },
     };
 
     this._sessions.push(session);
@@ -1574,7 +1695,7 @@ class QlikCloudAuthProvider {
   }
 
   async removeSession(sessionId) {
-    const index = this._sessions.findIndex(s => s.id === sessionId);
+    const index = this._sessions.findIndex((s) => s.id === sessionId);
     if (index > -1) {
       this._sessions.splice(index, 1);
     }
@@ -1582,7 +1703,7 @@ class QlikCloudAuthProvider {
 
   async performOAuthFlow(scopes) {
     // TODO: Implement OAuth flow
-    throw new Error('Not implemented');
+    throw new Error("Not implemented");
   }
 }
 
@@ -1591,11 +1712,11 @@ class QlikCloudAuthProvider {
  */
 export function activate(context) {
   const authProvider = new QlikCloudAuthProvider();
-  
+
   context.subscriptions.push(
     vscode.authentication.registerAuthenticationProvider(
-      'qlik-cloud',
-      'Qlik Sense Cloud',
+      "qlik-cloud",
+      "Qlik Sense Cloud",
       authProvider
     )
   );
@@ -1768,7 +1889,7 @@ The cloud file browser appears in the left sidebar (Explorer panel) of VS Code:
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 
-Legend: 
+Legend:
   💾 = Cached locally
   🔄 = Refresh button
   ⚙️ = Settings/Manage Connection
@@ -1776,6 +1897,7 @@ Legend:
 ```
 
 **What happens when you click on a cloud QVD file:**
+
 1. Progress notification appears: "Downloading sales_2024_q1.qvd..."
 2. File downloads to cache in background
 3. Opens in main editor area (right side) using existing QVD viewer
@@ -1813,8 +1935,9 @@ This research provides a comprehensive foundation for implementing Qlik Sense Cl
 5. Iterate based on user feedback
 
 **Estimated Timeline:**
+
 - Phase 1 (API Key): 2-3 days
-- Phase 2 (File Browser): 3-4 days  
+- Phase 2 (File Browser): 3-4 days
 - Phase 3 (Cache): 2 days
 - Phase 4 (OAuth): 4-5 days
 - **Total: 11-14 days** for full implementation
@@ -1823,6 +1946,6 @@ This research document will serve as the technical specification for implementin
 
 ---
 
-*Document Version: 1.0*  
-*Last Updated: October 31, 2025*  
-*Author: Copilot AI Research Agent*
+_Document Version: 1.0_  
+_Last Updated: October 31, 2025_  
+_Author: Copilot AI Research Agent_

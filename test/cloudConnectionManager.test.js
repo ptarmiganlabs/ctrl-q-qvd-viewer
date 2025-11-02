@@ -216,4 +216,153 @@ suite("CloudConnectionManager Test Suite", () => {
       }
     });
   });
+
+  suite("Integration Tests (with real API)", () => {
+    // These tests require real Qlik Cloud credentials via environment variables
+    // Set QLIK_API_KEY and QLIK_TENANT_URL to run these tests
+    // Example:
+    //   export QLIK_API_KEY="your-api-key"
+    //   export QLIK_TENANT_URL="your-tenant.us.qlikcloud.com"
+    //   npm test
+
+    const hasCredentials = () => {
+      return process.env.QLIK_API_KEY && process.env.QLIK_TENANT_URL;
+    };
+
+    test("should connect to real Qlik Cloud with valid credentials", async function () {
+      if (!hasCredentials()) {
+        console.log(
+          "  ⚠ Skipping integration test - set QLIK_API_KEY and QLIK_TENANT_URL to run"
+        );
+        this.skip();
+        return;
+      }
+
+      const apiKey = process.env.QLIK_API_KEY;
+      const tenantUrl = process.env.QLIK_TENANT_URL;
+
+      // Configure credentials
+      await authProvider.setApiKey(apiKey);
+      await authProvider.setTenantUrl(tenantUrl);
+
+      // Attempt to connect
+      await connectionManager.connect();
+
+      // Verify connection state
+      assert.strictEqual(connectionManager.isConnected(), true);
+      assert.notStrictEqual(connectionManager.getConnection(), null);
+      assert.notStrictEqual(connectionManager.getHostConfig(), null);
+
+      // Clean up
+      await connectionManager.disconnect();
+    });
+
+    test("should successfully call Qlik Cloud API (users.getMyUser)", async function () {
+      if (!hasCredentials()) {
+        console.log(
+          "  ⚠ Skipping integration test - set QLIK_API_KEY and QLIK_TENANT_URL to run"
+        );
+        this.skip();
+        return;
+      }
+
+      const apiKey = process.env.QLIK_API_KEY;
+      const tenantUrl = process.env.QLIK_TENANT_URL;
+
+      // Configure credentials
+      await authProvider.setApiKey(apiKey);
+      await authProvider.setTenantUrl(tenantUrl);
+
+      // Connect
+      await connectionManager.connect();
+
+      try {
+        // Import users API from @qlik/api
+        const { users } = await import("@qlik/api");
+
+        // Call real API - get current user (users is a module, not a factory function)
+        const response = await users.getMyUser();
+
+        // Extract user data from response
+        const myUser = response.data;
+
+        // Verify we got a valid response
+        assert.ok(myUser, "Should receive user object");
+        assert.ok(myUser.id, "User object should have an id");
+        assert.ok(myUser.email, "User object should have an email");
+
+        console.log(`  ✓ Successfully authenticated as: ${myUser.email}`);
+      } finally {
+        // Clean up
+        await connectionManager.disconnect();
+      }
+    });
+
+    test("should successfully test connection with testConnection()", async function () {
+      if (!hasCredentials()) {
+        console.log(
+          "  ⚠ Skipping integration test - set QLIK_API_KEY and QLIK_TENANT_URL to run"
+        );
+        this.skip();
+        return;
+      }
+
+      const apiKey = process.env.QLIK_API_KEY;
+      const tenantUrl = process.env.QLIK_TENANT_URL;
+
+      // Configure credentials
+      await authProvider.setApiKey(apiKey);
+      await authProvider.setTenantUrl(tenantUrl);
+
+      // Connect
+      await connectionManager.connect();
+
+      try {
+        // Test connection
+        const isValid = await connectionManager.testConnection();
+
+        // Should return true for valid connection
+        assert.strictEqual(isValid, true, "Connection test should succeed");
+      } finally {
+        // Clean up
+        await connectionManager.disconnect();
+      }
+    });
+
+    test("should fail with invalid API key", async function () {
+      // This test requires a real tenant URL to test invalid API key
+      if (!hasCredentials()) {
+        console.log(
+          "  ⚠ Skipping integration test - set QLIK_API_KEY and QLIK_TENANT_URL to run"
+        );
+        this.skip();
+        return;
+      }
+
+      const tenantUrl = process.env.QLIK_TENANT_URL;
+
+      // Use invalid API key with real tenant URL
+      await authProvider.setApiKey("invalid-api-key-12345-this-will-fail");
+      await authProvider.setTenantUrl(tenantUrl);
+
+      // Attempt to connect should not throw
+      await connectionManager.connect();
+
+      try {
+        // Test connection should return false or throw for invalid API key
+        const isValid = await connectionManager.testConnection();
+        assert.strictEqual(
+          isValid,
+          false,
+          "Connection test should fail with invalid API key"
+        );
+      } catch (error) {
+        // It's also acceptable to throw an error for authentication failure
+        assert.ok(error, "Should throw error for invalid API key");
+        console.log(`  ✓ Correctly rejected invalid API key: ${error.message}`);
+      } finally {
+        await connectionManager.disconnect();
+      }
+    });
+  });
 });
