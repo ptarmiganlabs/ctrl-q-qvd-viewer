@@ -88,13 +88,24 @@ export function profileFields(data, fieldNames, maxUniqueValues = 1000) {
 }
 
 /**
+ * Escape special characters in values for QVS inline format
+ * @param {string} value - Value to escape
+ * @returns {string} Escaped value
+ */
+function escapeQvsValue(value) {
+  return String(value)
+    .replace(/\t/g, " ")
+    .replace(/\n/g, " ")
+    .replace(/\r/g, "");
+}
+
+/**
  * Generate Qlik .qvs script for loading profiling data
  * @param {Array<Object>} profilingResults - Results from profileFields
  * @param {string} qvdFileName - Original QVD file name
  * @returns {string} QVS script content
  */
 export function generateQvsScript(profilingResults, qvdFileName) {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
   let script = `// QVD Profiling Data Export
 // Generated: ${new Date().toISOString()}
 // Source QVD: ${qvdFileName}
@@ -118,11 +129,7 @@ export function generateQvsScript(profilingResults, qvdFileName) {
     script += `Value\tCount\tPercentage\n`;
 
     for (const dist of distributions) {
-      // Escape tabs and newlines in values
-      const escapedValue = String(dist.value)
-        .replace(/\t/g, " ")
-        .replace(/\n/g, " ")
-        .replace(/\r/g, "");
+      const escapedValue = escapeQvsValue(dist.value);
       script += `${escapedValue}\t${dist.count}\t${dist.percentage}\n`;
     }
 
