@@ -907,6 +907,66 @@ Downloaded QVD files may contain sensitive data.
 
 ### File Browser UI
 
+#### Tree View Location in VS Code
+
+The cloud file browser will appear as a **new tree view section in the VS Code Explorer panel** (the left sidebar). It will be integrated alongside the existing file explorer, not replacing it.
+
+**Visual Layout:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ VS Code Window                                                   │
+├──────────────┬──────────────────────────────────────────────────┤
+│              │                                                    │
+│  EXPLORER ▼  │         Main Editor Area                          │
+│              │  ┌──────────────────────────────────────────┐    │
+│  ────────────│  │ sales_2024.qvd                     ☁️    │    │
+│  📁 WORKSPACE │  │                                           │    │
+│    ▼ my-proj │  │  [Data Preview] [Fields] [Metadata]      │    │
+│      📄 f1.js│  │                                           │    │
+│      📄 f2.js│  │  (Existing QVD Viewer UI)                │    │
+│              │  │                                           │    │
+│  ────────────│  └──────────────────────────────────────────┘    │
+│  ☁️ QLIK     │                                                    │
+│  CLOUD FILES │                                                    │
+│    ▼ Personal│                                                    │
+│      ▼ Sales │                                                    │
+│        📄 sal│                                                    │
+│        📄 cus│                                                    │
+│      ▶ Market│                                                    │
+│              │                                                    │
+│  ────────────│                                                    │
+│  OUTLINE     │                                                    │
+│  TIMELINE    │                                                    │
+│              │                                                    │
+└──────────────┴──────────────────────────────────────────────────┘
+    Left Sidebar = Explorer Panel
+```
+
+**Key Points:**
+- **Location:** Left sidebar (Explorer panel), below the regular file tree
+- **Integration:** Appears as a separate collapsible section
+- **Coexistence:** Does NOT replace local files - both local and cloud files visible simultaneously
+- **Configuration:** Controlled by `ctrl-q-qvd-viewer.cloud.enabled` setting
+- **VS Code API:** Uses `vscode.window.createTreeView()` with `explorer` container
+- **Package.json Config:**
+  ```json
+  "views": {
+    "explorer": [
+      {
+        "id": "qlikCloudFiles",
+        "name": "Qlik Cloud Files"
+      }
+    ]
+  }
+  ```
+
+When a user clicks on a QVD file in this cloud tree view:
+1. The file downloads to cache (with progress notification)
+2. Opens in the main editor area using the existing QVD viewer UI
+3. Tab title shows a cloud icon (☁️) to indicate it's a cloud file
+4. All existing viewer features work (data preview, export, etc.)
+
 #### Tree View Structure
 
 ```
@@ -1669,30 +1729,58 @@ export function activate(context) {
 └─────────────────────────────────────────────────────────┘
 ```
 
-### C.2 Cloud File Browser
+### C.2 Cloud File Browser in Explorer Panel
+
+The cloud file browser appears in the left sidebar (Explorer panel) of VS Code:
 
 ```
-EXPLORER
+┌─────────────────────────────────────────────────────────────┐
+│ VS Code - Explorer Panel (Left Sidebar)                     │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  EXPLORER ▼                                                  │
+│                                                              │
+│  ─────────────────────────────────────────────────────────  │
+│  📁 WORKSPACE                                      [···]     │
+│    ▼ 📁 my-project                                           │
+│      ▼ 📁 data                                               │
+│        📄 local_file.qvd                                     │
+│      📄 index.js                                             │
+│      📄 package.json                                         │
+│                                                              │
+│  ─────────────────────────────────────────────────────────  │
+│  ☁️ QLIK CLOUD FILES                        [🔄] [⚙️]       │
+│    ▼ 📁 Personal Spaces                                      │
+│      ▼ 📁 Sales Analysis (5 files)                           │
+│        📄 sales_2024_q1.qvd (12.3 MB)         👈 Click here │
+│        📄 sales_2024_q2.qvd (14.7 MB)                        │
+│        📄 customers.qvd (8.9 MB)                             │
+│        ▶ 📁 Archive                                          │
+│        📄 products.qvd (2.1 MB) 💾                           │
+│      ▶ 📁 Marketing Data (3 files)                           │
+│    ▼ 📁 Shared Spaces                                        │
+│      ▶ 📁 Company KPIs (12 files)                            │
+│      ▶ 📁 Regional Data (8 files)                            │
+│                                                              │
+│  ─────────────────────────────────────────────────────────  │
+│  📋 OUTLINE                                                  │
+│  🕐 TIMELINE                                                 │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
 
-  📁 LOCAL FILES
-    ▼ 📁 workspace
-      📄 local_file.qvd
-
-  ☁️ QLIK CLOUD FILES          [🔄] [⚙️]
-    ▼ 📁 Personal Spaces
-      ▼ 📁 Sales Analysis (5 files)
-        📄 sales_2024_q1.qvd (12.3 MB)
-        📄 sales_2024_q2.qvd (14.7 MB)
-        📄 customers.qvd (8.9 MB)
-        ▶ 📁 Archive
-        📄 products.qvd (2.1 MB) 💾
-      ▶ 📁 Marketing Data (3 files)
-    ▼ 📁 Shared Spaces
-      ▶ 📁 Company KPIs (12 files)
-      ▶ 📁 Regional Data (8 files)
-
-  Legend: 💾 = Cached locally
+Legend: 
+  💾 = Cached locally
+  🔄 = Refresh button
+  ⚙️ = Settings/Manage Connection
+  [···] = Workspace menu
 ```
+
+**What happens when you click on a cloud QVD file:**
+1. Progress notification appears: "Downloading sales_2024_q1.qvd..."
+2. File downloads to cache in background
+3. Opens in main editor area (right side) using existing QVD viewer
+4. Tab shows: `☁️ sales_2024_q1.qvd` (cloud icon indicates source)
+5. All existing features work: data preview, fields, metadata, export
 
 ### C.3 Status Bar
 
