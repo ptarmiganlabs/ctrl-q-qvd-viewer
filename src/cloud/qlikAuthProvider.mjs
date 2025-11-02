@@ -33,8 +33,17 @@ export class QlikAuthProvider {
    * @throws {Error} If API key is invalid
    */
   async setApiKey(apiKey) {
-    // TODO: Implement in Issue #2
-    throw new Error("Not yet implemented");
+    if (!apiKey || typeof apiKey !== "string") {
+      throw new Error("Invalid API key: must be a non-empty string");
+    }
+
+    // Trim whitespace to prevent accidental input errors
+    const trimmedKey = apiKey.trim();
+    if (trimmedKey.length === 0) {
+      throw new Error("Invalid API key: cannot be empty or whitespace only");
+    }
+
+    await this.context.secrets.store(this.secretKey, trimmedKey);
   }
 
   /**
@@ -43,8 +52,7 @@ export class QlikAuthProvider {
    * @returns {Promise<string|undefined>} API key or undefined if not set
    */
   async getApiKey() {
-    // TODO: Implement in Issue #2
-    throw new Error("Not yet implemented");
+    return await this.context.secrets.get(this.secretKey);
   }
 
   /**
@@ -53,8 +61,8 @@ export class QlikAuthProvider {
    * @returns {Promise<boolean>} True if API key exists, false otherwise
    */
   async hasApiKey() {
-    // TODO: Implement in Issue #2
-    throw new Error("Not yet implemented");
+    const key = await this.getApiKey();
+    return !!key;
   }
 
   /**
@@ -63,8 +71,7 @@ export class QlikAuthProvider {
    * @returns {Promise<void>}
    */
   async clearApiKey() {
-    // TODO: Implement in Issue #2
-    throw new Error("Not yet implemented");
+    await this.context.secrets.delete(this.secretKey);
   }
 
   /**
@@ -75,8 +82,18 @@ export class QlikAuthProvider {
    * @returns {boolean} True if URL is valid, false otherwise
    */
   validateTenantUrl(url) {
-    // TODO: Implement in Issue #2
-    throw new Error("Not yet implemented");
+    if (!url || typeof url !== "string") {
+      return false;
+    }
+
+    // Accept formats:
+    // - tenant.region.qlikcloud.com
+    // - https://tenant.region.qlikcloud.com
+    // - tenant.region.qlikcloud.com/
+    // - https://tenant.region.qlikcloud.com/
+    const pattern =
+      /^(https:\/\/)?[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.qlikcloud\.com\/?$/;
+    return pattern.test(url.trim());
   }
 
   /**
@@ -88,8 +105,23 @@ export class QlikAuthProvider {
    * @throws {Error} If URL cannot be normalized
    */
   normalizeTenantUrl(url) {
-    // TODO: Implement in Issue #2
-    throw new Error("Not yet implemented");
+    if (!url || typeof url !== "string") {
+      throw new Error("Invalid tenant URL: must be a non-empty string");
+    }
+
+    const trimmedUrl = url.trim();
+    if (trimmedUrl.length === 0) {
+      throw new Error("Invalid tenant URL: cannot be empty or whitespace only");
+    }
+
+    if (!this.validateTenantUrl(trimmedUrl)) {
+      throw new Error(
+        `Invalid tenant URL format: ${trimmedUrl}. Expected format: tenant.region.qlikcloud.com`
+      );
+    }
+
+    // Remove protocol and trailing slash to get normalized format
+    return trimmedUrl.replace(/^https?:\/\//, "").replace(/\/$/, "");
   }
 
   /**
@@ -97,10 +129,14 @@ export class QlikAuthProvider {
    *
    * @param {string} url - Tenant URL to store
    * @returns {Promise<void>}
+   * @throws {Error} If URL is invalid
    */
   async setTenantUrl(url) {
-    // TODO: Implement in Issue #2
-    throw new Error("Not yet implemented");
+    // Normalize the URL first (this also validates it)
+    const normalizedUrl = this.normalizeTenantUrl(url);
+
+    // Store in global state (not workspace-specific, so it persists across workspaces)
+    await this.context.globalState.update(this.tenantUrlKey, normalizedUrl);
   }
 
   /**
@@ -109,7 +145,47 @@ export class QlikAuthProvider {
    * @returns {Promise<string|undefined>} Tenant URL or undefined if not set
    */
   async getTenantUrl() {
-    // TODO: Implement in Issue #2
-    throw new Error("Not yet implemented");
+    return this.context.globalState.get(this.tenantUrlKey);
+  }
+
+  /**
+   * Check if tenant URL is configured
+   *
+   * @returns {Promise<boolean>} True if tenant URL exists, false otherwise
+   */
+  async hasTenantUrl() {
+    const url = await this.getTenantUrl();
+    return !!url;
+  }
+
+  /**
+   * Clear stored tenant URL
+   *
+   * @returns {Promise<void>}
+   */
+  async clearTenantUrl() {
+    await this.context.globalState.update(this.tenantUrlKey, undefined);
+  }
+
+  /**
+   * Check if fully configured (both API key and tenant URL)
+   *
+   * @returns {Promise<boolean>} True if both API key and tenant URL are set
+   */
+  async isConfigured() {
+    const [hasKey, hasUrl] = await Promise.all([
+      this.hasApiKey(),
+      this.hasTenantUrl(),
+    ]);
+    return hasKey && hasUrl;
+  }
+
+  /**
+   * Clear all stored credentials and configuration
+   *
+   * @returns {Promise<void>}
+   */
+  async clearAll() {
+    await Promise.all([this.clearApiKey(), this.clearTenantUrl()]);
   }
 }
