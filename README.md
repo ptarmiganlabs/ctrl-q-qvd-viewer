@@ -26,6 +26,12 @@ Open source with a permissive MIT license.<br>
   - Field definitions with types, symbols, and technical details
   - Lineage information (if available in the QVD file)
 - **Data Preview**: View sample data from QVD files in a formatted table with pagination
+- **Data Profiling**: Analyze value distributions in your QVD fields
+  - Select 1-3 fields for comparison
+  - View frequency distributions in interactive bar charts
+  - See detailed value counts and percentages in sortable tables
+  - Export profiling results as Qlik .qvs scripts for further analysis
+  - Automatic warning for large files before loading all data
 - **Export Data**: Export QVD data to multiple formats:
   - **Apache Arrow** - High-performance columnar format for analytics (Beta)
   - **Avro** - Compact binary format with schema evolution support (Beta)
@@ -149,7 +155,7 @@ There are two ways to open a QVD file:
 
 ### What You'll See
 
-The extension displays QVD files in four tabs:
+The extension displays QVD files in five tabs:
 
 #### 1. Data Preview
 
@@ -181,6 +187,29 @@ The lineage is an array of objects, each with `Discriminator` and `Statement` pr
 
 - Discriminator
 - Statement
+
+#### 5. Data Profiling
+
+Analyze value distributions for selected fields to understand data patterns and frequency.
+
+**How to Use Profiling:**
+
+1. Navigate to the **📊 Profiling** tab
+2. Select 1-3 fields from the field selector (use Ctrl/Cmd+Click for multiple selections)
+3. Click **"▶️ Run Profiling"** to analyze the data
+4. View results for each field including:
+   - **Statistics**: Total rows, unique values, NULL/empty count
+   - **Interactive Chart**: Bar chart showing top 20 most frequent values
+   - **Detailed Table**: Complete distribution with values, counts, and percentages
+
+**Features:**
+
+- **Field Comparison**: Compare value distributions across up to 3 fields simultaneously
+- **Visual Analysis**: Interactive charts powered by Chart.js for clear data visualization
+- **Export to QVS**: Generate Qlik .qvs scripts containing frequency data tables that can be loaded into Qlik Sense for further analysis
+- **Large File Warning**: Automatic warning when profiling files with more than 100,000 rows, as all data must be loaded into memory
+
+**Note:** Profiling loads the entire QVD file into memory. For very large files (>100,000 rows), you'll receive a warning before proceeding.
 
 ### Exporting Data
 
