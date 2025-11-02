@@ -107,6 +107,7 @@
     "compile-tests": "tsc -p . --outDir out",
     "pretest": "npm run lint",
     "test": "vscode-test",
+    "test:integration": "dotenv -e .env -- npm test",
     "lint": "eslint ."
   },
   "devDependencies": {
@@ -116,12 +117,14 @@
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.6.2",
+    "dotenv-cli": "^7.4.2",
     "esbuild": "^0.25.11",
     "eslint": "^9.36.0",
     "npm-run-all": "^4.1.5",
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@qlik/api": "^1.14.0",
     "apache-arrow": "^21.1.0",
     "avsc": "^5.7.9",
     "exceljs": "^4.4.0",

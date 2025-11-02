@@ -235,6 +235,28 @@ This section provides a quick overview for developers. For detailed information,
 - **[BUNDLING.md](docs/BUNDLING.md)** - Extension bundling with esbuild, build scripts, and optimization details
 - **[CI_CD.md](docs/CI_CD.md)** - CI/CD setup with GitHub Actions, automated testing, and release workflows
 - **[PUBLISHING.md](docs/PUBLISHING.md)** - Publishing to VS Code Marketplace, including account setup and deployment
+- **[INTEGRATION_TESTING.md](docs/INTEGRATION_TESTING.md)** - Integration testing with real Qlik Sense Cloud credentials
+
+### Testing
+
+**Unit Tests (No Credentials Required):**
+
+```bash
+npm test
+```
+
+**Integration Tests (With Qlik Cloud Credentials):**
+
+```bash
+# 1. Setup credentials (one-time)
+cp .env.example .env
+# Edit .env with your Qlik Cloud API key and tenant URL
+
+# 2. Run integration tests
+npm run test:integration
+```
+
+Integration tests verify real connectivity to Qlik Sense Cloud but are optional. See [INTEGRATION_TESTING.md](docs/INTEGRATION_TESTING.md) for details on obtaining API keys and test file IDs.
 
 ### Test Data
 
