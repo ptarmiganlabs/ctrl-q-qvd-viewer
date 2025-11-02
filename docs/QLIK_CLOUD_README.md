@@ -37,6 +37,16 @@ This directory contains comprehensive research and implementation guides for int
 - Troubleshooting guide
 - **Use this to start implementing (Ready to code)**
 
+### 📋 GitHub Issues
+
+**[QLIK_CLOUD_ISSUES.md](./QLIK_CLOUD_ISSUES.md)** - Implementation Issues
+- 36 sequentially numbered GitHub issues
+- Organized by implementation phase
+- Detailed task lists for each issue
+- Acceptance criteria and testing requirements
+- Dependencies and timeline estimates
+- **Use this to create GitHub issues and track progress**
+
 ## 🗺️ Document Relationship
 
 ```
@@ -51,6 +61,10 @@ QLIK_CLOUD_RESEARCH.md
 QLIK_CLOUD_IMPLEMENTATION.md
     ↓
     Actual code & implementation
+    ↓
+QLIK_CLOUD_ISSUES.md
+    ↓
+    GitHub issues for tracking work
 ```
 
 ## 🎯 Use Cases
@@ -74,6 +88,13 @@ QLIK_CLOUD_IMPLEMENTATION.md
 - Follow step-by-step instructions
 - Use provided code examples
 - Reference troubleshooting guide
+
+### For Project Managers / Team Leads
+→ Read: **QLIK_CLOUD_ISSUES.md**
+- Create GitHub issues to track work
+- Understand task breakdown
+- Plan sprints and milestones
+- Track progress and dependencies
 
 ## 📊 Research Summary
 
