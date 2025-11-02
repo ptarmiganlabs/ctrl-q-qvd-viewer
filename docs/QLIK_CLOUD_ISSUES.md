@@ -14,13 +14,15 @@ Based on the research in [QLIK_CLOUD_RESEARCH.md](./QLIK_CLOUD_RESEARCH.md), the
 Set up the foundational project structure for Qlik Sense Cloud integration.
 
 **Tasks:**
-- [ ] Add `@qlik/api` npm package to `package.json` dependencies
-- [ ] Create `src/cloud/` directory structure
-- [ ] Add TypeScript/JSDoc type definitions for cloud components
-- [ ] Update `.gitignore` if needed for cloud cache directory
-- [ ] Update project documentation with new structure
+
+- [x] Add `@qlik/api` npm package to `package.json` dependencies
+- [x] Create `src/cloud/` directory structure
+- [x] Add TypeScript/JSDoc type definitions for cloud components
+- [x] Update `.gitignore` if needed for cloud cache directory
+- [x] Update project documentation with new structure
 
 **Acceptance Criteria:**
+
 - `@qlik/api` dependency installed and available
 - `src/cloud/` directory exists
 - No build or lint errors
@@ -35,6 +37,7 @@ Set up the foundational project structure for Qlik Sense Cloud integration.
 Create the authentication provider to securely store and manage Qlik Cloud API keys using VS Code's SecretStorage API.
 
 **Tasks:**
+
 - [ ] Create `src/cloud/qlikAuthProvider.mjs` file
 - [ ] Implement `QlikAuthProvider` class with methods:
   - `setApiKey(apiKey)` - Store API key securely
@@ -48,6 +51,7 @@ Create the authentication provider to securely store and manage Qlik Cloud API k
 - [ ] Add unit tests for authentication provider
 
 **Acceptance Criteria:**
+
 - API keys stored securely in OS keychain via SecretStorage
 - Tenant URL validation works correctly
 - No API keys visible in plaintext settings
@@ -65,6 +69,7 @@ Create the authentication provider to securely store and manage Qlik Cloud API k
 Create the connection manager to handle connections to Qlik Cloud tenants using the @qlik/api toolkit.
 
 **Tasks:**
+
 - [ ] Create `src/cloud/cloudConnectionManager.mjs` file
 - [ ] Implement `CloudConnectionManager` class with methods:
   - `connect()` - Establish connection to Qlik Cloud
@@ -79,6 +84,7 @@ Create the connection manager to handle connections to Qlik Cloud tenants using 
 - [ ] Add unit tests
 
 **Acceptance Criteria:**
+
 - Can successfully connect to Qlik Cloud with valid credentials
 - Connection errors are handled and reported clearly
 - Connection state is tracked accurately
@@ -96,6 +102,7 @@ Create the connection manager to handle connections to Qlik Cloud tenants using 
 Create the download manager to handle downloading QVD files from Qlik Cloud with local caching support.
 
 **Tasks:**
+
 - [ ] Create `src/cloud/downloadManager.mjs` file
 - [ ] Implement `DownloadManager` class with methods:
   - `initCache()` - Initialize cache directory
@@ -112,6 +119,7 @@ Create the download manager to handle downloading QVD files from Qlik Cloud with
 - [ ] Add unit tests
 
 **Acceptance Criteria:**
+
 - Files download successfully from Qlik Cloud
 - Downloaded files are cached in proper location
 - Progress notifications shown during download
@@ -130,6 +138,7 @@ Create the download manager to handle downloading QVD files from Qlik Cloud with
 Create an adapter that extends the existing QvdReader to support reading QVD files from Qlik Cloud.
 
 **Tasks:**
+
 - [ ] Create `src/cloud/cloudQvdReader.mjs` file
 - [ ] Implement `CloudQvdReader` class that:
   - Takes connection manager and download manager as dependencies
@@ -142,6 +151,7 @@ Create an adapter that extends the existing QvdReader to support reading QVD fil
 - [ ] Add unit tests with mocked downloads
 
 **Acceptance Criteria:**
+
 - Can read QVD files from Qlik Cloud
 - Falls back to cache when available
 - Integrates seamlessly with existing QvdReader
@@ -160,6 +170,7 @@ Create an adapter that extends the existing QvdReader to support reading QVD fil
 Add VS Code configuration settings to allow users to configure their Qlik Cloud connection.
 
 **Tasks:**
+
 - [ ] Update `package.json` with new configuration properties:
   - `ctrl-q-qvd-viewer.cloud.enabled` - Enable/disable cloud integration
   - `ctrl-q-qvd-viewer.cloud.tenantUrl` - Qlik Cloud tenant URL
@@ -172,6 +183,7 @@ Add VS Code configuration settings to allow users to configure their Qlik Cloud 
 - [ ] Update documentation with configuration instructions
 
 **Acceptance Criteria:**
+
 - Settings appear in VS Code preferences
 - Tenant URL validation works
 - Default values are sensible
@@ -189,6 +201,7 @@ Add VS Code configuration settings to allow users to configure their Qlik Cloud 
 Register new VS Code commands for Qlik Cloud operations and integrate cloud services into the extension.
 
 **Tasks:**
+
 - [ ] Update `src/extension.mjs` to:
   - Initialize cloud services (auth provider, connection manager, download manager)
   - Register `ctrl-q-qvd-viewer.connectCloud` command
@@ -200,6 +213,7 @@ Register new VS Code commands for Qlik Cloud operations and integrate cloud serv
 - [ ] Test all commands work correctly
 
 **Acceptance Criteria:**
+
 - Connect command prompts for tenant URL and API key
 - Disconnect command clears credentials
 - Clear cache command removes cached files
@@ -218,6 +232,7 @@ Register new VS Code commands for Qlik Cloud operations and integrate cloud serv
 Create comprehensive tests and documentation for Phase 1 functionality.
 
 **Tasks:**
+
 - [ ] Create test files for all Phase 1 components
 - [ ] Write integration tests for end-to-end cloud connection flow
 - [ ] Test error scenarios (invalid credentials, network errors, etc.)
@@ -227,6 +242,7 @@ Create comprehensive tests and documentation for Phase 1 functionality.
 - [ ] Update CHANGELOG.md
 
 **Acceptance Criteria:**
+
 - All Phase 1 components have tests with good coverage
 - Integration tests pass
 - Documentation is clear and comprehensive
@@ -246,6 +262,7 @@ Create comprehensive tests and documentation for Phase 1 functionality.
 Implement a VS Code TreeView provider to display Qlik Cloud QVD files in the Explorer panel.
 
 **Tasks:**
+
 - [ ] Create `src/cloud/cloudFileTreeProvider.mjs` file
 - [ ] Implement `CloudFileTreeProvider` class that:
   - Implements VS Code TreeDataProvider interface
@@ -260,6 +277,7 @@ Implement a VS Code TreeView provider to display Qlik Cloud QVD files in the Exp
 - [ ] Add tests for tree provider
 
 **Acceptance Criteria:**
+
 - Tree view appears in Explorer panel
 - Files and folders displayed correctly
 - Can expand/collapse folders
@@ -278,6 +296,7 @@ Implement a VS Code TreeView provider to display Qlik Cloud QVD files in the Exp
 Add search and filter capabilities to the cloud file tree view.
 
 **Tasks:**
+
 - [ ] Add search input to tree view
 - [ ] Implement file name filtering
 - [ ] Support wildcards in search (e.g., `*.qvd`)
@@ -288,6 +307,7 @@ Add search and filter capabilities to the cloud file tree view.
 - [ ] Add clear filter action
 
 **Acceptance Criteria:**
+
 - Search filters files by name
 - Wildcard patterns work correctly
 - Size and date filters function properly
@@ -304,6 +324,7 @@ Add search and filter capabilities to the cloud file tree view.
 Implement context menu actions for cloud files in the tree view.
 
 **Tasks:**
+
 - [ ] Add "Open" action (opens in QVD viewer)
 - [ ] Add "Download to Local..." action
 - [ ] Add "Export to..." submenu with export formats
@@ -315,6 +336,7 @@ Implement context menu actions for cloud files in the tree view.
 - [ ] Add icons for each action
 
 **Acceptance Criteria:**
+
 - Right-click shows context menu
 - All actions work correctly
 - File opens in viewer on "Open"
@@ -331,6 +353,7 @@ Implement context menu actions for cloud files in the tree view.
 Enhance the tree view to show rich file metadata for each QVD file.
 
 **Tasks:**
+
 - [ ] Display file size next to file name
 - [ ] Show modification date in description
 - [ ] Add icon for cached files
@@ -340,6 +363,7 @@ Enhance the tree view to show rich file metadata for each QVD file.
 - [ ] Format sizes and dates appropriately
 
 **Acceptance Criteria:**
+
 - File size shown in human-readable format
 - Dates formatted consistently
 - Cached files have distinct icon
@@ -356,6 +380,7 @@ Enhance the tree view to show rich file metadata for each QVD file.
 Add pagination support to handle Qlik Cloud tenants with many files.
 
 **Tasks:**
+
 - [ ] Detect when more files are available
 - [ ] Implement "Load More" action in tree view
 - [ ] Show loading indicator while fetching next page
@@ -365,6 +390,7 @@ Add pagination support to handle Qlik Cloud tenants with many files.
 - [ ] Cache paginated results
 
 **Acceptance Criteria:**
+
 - Initial load shows first batch of files
 - "Load More" fetches next page
 - All pages can be loaded
@@ -381,6 +407,7 @@ Add pagination support to handle Qlik Cloud tenants with many files.
 Implement robust error handling and user feedback for file browser operations.
 
 **Tasks:**
+
 - [ ] Handle network errors gracefully
 - [ ] Show clear messages for authentication failures
 - [ ] Handle permission errors (access denied)
@@ -391,6 +418,7 @@ Implement robust error handling and user feedback for file browser operations.
 - [ ] Show empty state when no files found
 
 **Acceptance Criteria:**
+
 - All error types handled appropriately
 - Error messages are clear and actionable
 - Users can retry failed operations
@@ -407,6 +435,7 @@ Implement robust error handling and user feedback for file browser operations.
 Implement manual and automatic refresh capabilities for the cloud file tree view.
 
 **Tasks:**
+
 - [ ] Add refresh button to tree view toolbar
 - [ ] Implement manual refresh action
 - [ ] Add "Refresh on Focus" option in settings
@@ -416,6 +445,7 @@ Implement manual and automatic refresh capabilities for the cloud file tree view
 - [ ] Preserve tree expansion state on refresh
 
 **Acceptance Criteria:**
+
 - Refresh button updates file list
 - Auto-refresh works when enabled
 - Progress shown during refresh
@@ -432,6 +462,7 @@ Implement manual and automatic refresh capabilities for the cloud file tree view
 Create tests and documentation for Phase 2 file browser functionality.
 
 **Tasks:**
+
 - [ ] Write tests for tree view provider
 - [ ] Test search and filter functionality
 - [ ] Test context menu actions
@@ -442,6 +473,7 @@ Create tests and documentation for Phase 2 file browser functionality.
 - [ ] Create user guide for browsing cloud files
 
 **Acceptance Criteria:**
+
 - All Phase 2 components tested
 - UI tests cover major workflows
 - Documentation updated
@@ -459,6 +491,7 @@ Create tests and documentation for Phase 2 file browser functionality.
 Enhance the basic caching from Phase 1 with intelligent storage management.
 
 **Tasks:**
+
 - [ ] Implement cache metadata tracking (download time, access time, file size)
 - [ ] Store cache index in extension storage
 - [ ] Track cache statistics (hits, misses, total size)
@@ -469,6 +502,7 @@ Enhance the basic caching from Phase 1 with intelligent storage management.
 - [ ] Add tests for cache storage
 
 **Acceptance Criteria:**
+
 - Cache metadata persists across sessions
 - Statistics tracked accurately
 - LRU eviction removes oldest files when limit reached
@@ -484,6 +518,7 @@ Enhance the basic caching from Phase 1 with intelligent storage management.
 Implement time-based and size-based cache expiration policies.
 
 **Tasks:**
+
 - [ ] Add configurable cache expiration time (hours/days)
 - [ ] Implement automatic cleanup of expired files
 - [ ] Add max cache size limit
@@ -494,6 +529,7 @@ Implement time-based and size-based cache expiration policies.
 - [ ] Test expiration logic
 
 **Acceptance Criteria:**
+
 - Expired files automatically removed
 - Size limit enforced
 - Cleanup runs periodically
@@ -510,6 +546,7 @@ Implement time-based and size-based cache expiration policies.
 Add user interface for viewing and managing the cache.
 
 **Tasks:**
+
 - [ ] Create cache status view showing:
   - Total cache size
   - Number of cached files
@@ -523,6 +560,7 @@ Add user interface for viewing and managing the cache.
 - [ ] Show cache location path
 
 **Acceptance Criteria:**
+
 - Cache status visible and accurate
 - Can view cached files
 - Can delete individual or all files
@@ -539,6 +577,7 @@ Add user interface for viewing and managing the cache.
 Add monitoring and enforcement of cache size limits.
 
 **Tasks:**
+
 - [ ] Add `cacheMaxSizeMB` configuration setting
 - [ ] Monitor cache size in real-time
 - [ ] Enforce size limit during downloads
@@ -549,6 +588,7 @@ Add monitoring and enforcement of cache size limits.
 - [ ] Test size limit enforcement
 
 **Acceptance Criteria:**
+
 - Size limit configurable and enforced
 - Warnings shown when approaching limit
 - Status bar shows current cache size
@@ -565,6 +605,7 @@ Add monitoring and enforcement of cache size limits.
 Provide multiple ways for users to manually clear the cache.
 
 **Tasks:**
+
 - [ ] Add "Clear Cloud Cache" command to command palette
 - [ ] Add cache clear button to tree view toolbar
 - [ ] Show confirmation dialog with cache size
@@ -575,6 +616,7 @@ Provide multiple ways for users to manually clear the cache.
 - [ ] Test all clear operations
 
 **Acceptance Criteria:**
+
 - Multiple ways to clear cache available
 - Confirmation prevents accidental clearing
 - Selective clearing works correctly
@@ -591,6 +633,7 @@ Provide multiple ways for users to manually clear the cache.
 Enable viewing of cached files when offline or disconnected from Qlik Cloud.
 
 **Tasks:**
+
 - [ ] Detect network connectivity status
 - [ ] Show offline indicator in UI
 - [ ] Allow opening cached files when offline
@@ -601,6 +644,7 @@ Enable viewing of cached files when offline or disconnected from Qlik Cloud.
 - [ ] Test offline scenarios
 
 **Acceptance Criteria:**
+
 - Cached files accessible offline
 - Offline status clearly indicated
 - Cloud operations disabled gracefully
@@ -617,6 +661,7 @@ Enable viewing of cached files when offline or disconnected from Qlik Cloud.
 Create comprehensive tests and documentation for cache management features.
 
 **Tasks:**
+
 - [ ] Write tests for cache storage and retrieval
 - [ ] Test expiration policies
 - [ ] Test size limits and enforcement
@@ -627,6 +672,7 @@ Create comprehensive tests and documentation for cache management features.
 - [ ] Document performance best practices
 
 **Acceptance Criteria:**
+
 - All Phase 3 components tested
 - Cache scenarios covered
 - Documentation complete
@@ -644,6 +690,7 @@ Create comprehensive tests and documentation for cache management features.
 Research OAuth2 implementation details and create implementation plan.
 
 **Tasks:**
+
 - [ ] Review VS Code Authentication API documentation
 - [ ] Study existing OAuth2 implementations in VS Code extensions
 - [ ] Determine required OAuth scopes for Qlik Cloud
@@ -654,6 +701,7 @@ Research OAuth2 implementation details and create implementation plan.
 - [ ] Create implementation checklist
 
 **Acceptance Criteria:**
+
 - OAuth2 requirements documented
 - Implementation plan created
 - Migration strategy defined
@@ -671,6 +719,7 @@ Research OAuth2 implementation details and create implementation plan.
 Set up OAuth client registration in Qlik Cloud for the extension.
 
 **Tasks:**
+
 - [ ] Create OAuth client in Qlik Cloud Management Console
 - [ ] Configure client ID and scopes
 - [ ] Set up redirect URIs (localhost for development)
@@ -681,6 +730,7 @@ Set up OAuth client registration in Qlik Cloud for the extension.
 - [ ] Test client registration
 
 **Acceptance Criteria:**
+
 - OAuth client registered in Qlik Cloud
 - Client ID and scopes configured
 - Redirect URIs set up
@@ -697,6 +747,7 @@ Set up OAuth client registration in Qlik Cloud for the extension.
 Create a custom VS Code Authentication Provider for Qlik Cloud OAuth2.
 
 **Tasks:**
+
 - [ ] Create `src/cloud/qlikOAuthProvider.mjs` file
 - [ ] Implement VS Code AuthenticationProvider interface:
   - `getSessions(scopes)` - Get active sessions
@@ -709,6 +760,7 @@ Create a custom VS Code Authentication Provider for Qlik Cloud OAuth2.
 - [ ] Add tests for OAuth provider
 
 **Acceptance Criteria:**
+
 - Authentication provider registered
 - OAuth sessions managed correctly
 - Provider integrates with VS Code authentication UI
@@ -727,6 +779,7 @@ Create a custom VS Code Authentication Provider for Qlik Cloud OAuth2.
 Implement the OAuth2 Authorization Code flow with PKCE for secure authentication.
 
 **Tasks:**
+
 - [ ] Generate PKCE code verifier and challenge
 - [ ] Build authorization URL with parameters
 - [ ] Open browser for user authentication
@@ -739,6 +792,7 @@ Implement the OAuth2 Authorization Code flow with PKCE for secure authentication
 - [ ] Test OAuth flow end-to-end
 
 **Acceptance Criteria:**
+
 - Browser opens for authentication
 - User can authenticate via Qlik Cloud
 - Authorization code exchanged successfully
@@ -756,6 +810,7 @@ Implement the OAuth2 Authorization Code flow with PKCE for secure authentication
 Add automatic token refresh to maintain authentication without user intervention.
 
 **Tasks:**
+
 - [ ] Detect when access token is expired
 - [ ] Implement token refresh using refresh token
 - [ ] Handle refresh failures (re-authentication required)
@@ -766,6 +821,7 @@ Add automatic token refresh to maintain authentication without user intervention
 - [ ] Test refresh scenarios
 
 **Acceptance Criteria:**
+
 - Expired tokens refreshed automatically
 - User not interrupted during refresh
 - Failed refresh prompts re-authentication
@@ -782,6 +838,7 @@ Add automatic token refresh to maintain authentication without user intervention
 Create a smooth migration path for users upgrading from API Key authentication to OAuth2.
 
 **Tasks:**
+
 - [ ] Detect existing API Key configuration
 - [ ] Offer migration to OAuth2 on first run
 - [ ] Preserve existing settings during migration
@@ -792,6 +849,7 @@ Create a smooth migration path for users upgrading from API Key authentication t
 - [ ] Test migration scenarios
 
 **Acceptance Criteria:**
+
 - Users can migrate without losing data
 - Both auth methods work during transition
 - Migration process is smooth
@@ -808,6 +866,7 @@ Create a smooth migration path for users upgrading from API Key authentication t
 Enable users to authenticate with multiple Qlik Cloud tenants and switch between them.
 
 **Tasks:**
+
 - [ ] Support multiple OAuth sessions
 - [ ] Store sessions per tenant
 - [ ] Add account switcher UI in status bar
@@ -819,6 +878,7 @@ Enable users to authenticate with multiple Qlik Cloud tenants and switch between
 - [ ] Test multi-account scenarios
 
 **Acceptance Criteria:**
+
 - Multiple accounts can be configured
 - Can switch between accounts easily
 - Active account clearly indicated
@@ -835,6 +895,7 @@ Enable users to authenticate with multiple Qlik Cloud tenants and switch between
 Create comprehensive tests and documentation for OAuth2 functionality.
 
 **Tasks:**
+
 - [ ] Write tests for OAuth provider
 - [ ] Test authorization flow
 - [ ] Test token refresh
@@ -846,6 +907,7 @@ Create comprehensive tests and documentation for OAuth2 functionality.
 - [ ] Document security best practices
 
 **Acceptance Criteria:**
+
 - All Phase 4 components tested
 - OAuth flows verified
 - Documentation complete and clear
@@ -864,6 +926,7 @@ Create comprehensive tests and documentation for OAuth2 functionality.
 Create end-to-end integration tests covering all phases.
 
 **Tasks:**
+
 - [ ] Set up test Qlik Cloud tenant
 - [ ] Create test data (QVD files in various spaces)
 - [ ] Write integration tests for:
@@ -878,6 +941,7 @@ Create end-to-end integration tests covering all phases.
 - [ ] Document test setup process
 
 **Acceptance Criteria:**
+
 - Integration tests cover all major workflows
 - Tests run in CI/CD
 - Test environment documented
@@ -893,6 +957,7 @@ Create end-to-end integration tests covering all phases.
 Optimize performance and add monitoring for Qlik Cloud operations.
 
 **Tasks:**
+
 - [ ] Profile extension performance
 - [ ] Optimize file list loading
 - [ ] Implement request batching where possible
@@ -903,6 +968,7 @@ Optimize performance and add monitoring for Qlik Cloud operations.
 - [ ] Document performance considerations
 
 **Acceptance Criteria:**
+
 - File lists load quickly
 - Cache operations are efficient
 - Performance metrics available
@@ -919,6 +985,7 @@ Optimize performance and add monitoring for Qlik Cloud operations.
 Conduct security audit and implement security hardening measures.
 
 **Tasks:**
+
 - [ ] Review credential storage security
 - [ ] Audit API key and token handling
 - [ ] Review network communication security
@@ -930,6 +997,7 @@ Conduct security audit and implement security hardening measures.
 - [ ] Run security scanning tools
 
 **Acceptance Criteria:**
+
 - No credentials in plaintext
 - Network communication secure
 - No sensitive data leaked
@@ -946,6 +1014,7 @@ Conduct security audit and implement security hardening measures.
 Add final polish and UX improvements based on beta testing feedback.
 
 **Tasks:**
+
 - [ ] Improve error messages for clarity
 - [ ] Add onboarding flow for first-time users
 - [ ] Improve loading states and animations
@@ -956,6 +1025,7 @@ Add final polish and UX improvements based on beta testing feedback.
 - [ ] Gather and address beta tester feedback
 
 **Acceptance Criteria:**
+
 - UX is smooth and intuitive
 - Error messages are helpful
 - Onboarding guides new users
@@ -972,6 +1042,7 @@ Add final polish and UX improvements based on beta testing feedback.
 Complete all documentation and prepare for final release.
 
 **Tasks:**
+
 - [ ] Update README.md with complete Qlik Cloud documentation
 - [ ] Create video tutorials/GIFs
 - [ ] Write blog post announcing feature
@@ -984,6 +1055,7 @@ Complete all documentation and prepare for final release.
 - [ ] Get documentation reviewed
 
 **Acceptance Criteria:**
+
 - All documentation complete
 - Tutorials created
 - Release notes ready
@@ -999,6 +1071,7 @@ Complete all documentation and prepare for final release.
 **Total Issues:** 36
 
 **By Phase:**
+
 - Phase 1 (Foundation): 8 issues
 - Phase 2 (File Browser): 8 issues
 - Phase 3 (Cache Management): 7 issues
@@ -1006,6 +1079,7 @@ Complete all documentation and prepare for final release.
 - Additional (Integration, Polish): 5 issues
 
 **Estimated Timeline:**
+
 - Phase 1: 2-3 days (Issues 1-8)
 - Phase 2: 3-4 days (Issues 9-16)
 - Phase 3: 2 days (Issues 17-23)
@@ -1015,6 +1089,7 @@ Complete all documentation and prepare for final release.
 **Total: 13-17 days** (or 9-12 days without Phase 4)
 
 **Dependencies:**
+
 - Issues 1-8 must be completed before Phase 2
 - Issues 9-16 must be completed before Phase 3
 - Issues 17-23 must be completed before Phase 4
@@ -1022,6 +1097,7 @@ Complete all documentation and prepare for final release.
 - Issues 32-36 can be done alongside or after main phases
 
 **Priority:**
+
 - **High Priority:** Phase 1 (Issues 1-8) - Core functionality
 - **High Priority:** Phase 2 (Issues 9-16) - User experience
 - **Medium Priority:** Phase 3 (Issues 17-23) - Performance & offline
@@ -1041,6 +1117,7 @@ Complete all documentation and prepare for final release.
 7. **User experience** - Test with real users throughout development
 
 For detailed implementation guidance, see:
+
 - **[QLIK_CLOUD_RESEARCH.md](./QLIK_CLOUD_RESEARCH.md)** - Complete research and architecture
 - **[QLIK_CLOUD_IMPLEMENTATION.md](./QLIK_CLOUD_IMPLEMENTATION.md)** - Step-by-step implementation guide
 - **[QLIK_CLOUD_SUMMARY.md](./QLIK_CLOUD_SUMMARY.md)** - Executive summary and quick reference
