@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
 import QvdReader from "./qvdReader.mjs";
 import DataExporter from "./exporters/index.mjs";
-import { readFileSync } from "fs";
+import { profileFields, generateQvsScript, shouldWarnLargeFile } from "./qvdProfiler.mjs";
+import { readFileSync, writeFileSync } from "fs";
 import { basename, dirname, extname, join } from "path";
 
 /**
@@ -168,6 +169,77 @@ class QvdEditorProvider {
             vscode.window.showErrorMessage(`Export failed: ${error.message}`);
           }
           break;
+        case "profileFields":
+          // Profile selected fields and return distribution data
+          try {
+            const result = await this.qvdReader.read(filePath, 0); // Read all data
+            if (result.error) {
+              webviewPanel.webview.postMessage({
+                command: "profilingError",
+                error: `Failed to read QVD: ${result.error}`,
+              });
+              break;
+            }
+
+            const profilingResults = profileFields(
+              result.data,
+              message.fieldNames,
+              message.maxUniqueValues || 1000
+            );
+
+            webviewPanel.webview.postMessage({
+              command: "profilingResults",
+              results: profilingResults,
+            });
+          } catch (error) {
+            webviewPanel.webview.postMessage({
+              command: "profilingError",
+              error: `Profiling failed: ${error.message}`,
+            });
+          }
+          break;
+        case "exportProfilingQvs":
+          // Export profiling data as QVS script
+          try {
+            const fileName = basename(filePath, extname(filePath));
+            const defaultName = `${fileName}_profiling.qvs`;
+            
+            const saveUri = await vscode.window.showSaveDialog({
+              defaultUri: vscode.Uri.file(
+                join(dirname(filePath), defaultName)
+              ),
+              filters: {
+                "Qlik Script Files": ["qvs"],
+                "All Files": ["*"],
+              },
+            });
+
+            if (saveUri) {
+              const qvsContent = generateQvsScript(
+                message.profilingResults,
+                basename(filePath)
+              );
+              writeFileSync(saveUri.fsPath, qvsContent, "utf8");
+              
+              const action = await vscode.window.showInformationMessage(
+                `Profiling script exported to ${basename(saveUri.fsPath)}`,
+                "Open Folder"
+              );
+
+              if (action === "Open Folder") {
+                const folderPath = dirname(saveUri.fsPath);
+                vscode.commands.executeCommand(
+                  "revealFileInOS",
+                  vscode.Uri.file(folderPath)
+                );
+              }
+            }
+          } catch (error) {
+            vscode.window.showErrorMessage(
+              `Failed to export profiling script: ${error.message}`
+            );
+          }
+          break;
       }
     });
   }
@@ -302,6 +374,19 @@ class QvdEditorProvider {
       "tabulator.min.css"
     );
     return readFileSync(tabulatorCssPath, "utf8");
+  }
+
+  /**
+   * Get Chart.js library inlined as string
+   */
+  getChartJs() {
+    const chartPath = join(
+      this.context.extensionPath,
+      "media",
+      "chart.js",
+      "chart.min.js"
+    );
+    return readFileSync(chartPath, "utf8");
   }
 
   /**
@@ -844,6 +929,143 @@ class QvdEditorProvider {
             background-color: var(--vscode-statusBarItem-warningBackground, #f59e0b);
             color: var(--vscode-statusBarItem-warningForeground, #000);
         }
+        
+        /* Profiling Tab Styles */
+        .profiling-controls {
+            margin-bottom: 20px;
+            flex-shrink: 0;
+        }
+        
+        .profiling-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .profiling-header h2 {
+            font-size: 1.1em;
+            margin: 0;
+            color: var(--vscode-foreground);
+        }
+        
+        .warning-banner {
+            border-left-color: var(--vscode-inputValidation-warningBorder) !important;
+            background-color: var(--vscode-inputValidation-warningBackground);
+        }
+        
+        .field-selector-container {
+            background-color: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .field-selector-container label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--vscode-foreground);
+        }
+        
+        .field-selector {
+            width: 100%;
+            background-color: var(--vscode-input-background);
+            color: var(--vscode-input-foreground);
+            border: 1px solid var(--vscode-input-border);
+            border-radius: 2px;
+            padding: 8px;
+            font-size: 0.9em;
+            margin-bottom: 12px;
+        }
+        
+        .field-selector option {
+            padding: 6px;
+            margin: 2px 0;
+        }
+        
+        .field-selector option:checked {
+            background-color: var(--vscode-list-activeSelectionBackground);
+            color: var(--vscode-list-activeSelectionForeground);
+        }
+        
+        .profiling-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .profiling-status {
+            background-color: var(--vscode-textBlockQuote-background);
+            border-left: 4px solid var(--vscode-textBlockQuote-border);
+            padding: 12px 15px;
+            margin-bottom: 15px;
+            color: var(--vscode-foreground);
+        }
+        
+        .profiling-results {
+            flex: 1;
+            overflow-y: auto;
+        }
+        
+        .field-profiling-card {
+            background-color: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 4px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .field-profiling-card h3 {
+            margin: 0 0 15px 0;
+            font-size: 1em;
+            color: var(--vscode-foreground);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .field-stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+            padding: 10px;
+            background-color: var(--vscode-textBlockQuote-background);
+            border-radius: 2px;
+            font-size: 0.9em;
+        }
+        
+        .field-stat-item {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .field-stat-label {
+            color: var(--vscode-descriptionForeground);
+            font-size: 0.85em;
+            margin-bottom: 2px;
+        }
+        
+        .field-stat-value {
+            font-weight: 600;
+            color: var(--vscode-foreground);
+        }
+        
+        .profiling-chart-container {
+            margin-bottom: 20px;
+            background-color: var(--vscode-editor-background);
+            padding: 15px;
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 2px;
+        }
+        
+        .profiling-chart-container canvas {
+            max-height: 400px;
+        }
+        
+        .profiling-table-container {
+            margin-top: 15px;
+        }
     </style>
 </head>
 <body>
@@ -868,6 +1090,7 @@ class QvdEditorProvider {
                 <button class="tab-button" data-tab="schema">🔍 Schema</button>
                 <button class="tab-button" data-tab="metadata">ℹ️ File Metadata</button>
                 <button class="tab-button" data-tab="lineage">🔗 Lineage</button>
+                <button class="tab-button" data-tab="profiling">📊 Profiling</button>
             </div>
             
             <!-- Data Tab -->
@@ -959,6 +1182,54 @@ class QvdEditorProvider {
                 `
                 }
             </div>
+            
+            <!-- Profiling Tab -->
+            <div id="profiling-tab" class="tab-content">
+                <div class="profiling-controls">
+                    <div class="profiling-header">
+                        <h2>📊 Field Value Distribution Analysis</h2>
+                        <button class="header-button" id="export-qvs-btn" style="display: none;">💾 Export to QVS Script</button>
+                    </div>
+                    ${
+                      totalRows > 100000
+                        ? `
+                    <div class="info-banner warning-banner">
+                        ⚠️ <strong>Large File Warning:</strong> This QVD contains ${totalRows.toLocaleString()} rows. 
+                        Profiling will load all data into memory, which may take some time and use significant resources.
+                        <br/>Click "Run Profiling" below to proceed.
+                    </div>
+                    `
+                        : ""
+                    }
+                    <div class="field-selector-container">
+                        <label for="field-selector">Select fields to profile (1-3):</label>
+                        <select id="field-selector" class="field-selector" multiple size="10">
+                            ${
+                              metadata && metadata.fields
+                                ? metadata.fields
+                                    .map(
+                                      (field) =>
+                                        `<option value="${this.escapeHtml(
+                                          field.name
+                                        )}">${this.escapeHtml(
+                                          field.name
+                                        )} (${
+                                          field.noOfSymbols
+                                        } unique values)</option>`
+                                    )
+                                    .join("\n")
+                                : ""
+                            }
+                        </select>
+                        <div class="profiling-buttons">
+                            <button class="header-button" id="run-profiling-btn">▶️ Run Profiling</button>
+                            <button class="header-button" id="clear-profiling-btn">✕ Clear Results</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="profiling-status" class="profiling-status" style="display: none;"></div>
+                <div id="profiling-results" class="profiling-results"></div>
+            </div>
         </div>
     </div>
     
@@ -973,6 +1244,11 @@ class QvdEditorProvider {
     </script>
     
     <script nonce="${nonce}">
+        /* Chart.js library - inlined */
+        ${this.getChartJs()}
+    </script>
+    
+    <script nonce="${nonce}">
         const vscode = acquireVsCodeApi();
         const totalRowsInFile = ${totalRows};
         const currentLoadedRows = ${data.length};
@@ -983,8 +1259,17 @@ class QvdEditorProvider {
         const metadataData = ${JSON.stringify(metadataKV)};
         const lineageData = ${JSON.stringify(lineageData)};
         
+        // Available field names for profiling
+        const availableFields = ${JSON.stringify(
+          metadata && metadata.fields
+            ? metadata.fields.map((f) => f.name)
+            : []
+        )};
+        
         let currentContextCell = null;
         let dataTable, schemaTable, metadataTable, lineageTable;
+        let profilingCharts = [];
+        let currentProfilingResults = null;
         
         // Initialize tables on load
         window.addEventListener('DOMContentLoaded', function() {
@@ -1139,6 +1424,22 @@ class QvdEditorProvider {
             
             // Hide context menu on scroll
             document.addEventListener('scroll', hideContextMenu, true);
+            
+            // Profiling tab event listeners
+            const runProfilingBtn = document.getElementById('run-profiling-btn');
+            if (runProfilingBtn) {
+                runProfilingBtn.addEventListener('click', runProfiling);
+            }
+            
+            const clearProfilingBtn = document.getElementById('clear-profiling-btn');
+            if (clearProfilingBtn) {
+                clearProfilingBtn.addEventListener('click', clearProfiling);
+            }
+            
+            const exportQvsBtn = document.getElementById('export-qvs-btn');
+            if (exportQvsBtn) {
+                exportQvsBtn.addEventListener('click', exportProfilingQvs);
+            }
         }
         
         function initializeTables() {
@@ -1406,6 +1707,229 @@ class QvdEditorProvider {
             }
             hideContextMenu();
         }
+        
+        // Profiling functions
+        function runProfiling() {
+            const selector = document.getElementById('field-selector');
+            const selectedFields = Array.from(selector.selectedOptions).map(opt => opt.value);
+            
+            if (selectedFields.length === 0) {
+                showProfilingStatus('⚠️ Please select at least one field to profile.', 'warning');
+                return;
+            }
+            
+            if (selectedFields.length > 3) {
+                showProfilingStatus('⚠️ Please select a maximum of 3 fields to profile.', 'warning');
+                return;
+            }
+            
+            showProfilingStatus('⏳ Loading all data and computing value distributions...', 'info');
+            
+            // Send message to extension to compute profiling
+            vscode.postMessage({
+                command: 'profileFields',
+                fieldNames: selectedFields,
+                maxUniqueValues: 1000
+            });
+        }
+        
+        function clearProfiling() {
+            // Clear results
+            currentProfilingResults = null;
+            document.getElementById('profiling-results').innerHTML = '';
+            document.getElementById('profiling-status').style.display = 'none';
+            document.getElementById('export-qvs-btn').style.display = 'none';
+            
+            // Destroy existing charts
+            profilingCharts.forEach(chart => chart.destroy());
+            profilingCharts = [];
+            
+            // Clear field selection
+            const selector = document.getElementById('field-selector');
+            if (selector) {
+                selector.selectedIndex = -1;
+            }
+        }
+        
+        function exportProfilingQvs() {
+            if (!currentProfilingResults || !currentProfilingResults.fields) {
+                showProfilingStatus('⚠️ No profiling results to export.', 'warning');
+                return;
+            }
+            
+            vscode.postMessage({
+                command: 'exportProfilingQvs',
+                profilingResults: currentProfilingResults.fields
+            });
+        }
+        
+        function showProfilingStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('profiling-status');
+            statusDiv.textContent = message;
+            statusDiv.style.display = 'block';
+            
+            // Add type-specific styling
+            statusDiv.style.borderLeftColor = type === 'warning' 
+                ? 'var(--vscode-inputValidation-warningBorder)' 
+                : 'var(--vscode-textBlockQuote-border)';
+        }
+        
+        function displayProfilingResults(results) {
+            if (results.error) {
+                showProfilingStatus('❌ ' + results.error, 'warning');
+                return;
+            }
+            
+            currentProfilingResults = results;
+            const resultsDiv = document.getElementById('profiling-results');
+            resultsDiv.innerHTML = '';
+            
+            // Destroy existing charts
+            profilingCharts.forEach(chart => chart.destroy());
+            profilingCharts = [];
+            
+            // Display results for each field
+            results.fields.forEach((fieldResult, index) => {
+                const card = document.createElement('div');
+                card.className = 'field-profiling-card';
+                
+                // Header
+                const header = document.createElement('h3');
+                header.innerHTML = \`📊 \${fieldResult.fieldName}\`;
+                if (fieldResult.truncated) {
+                    header.innerHTML += \` <span style="color: var(--vscode-descriptionForeground); font-size: 0.85em;">(showing top \${fieldResult.truncatedAt} values)</span>\`;
+                }
+                card.appendChild(header);
+                
+                // Stats
+                const statsDiv = document.createElement('div');
+                statsDiv.className = 'field-stats';
+                statsDiv.innerHTML = \`
+                    <div class="field-stat-item">
+                        <span class="field-stat-label">Total Rows</span>
+                        <span class="field-stat-value">\${fieldResult.totalRows.toLocaleString()}</span>
+                    </div>
+                    <div class="field-stat-item">
+                        <span class="field-stat-label">Unique Values</span>
+                        <span class="field-stat-value">\${fieldResult.uniqueValues.toLocaleString()}</span>
+                    </div>
+                    <div class="field-stat-item">
+                        <span class="field-stat-label">NULL/Empty</span>
+                        <span class="field-stat-value">\${fieldResult.nullCount.toLocaleString()}</span>
+                    </div>
+                \`;
+                card.appendChild(statsDiv);
+                
+                // Chart
+                const chartContainer = document.createElement('div');
+                chartContainer.className = 'profiling-chart-container';
+                const canvas = document.createElement('canvas');
+                canvas.id = \`profiling-chart-\${index}\`;
+                chartContainer.appendChild(canvas);
+                card.appendChild(chartContainer);
+                
+                // Table
+                const tableContainer = document.createElement('div');
+                tableContainer.className = 'profiling-table-container';
+                const tableDiv = document.createElement('div');
+                tableDiv.id = \`profiling-table-\${index}\`;
+                tableContainer.appendChild(tableDiv);
+                card.appendChild(tableContainer);
+                
+                resultsDiv.appendChild(card);
+                
+                // Create chart
+                const ctx = canvas.getContext('2d');
+                const topN = Math.min(20, fieldResult.distributions.length);
+                const chartData = fieldResult.distributions.slice(0, topN);
+                
+                const chart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: chartData.map(d => d.value),
+                        datasets: [{
+                            label: 'Count',
+                            data: chartData.map(d => d.count),
+                            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            title: {
+                                display: true,
+                                text: \`Top \${topN} Values by Frequency\`,
+                                color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
+                                },
+                                grid: {
+                                    color: 'rgba(128, 128, 128, 0.2)'
+                                }
+                            },
+                            x: {
+                                ticks: {
+                                    color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground'),
+                                    maxRotation: 45,
+                                    minRotation: 45
+                                },
+                                grid: {
+                                    color: 'rgba(128, 128, 128, 0.2)'
+                                }
+                            }
+                        }
+                    }
+                });
+                
+                profilingCharts.push(chart);
+                
+                // Create table with Tabulator
+                const tableColumns = [
+                    { title: 'Value', field: 'value', headerSort: false, widthGrow: 2 },
+                    { title: 'Count', field: 'count', headerSort: false, widthGrow: 1 },
+                    { title: 'Percentage', field: 'percentage', headerSort: false, widthGrow: 1, 
+                      formatter: (cell) => cell.getValue() + '%' }
+                ];
+                
+                const profilingTable = new Tabulator(\`#profiling-table-\${index}\`, {
+                    data: fieldResult.distributions,
+                    columns: tableColumns,
+                    layout: 'fitDataStretch',
+                    pagination: true,
+                    paginationSize: 25,
+                    paginationSizeSelector: [10, 25, 50, 100],
+                    paginationCounter: 'rows',
+                    height: '400px'
+                });
+            });
+            
+            showProfilingStatus(\`✅ Profiling complete for \${results.fields.length} field(s)\`, 'info');
+            document.getElementById('export-qvs-btn').style.display = 'inline-block';
+        }
+        
+        // Listen for messages from extension
+        window.addEventListener('message', event => {
+            const message = event.data;
+            switch (message.command) {
+                case 'profilingResults':
+                    displayProfilingResults(message.results);
+                    break;
+                case 'profilingError':
+                    showProfilingStatus('❌ ' + message.error, 'warning');
+                    break;
+            }
+        });
     </script>
 </body>
 </html>`;

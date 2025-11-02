@@ -124,6 +124,7 @@
   "dependencies": {
     "apache-arrow": "^21.1.0",
     "avsc": "^5.7.9",
+    "chart.js": "^4.5.1",
     "exceljs": "^4.4.0",
     "js-yaml": "^4.1.0",
     "papaparse": "^5.5.3",
