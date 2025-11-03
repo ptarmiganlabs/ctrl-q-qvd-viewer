@@ -240,6 +240,47 @@ class QvdEditorProvider {
             );
           }
           break;
+        case "openProfilingInWindow":
+          // Open profiling results in a new editor window
+          try {
+            const fieldResult = message.fieldResult;
+            const fileName = basename(filePath, extname(filePath));
+            
+            // Create markdown content with profiling results
+            let markdownContent = `# Profiling: ${fieldResult.fieldName}\n\n`;
+            markdownContent += `**Source:** ${basename(filePath)}\n\n`;
+            markdownContent += `## Statistics\n\n`;
+            markdownContent += `- **Total Rows:** ${fieldResult.totalRows.toLocaleString()}\n`;
+            markdownContent += `- **Unique Values:** ${fieldResult.uniqueValues.toLocaleString()}\n`;
+            markdownContent += `- **NULL/Empty:** ${fieldResult.nullCount.toLocaleString()}\n`;
+            
+            if (fieldResult.truncated) {
+              markdownContent += `\n> **Note:** Distribution truncated to top ${fieldResult.truncatedAt} values\n`;
+            }
+            
+            markdownContent += `\n## Value Distribution\n\n`;
+            markdownContent += `| Value | Count | Percentage |\n`;
+            markdownContent += `|-------|-------|------------|\n`;
+            
+            fieldResult.distributions.forEach(dist => {
+              markdownContent += `| ${dist.value} | ${dist.count.toLocaleString()} | ${dist.percentage}% |\n`;
+            });
+            
+            // Create a new untitled document with markdown content
+            const doc = await vscode.workspace.openTextDocument({
+              content: markdownContent,
+              language: 'markdown'
+            });
+            
+            // Show the document in a new editor column (to the side)
+            await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside, false);
+            
+          } catch (error) {
+            vscode.window.showErrorMessage(
+              `Failed to open profiling in window: ${error.message}`
+            );
+          }
+          break;
       }
     });
   }
@@ -628,7 +669,7 @@ class QvdEditorProvider {
         .tab-content {
             display: none;
             flex: 1;
-            overflow: hidden;
+            overflow: auto;
             padding: 15px;
         }
         
@@ -969,25 +1010,46 @@ class QvdEditorProvider {
             color: var(--vscode-foreground);
         }
         
-        .field-selector {
-            width: 100%;
+        .field-checkboxes {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 8px;
+            margin-bottom: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 8px;
             background-color: var(--vscode-input-background);
-            color: var(--vscode-input-foreground);
             border: 1px solid var(--vscode-input-border);
             border-radius: 2px;
-            padding: 8px;
-            font-size: 0.9em;
-            margin-bottom: 12px;
         }
         
-        .field-selector option {
-            padding: 6px;
-            margin: 2px 0;
+        .field-checkbox-item {
+            display: flex;
+            align-items: center;
+            padding: 4px;
+            cursor: pointer;
         }
         
-        .field-selector option:checked {
-            background-color: var(--vscode-list-activeSelectionBackground);
-            color: var(--vscode-list-activeSelectionForeground);
+        .field-checkbox-item:hover {
+            background-color: var(--vscode-list-hoverBackground);
+        }
+        
+        .field-checkbox-item input[type="checkbox"] {
+            margin-right: 8px;
+            cursor: pointer;
+        }
+        
+        .field-checkbox-item label {
+            margin: 0;
+            font-weight: normal;
+            cursor: pointer;
+            flex: 1;
+        }
+        
+        .field-unique-count {
+            color: var(--vscode-descriptionForeground);
+            font-size: 0.85em;
+            margin-left: 4px;
         }
         
         .profiling-buttons {
@@ -1004,8 +1066,7 @@ class QvdEditorProvider {
         }
         
         .profiling-results {
-            flex: 1;
-            overflow-y: auto;
+            flex-shrink: 0;
         }
         
         .field-profiling-card {
@@ -1023,6 +1084,21 @@ class QvdEditorProvider {
             display: flex;
             justify-content: space-between;
             align-items: center;
+        }
+        
+        .open-in-window-btn {
+            background-color: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+            border: none;
+            padding: 4px 10px;
+            border-radius: 2px;
+            cursor: pointer;
+            font-size: 0.85em;
+            white-space: nowrap;
+        }
+        
+        .open-in-window-btn:hover {
+            background-color: var(--vscode-button-secondaryHoverBackground);
         }
         
         .field-stats {
@@ -1202,25 +1278,28 @@ class QvdEditorProvider {
                         : ""
                     }
                     <div class="field-selector-container">
-                        <label for="field-selector">Select fields to profile (1-3):</label>
-                        <select id="field-selector" class="field-selector" multiple size="10">
+                        <label for="field-checkboxes">Select fields to profile (1-3):</label>
+                        <div id="field-checkboxes" class="field-checkboxes">
                             ${
                               metadata && metadata.fields
                                 ? metadata.fields
                                     .map(
                                       (field) =>
-                                        `<option value="${this.escapeHtml(
-                                          field.name
-                                        )}">${this.escapeHtml(
-                                          field.name
-                                        )} (${
-                                          field.noOfSymbols
-                                        } unique values)</option>`
+                                        `<div class="field-checkbox-item">
+                                            <input type="checkbox" 
+                                                   id="field-${this.escapeHtml(field.name)}" 
+                                                   name="field-checkbox" 
+                                                   value="${this.escapeHtml(field.name)}">
+                                            <label for="field-${this.escapeHtml(field.name)}">
+                                                ${this.escapeHtml(field.name)}
+                                                <span class="field-unique-count">(${field.noOfSymbols} unique values)</span>
+                                            </label>
+                                        </div>`
                                     )
                                     .join("\n")
                                 : ""
                             }
-                        </select>
+                        </div>
                         <div class="profiling-buttons">
                             <button class="header-button" id="run-profiling-btn">▶️ Run Profiling</button>
                             <button class="header-button" id="clear-profiling-btn">✕ Clear Results</button>
@@ -1710,8 +1789,8 @@ class QvdEditorProvider {
         
         // Profiling functions
         function runProfiling() {
-            const selector = document.getElementById('field-selector');
-            const selectedFields = Array.from(selector.selectedOptions).map(opt => opt.value);
+            const checkboxes = document.querySelectorAll('input[name="field-checkbox"]:checked');
+            const selectedFields = Array.from(checkboxes).map(cb => cb.value);
             
             if (selectedFields.length === 0) {
                 showProfilingStatus('⚠️ Please select at least one field to profile.', 'warning');
@@ -1745,10 +1824,8 @@ class QvdEditorProvider {
             profilingCharts = [];
             
             // Clear field selection
-            const selector = document.getElementById('field-selector');
-            if (selector) {
-                selector.selectedIndex = -1;
-            }
+            const checkboxes = document.querySelectorAll('input[name="field-checkbox"]');
+            checkboxes.forEach(cb => cb.checked = false);
         }
         
         function exportProfilingQvs() {
@@ -1794,12 +1871,29 @@ class QvdEditorProvider {
                 card.className = 'field-profiling-card';
                 
                 // Header
+                const headerContainer = document.createElement('div');
+                headerContainer.style.display = 'flex';
+                headerContainer.style.justifyContent = 'space-between';
+                headerContainer.style.alignItems = 'center';
+                headerContainer.style.marginBottom = '15px';
+                
                 const header = document.createElement('h3');
+                header.style.margin = '0';
                 header.innerHTML = \`📊 \${fieldResult.fieldName}\`;
                 if (fieldResult.truncated) {
                     header.innerHTML += \` <span style="color: var(--vscode-descriptionForeground); font-size: 0.85em;">(showing top \${fieldResult.truncatedAt} values)</span>\`;
                 }
-                card.appendChild(header);
+                
+                const openButton = document.createElement('button');
+                openButton.className = 'open-in-window-btn';
+                openButton.textContent = '🔗 Open in Window';
+                openButton.setAttribute('data-field-name', fieldResult.fieldName);
+                openButton.setAttribute('data-field-index', index);
+                openButton.addEventListener('click', () => openProfilingInWindow(fieldResult));
+                
+                headerContainer.appendChild(header);
+                headerContainer.appendChild(openButton);
+                card.appendChild(headerContainer);
                 
                 // Stats
                 const statsDiv = document.createElement('div');
@@ -1916,6 +2010,14 @@ class QvdEditorProvider {
             
             showProfilingStatus(\`✅ Profiling complete for \${results.fields.length} field(s)\`, 'info');
             document.getElementById('export-qvs-btn').style.display = 'inline-block';
+        }
+        
+        function openProfilingInWindow(fieldResult) {
+            // Send message to extension to open profiling in new window
+            vscode.postMessage({
+                command: 'openProfilingInWindow',
+                fieldResult: fieldResult
+            });
         }
         
         // Listen for messages from extension
