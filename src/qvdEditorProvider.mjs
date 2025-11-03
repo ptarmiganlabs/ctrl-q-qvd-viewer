@@ -287,36 +287,55 @@ class QvdEditorProvider {
           // Open profiling results in a new editor window
           try {
             const fieldResult = message.fieldResult;
+            const displayType = message.displayType || 'markdown';
             const fileName = basename(filePath, extname(filePath));
             
-            // Create markdown content with profiling results
-            let markdownContent = `# Profiling: ${fieldResult.fieldName}\n\n`;
-            markdownContent += `**Source:** ${basename(filePath)}\n\n`;
-            markdownContent += `## Statistics\n\n`;
-            markdownContent += `- **Total Rows:** ${fieldResult.totalRows.toLocaleString()}\n`;
-            markdownContent += `- **Unique Values:** ${fieldResult.uniqueValues.toLocaleString()}\n`;
-            markdownContent += `- **NULL/Empty:** ${fieldResult.nullCount.toLocaleString()}\n`;
-            
-            if (fieldResult.truncated) {
-              markdownContent += `\n> **Note:** Distribution truncated to top ${fieldResult.truncatedAt} values\n`;
+            if (displayType === 'markdown') {
+              // Create markdown content with profiling results
+              let markdownContent = `# Profiling: ${fieldResult.fieldName}\n\n`;
+              markdownContent += `**Source:** ${basename(filePath)}\n\n`;
+              markdownContent += `## Statistics\n\n`;
+              markdownContent += `- **Total Rows:** ${fieldResult.totalRows.toLocaleString()}\n`;
+              markdownContent += `- **Unique Values:** ${fieldResult.uniqueValues.toLocaleString()}\n`;
+              markdownContent += `- **NULL/Empty:** ${fieldResult.nullCount.toLocaleString()}\n`;
+              
+              if (fieldResult.truncated) {
+                markdownContent += `\n> **Note:** Distribution truncated to top ${fieldResult.truncatedAt} values\n`;
+              }
+              
+              markdownContent += `\n## Value Distribution\n\n`;
+              markdownContent += `| Value | Count | Percentage |\n`;
+              markdownContent += `|-------|-------|------------|\n`;
+              
+              fieldResult.distributions.forEach(dist => {
+                markdownContent += `| ${dist.value} | ${dist.count.toLocaleString()} | ${dist.percentage}% |\n`;
+              });
+              
+              // Create a new untitled document with markdown content
+              const doc = await vscode.workspace.openTextDocument({
+                content: markdownContent,
+                language: 'markdown'
+              });
+              
+              // Show the document in a new editor column (to the side)
+              await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside, false);
+            } else if (displayType === 'visual') {
+              // Open visual analysis in a webview panel
+              const panel = vscode.window.createWebviewPanel(
+                'qvdProfilingVisual',
+                `Profiling: ${fieldResult.fieldName}`,
+                vscode.ViewColumn.Beside,
+                {
+                  enableScripts: true,
+                  localResourceRoots: [
+                    vscode.Uri.joinPath(this.context.extensionUri, "media"),
+                  ],
+                }
+              );
+              
+              // Generate HTML for the visual analysis
+              panel.webview.html = this.getVisualAnalysisHtml(panel.webview, fieldResult, fileName);
             }
-            
-            markdownContent += `\n## Value Distribution\n\n`;
-            markdownContent += `| Value | Count | Percentage |\n`;
-            markdownContent += `|-------|-------|------------|\n`;
-            
-            fieldResult.distributions.forEach(dist => {
-              markdownContent += `| ${dist.value} | ${dist.count.toLocaleString()} | ${dist.percentage}% |\n`;
-            });
-            
-            // Create a new untitled document with markdown content
-            const doc = await vscode.workspace.openTextDocument({
-              content: markdownContent,
-              language: 'markdown'
-            });
-            
-            // Show the document in a new editor column (to the side)
-            await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside, false);
             
           } catch (error) {
             vscode.window.showErrorMessage(
@@ -471,6 +490,217 @@ class QvdEditorProvider {
       "chart.min.js"
     );
     return readFileSync(chartPath, "utf8");
+  }
+
+  /**
+   * Generate HTML for visual analysis webview
+   */
+  getVisualAnalysisHtml(webview, fieldResult, qvdFileName) {
+    const nonce = this.getNonce();
+    const tabulatorJs = this.getTabulatorJs();
+    const tabulatorCss = this.getTabulatorCss();
+    const chartJs = this.getChartJs();
+    
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+    <title>Profiling: ${this.escapeHtml(fieldResult.fieldName)}</title>
+    <style nonce="${nonce}">
+        ${tabulatorCss}
+        
+        body {
+            font-family: var(--vscode-font-family);
+            color: var(--vscode-foreground);
+            background-color: var(--vscode-editor-background);
+            padding: 20px;
+            margin: 0;
+        }
+        
+        h1 {
+            font-size: 1.5em;
+            margin: 0 0 10px 0;
+            color: var(--vscode-foreground);
+        }
+        
+        .source {
+            color: var(--vscode-descriptionForeground);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .stats-container {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: var(--vscode-textBlockQuote-background);
+            border-radius: 4px;
+        }
+        
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .stat-label {
+            color: var(--vscode-descriptionForeground);
+            font-size: 0.85em;
+            margin-bottom: 4px;
+        }
+        
+        .stat-value {
+            font-weight: 600;
+            font-size: 1.1em;
+            color: var(--vscode-foreground);
+        }
+        
+        .chart-container {
+            margin-bottom: 30px;
+            background-color: var(--vscode-editor-background);
+            padding: 20px;
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 4px;
+        }
+        
+        .chart-container canvas {
+            max-height: 500px;
+        }
+        
+        .table-container {
+            margin-top: 20px;
+        }
+        
+        .table-title {
+            font-size: 1.1em;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--vscode-foreground);
+        }
+    </style>
+</head>
+<body>
+    <h1>📊 ${this.escapeHtml(fieldResult.fieldName)}</h1>
+    <div class="source">Source: ${this.escapeHtml(qvdFileName)}</div>
+    
+    <div class="stats-container">
+        <div class="stat-item">
+            <span class="stat-label">Total Rows</span>
+            <span class="stat-value">${fieldResult.totalRows.toLocaleString()}</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Unique Values</span>
+            <span class="stat-value">${fieldResult.uniqueValues.toLocaleString()}</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">NULL/Empty</span>
+            <span class="stat-value">${fieldResult.nullCount.toLocaleString()}</span>
+        </div>
+    </div>
+    
+    ${fieldResult.truncated ? `
+    <div style="padding: 10px; background-color: var(--vscode-inputValidation-warningBackground); border-left: 4px solid var(--vscode-inputValidation-warningBorder); margin-bottom: 20px; border-radius: 2px;">
+        ⚠️ Distribution truncated to top ${fieldResult.truncatedAt} values
+    </div>
+    ` : ''}
+    
+    <div class="chart-container">
+        <canvas id="profiling-chart"></canvas>
+    </div>
+    
+    <div class="table-container">
+        <div class="table-title">Value Distribution</div>
+        <div id="profiling-table"></div>
+    </div>
+    
+    <script nonce="${nonce}">
+        ${tabulatorJs}
+    </script>
+    
+    <script nonce="${nonce}">
+        ${chartJs}
+    </script>
+    
+    <script nonce="${nonce}">
+        const fieldResult = ${JSON.stringify(fieldResult)};
+        
+        // Create chart
+        const ctx = document.getElementById('profiling-chart').getContext('2d');
+        const topN = Math.min(20, fieldResult.distributions.length);
+        const chartData = fieldResult.distributions.slice(0, topN);
+        
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: chartData.map(d => d.value),
+                datasets: [{
+                    label: 'Count',
+                    data: chartData.map(d => d.count),
+                    backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    title: {
+                        display: true,
+                        text: \`Top \${topN} Values by Frequency\`,
+                        color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
+                        },
+                        grid: {
+                            color: 'rgba(128, 128, 128, 0.2)'
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground'),
+                            maxRotation: 45,
+                            minRotation: 45
+                        },
+                        grid: {
+                            color: 'rgba(128, 128, 128, 0.2)'
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Create table
+        const tableColumns = [
+            { title: 'Value', field: 'value', headerSort: false, widthGrow: 2 },
+            { title: 'Count', field: 'count', headerSort: false, widthGrow: 1 },
+            { title: 'Percentage', field: 'percentage', headerSort: false, widthGrow: 1, 
+              formatter: (cell) => cell.getValue() + '%' }
+        ];
+        
+        new Tabulator('#profiling-table', {
+            data: fieldResult.distributions,
+            columns: tableColumns,
+            layout: 'fitDataStretch',
+            pagination: true,
+            paginationSize: 25,
+            paginationSizeSelector: [10, 25, 50, 100],
+            paginationCounter: 'rows',
+            height: '500px'
+        });
+    </script>
+</body>
+</html>`;
   }
 
   /**
@@ -1129,6 +1359,11 @@ class QvdEditorProvider {
             align-items: center;
         }
         
+        .open-in-window-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+        
         .open-in-window-btn {
             background-color: var(--vscode-button-secondaryBackground);
             color: var(--vscode-button-secondaryForeground);
@@ -1142,6 +1377,36 @@ class QvdEditorProvider {
         
         .open-in-window-btn:hover {
             background-color: var(--vscode-button-secondaryHoverBackground);
+        }
+        
+        .open-window-dropdown-content {
+            display: none;
+            position: absolute;
+            right: 0;
+            background-color: var(--vscode-menu-background);
+            border: 1px solid var(--vscode-menu-border);
+            border-radius: 2px;
+            padding: 4px 0;
+            z-index: 10000;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            min-width: 180px;
+            white-space: nowrap;
+        }
+        
+        .open-window-dropdown-content.show {
+            display: block;
+        }
+        
+        .open-window-dropdown-item {
+            padding: 6px 16px;
+            cursor: pointer;
+            color: var(--vscode-menu-foreground);
+            font-size: 0.9em;
+        }
+        
+        .open-window-dropdown-item:hover {
+            background-color: var(--vscode-menu-selectionBackground);
+            color: var(--vscode-menu-selectionForeground);
         }
         
         .field-stats {
@@ -1568,6 +1833,15 @@ class QvdEditorProvider {
             fieldCheckboxes.forEach(checkbox => {
                 checkbox.addEventListener('change', validateFieldSelection);
             });
+            
+            // Close open window dropdowns when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.open-in-window-dropdown')) {
+                    document.querySelectorAll('.open-window-dropdown-content').forEach(dd => {
+                        dd.classList.remove('show');
+                    });
+                }
+            });
         }
         
         function initializeTables() {
@@ -1951,12 +2225,46 @@ class QvdEditorProvider {
                     header.innerHTML += \` <span style="color: var(--vscode-descriptionForeground); font-size: 0.85em;">(showing top \${fieldResult.truncatedAt} values)</span>\`;
                 }
                 
-                const openButton = document.createElement('button');
-                openButton.className = 'open-in-window-btn';
-                openButton.textContent = '🔗 Open in Window';
-                openButton.setAttribute('data-field-name', fieldResult.fieldName);
-                openButton.setAttribute('data-field-index', index);
-                openButton.addEventListener('click', () => openProfilingInWindow(fieldResult));
+                const openButton = document.createElement('div');
+                openButton.className = 'open-in-window-dropdown';
+                openButton.innerHTML = \`
+                    <button class="open-in-window-btn" id="open-window-btn-\${index}">
+                        🔗 Open in new Window ▼
+                    </button>
+                    <div class="open-window-dropdown-content" id="open-window-dropdown-\${index}">
+                        <div class="open-window-dropdown-item" data-type="markdown" data-field-index="\${index}">
+                            📝 Markdown
+                        </div>
+                        <div class="open-window-dropdown-item" data-type="visual" data-field-index="\${index}">
+                            📊 Visual Analysis
+                        </div>
+                    </div>
+                \`;
+                
+                // Add dropdown toggle functionality
+                const btnElement = openButton.querySelector(\`#open-window-btn-\${index}\`);
+                const dropdownElement = openButton.querySelector(\`#open-window-dropdown-\${index}\`);
+                
+                btnElement.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    // Close all other dropdowns
+                    document.querySelectorAll('.open-window-dropdown-content').forEach(dd => {
+                        if (dd !== dropdownElement) {
+                            dd.classList.remove('show');
+                        }
+                    });
+                    dropdownElement.classList.toggle('show');
+                });
+                
+                // Handle menu item clicks
+                openButton.querySelectorAll('.open-window-dropdown-item').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const displayType = item.getAttribute('data-type');
+                        dropdownElement.classList.remove('show');
+                        openProfilingInWindow(fieldResult, displayType);
+                    });
+                });
                 
                 headerContainer.appendChild(header);
                 headerContainer.appendChild(openButton);
@@ -2079,11 +2387,12 @@ class QvdEditorProvider {
             document.getElementById('export-qvs-btn').style.display = 'inline-block';
         }
         
-        function openProfilingInWindow(fieldResult) {
+        function openProfilingInWindow(fieldResult, displayType) {
             // Send message to extension to open profiling in new window
             vscode.postMessage({
                 command: 'openProfilingInWindow',
-                fieldResult: fieldResult
+                fieldResult: fieldResult,
+                displayType: displayType || 'markdown'
             });
         }
         
