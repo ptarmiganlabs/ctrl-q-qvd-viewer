@@ -26,12 +26,13 @@ Open source with a permissive MIT license.<br>
   - Field definitions with types, symbols, and technical details
   - Lineage information (if available in the QVD file)
 - **Data Preview**: View sample data from QVD files in a formatted table with pagination
-- **Data Profiling**: Analyze value distributions in your QVD fields
+- **Data Profiling**: Analyze value distributions in your QVD fields ([detailed documentation](docs/PROFILING.md))
   - Select 1-3 fields for comparison
   - View frequency distributions in interactive bar charts
   - See detailed value counts and percentages in sortable tables
   - Export profiling results as Qlik .qvs scripts for further analysis
   - Automatic warning for large files before loading all data
+  - Open results as Markdown or Visual Analysis in separate windows
 - **Export Data**: Export QVD data to multiple formats:
   - **Apache Arrow** - High-performance columnar format for analytics (Beta)
   - **Avro** - Compact binary format with schema evolution support (Beta)
