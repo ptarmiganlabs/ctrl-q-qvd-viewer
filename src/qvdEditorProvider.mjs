@@ -299,6 +299,65 @@ class QvdEditorProvider {
               markdownContent += `- **Unique Values:** ${fieldResult.uniqueValues.toLocaleString()}\n`;
               markdownContent += `- **NULL/Empty:** ${fieldResult.nullCount.toLocaleString()}\n`;
               
+              // Add statistical analysis for numeric fields
+              if (fieldResult.isNumeric && fieldResult.statistics && fieldResult.statistics.isNumeric) {
+                const stats = fieldResult.statistics;
+                
+                markdownContent += `\n## Statistical Analysis\n\n`;
+                
+                markdownContent += `### Descriptive Statistics\n\n`;
+                markdownContent += `| Metric | Value |\n`;
+                markdownContent += `|--------|-------|\n`;
+                markdownContent += `| Min | ${stats.descriptive.min.toLocaleString()} |\n`;
+                markdownContent += `| Max | ${stats.descriptive.max.toLocaleString()} |\n`;
+                markdownContent += `| Mean | ${stats.descriptive.mean.toFixed(2)} |\n`;
+                markdownContent += `| Median | ${stats.descriptive.median.toFixed(2)} |\n`;
+                if (stats.descriptive.mode && stats.descriptive.mode.length > 0) {
+                  markdownContent += `| Mode | ${stats.descriptive.mode.map(m => m.toFixed(2)).join(', ')} |\n`;
+                }
+                markdownContent += `| Sum | ${stats.descriptive.sum.toLocaleString()} |\n`;
+                markdownContent += `| Count | ${stats.descriptive.count.toLocaleString()} |\n`;
+                
+                markdownContent += `\n### Spread Measures\n\n`;
+                markdownContent += `| Metric | Value |\n`;
+                markdownContent += `|--------|-------|\n`;
+                markdownContent += `| Range | ${stats.spread.range.toFixed(2)} |\n`;
+                markdownContent += `| Standard Deviation | ${stats.spread.stdDev.toFixed(2)} |\n`;
+                markdownContent += `| Variance | ${stats.spread.variance.toFixed(2)} |\n`;
+                markdownContent += `| Interquartile Range (IQR) | ${stats.spread.iqr.toFixed(2)} |\n`;
+                
+                markdownContent += `\n### Distribution Metrics\n\n`;
+                markdownContent += `| Metric | Value |\n`;
+                markdownContent += `|--------|-------|\n`;
+                markdownContent += `| Q1 (25th percentile) | ${stats.distribution.quartiles.q1.toFixed(2)} |\n`;
+                markdownContent += `| Q2 (Median) | ${stats.distribution.quartiles.q2.toFixed(2)} |\n`;
+                markdownContent += `| Q3 (75th percentile) | ${stats.distribution.quartiles.q3.toFixed(2)} |\n`;
+                markdownContent += `| 10th percentile | ${stats.distribution.percentiles.p10.toFixed(2)} |\n`;
+                markdownContent += `| 90th percentile | ${stats.distribution.percentiles.p90.toFixed(2)} |\n`;
+                if (stats.distribution.skewness !== null) {
+                  markdownContent += `| Skewness | ${stats.distribution.skewness.toFixed(3)} |\n`;
+                }
+                if (stats.distribution.kurtosis !== null) {
+                  markdownContent += `| Kurtosis | ${stats.distribution.kurtosis.toFixed(3)} |\n`;
+                }
+                
+                markdownContent += `\n### Outlier Detection (1.5 × IQR)\n\n`;
+                markdownContent += `| Metric | Value |\n`;
+                markdownContent += `|--------|-------|\n`;
+                markdownContent += `| Outlier Count | ${stats.outliers.count.toLocaleString()} |\n`;
+                markdownContent += `| Outlier Percentage | ${stats.outliers.percentage}% |\n`;
+                if (stats.outliers.lowerBound !== null) {
+                  markdownContent += `| Lower Bound | ${stats.outliers.lowerBound.toFixed(2)} |\n`;
+                }
+                if (stats.outliers.upperBound !== null) {
+                  markdownContent += `| Upper Bound | ${stats.outliers.upperBound.toFixed(2)} |\n`;
+                }
+                
+                if (stats.outliers.count > 0 && stats.outliers.values.length > 0) {
+                  markdownContent += `\n**Sample Outliers (first 10):** ${stats.outliers.values.slice(0, 10).map(v => v.toFixed(2)).join(', ')}${stats.outliers.values.length > 10 ? '...' : ''}\n`;
+                }
+              }
+              
               if (fieldResult.truncated) {
                 markdownContent += `\n> **Note:** Distribution truncated to top ${fieldResult.truncatedAt} values\n`;
               }
@@ -603,6 +662,117 @@ class QvdEditorProvider {
     ${fieldResult.truncated ? `
     <div style="padding: 10px; background-color: var(--vscode-inputValidation-warningBackground); border-left: 4px solid var(--vscode-inputValidation-warningBorder); margin-bottom: 20px; border-radius: 2px;">
         ⚠️ Distribution truncated to top ${fieldResult.truncatedAt} values
+    </div>
+    ` : ''}
+    
+    ${fieldResult.isNumeric && fieldResult.statistics && fieldResult.statistics.isNumeric ? `
+    <div style="background-color: var(--vscode-textBlockQuote-background); border: 1px solid var(--vscode-panel-border); border-radius: 4px; padding: 15px; margin-bottom: 20px;">
+        <h2 style="margin: 0 0 15px 0; font-size: 1.2em;">📈 Statistical Analysis</h2>
+        
+        <h3 style="margin: 0 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Descriptive Statistics</h3>
+        <div class="stats-container" style="margin-bottom: 15px;">
+            <div class="stat-item">
+                <span class="stat-label">Min</span>
+                <span class="stat-value">${fieldResult.statistics.descriptive.min.toLocaleString()}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Max</span>
+                <span class="stat-value">${fieldResult.statistics.descriptive.max.toLocaleString()}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Mean</span>
+                <span class="stat-value">${fieldResult.statistics.descriptive.mean.toFixed(2)}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Median</span>
+                <span class="stat-value">${fieldResult.statistics.descriptive.median.toFixed(2)}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Sum</span>
+                <span class="stat-value">${fieldResult.statistics.descriptive.sum.toLocaleString()}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Count</span>
+                <span class="stat-value">${fieldResult.statistics.descriptive.count.toLocaleString()}</span>
+            </div>
+        </div>
+        
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Spread Measures</h3>
+        <div class="stats-container" style="margin-bottom: 15px;">
+            <div class="stat-item">
+                <span class="stat-label">Range</span>
+                <span class="stat-value">${fieldResult.statistics.spread.range.toFixed(2)}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Std Dev</span>
+                <span class="stat-value">${fieldResult.statistics.spread.stdDev.toFixed(2)}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Variance</span>
+                <span class="stat-value">${fieldResult.statistics.spread.variance.toFixed(2)}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">IQR</span>
+                <span class="stat-value">${fieldResult.statistics.spread.iqr.toFixed(2)}</span>
+            </div>
+        </div>
+        
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Distribution Metrics</h3>
+        <div class="stats-container" style="margin-bottom: 15px;">
+            <div class="stat-item">
+                <span class="stat-label">Q1 (25th)</span>
+                <span class="stat-value">${fieldResult.statistics.distribution.quartiles.q1.toFixed(2)}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Q2 (Median)</span>
+                <span class="stat-value">${fieldResult.statistics.distribution.quartiles.q2.toFixed(2)}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Q3 (75th)</span>
+                <span class="stat-value">${fieldResult.statistics.distribution.quartiles.q3.toFixed(2)}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">10th %ile</span>
+                <span class="stat-value">${fieldResult.statistics.distribution.percentiles.p10.toFixed(2)}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">90th %ile</span>
+                <span class="stat-value">${fieldResult.statistics.distribution.percentiles.p90.toFixed(2)}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Skewness</span>
+                <span class="stat-value">${fieldResult.statistics.distribution.skewness !== null ? fieldResult.statistics.distribution.skewness.toFixed(3) : 'N/A'}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Kurtosis</span>
+                <span class="stat-value">${fieldResult.statistics.distribution.kurtosis !== null ? fieldResult.statistics.distribution.kurtosis.toFixed(3) : 'N/A'}</span>
+            </div>
+        </div>
+        
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Outlier Detection (1.5 × IQR)</h3>
+        <div class="stats-container">
+            <div class="stat-item">
+                <span class="stat-label">Outlier Count</span>
+                <span class="stat-value">${fieldResult.statistics.outliers.count.toLocaleString()}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Outlier %</span>
+                <span class="stat-value">${fieldResult.statistics.outliers.percentage}%</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Lower Bound</span>
+                <span class="stat-value">${fieldResult.statistics.outliers.lowerBound !== null ? fieldResult.statistics.outliers.lowerBound.toFixed(2) : 'N/A'}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Upper Bound</span>
+                <span class="stat-value">${fieldResult.statistics.outliers.upperBound !== null ? fieldResult.statistics.outliers.upperBound.toFixed(2) : 'N/A'}</span>
+            </div>
+        </div>
+        ${fieldResult.statistics.outliers.count > 0 && fieldResult.statistics.outliers.values.length > 0 ? `
+            <div style="margin-top: 10px; color: var(--vscode-descriptionForeground); font-size: 0.9em;">
+                <strong>Sample Outliers:</strong> ${fieldResult.statistics.outliers.values.slice(0, 10).map(v => v.toFixed(2)).join(', ')}${fieldResult.statistics.outliers.values.length > 10 ? '...' : ''}
+            </div>
+        ` : ''}
     </div>
     ` : ''}
     
@@ -1433,6 +1603,22 @@ class QvdEditorProvider {
         .field-stat-value {
             font-weight: 600;
             color: var(--vscode-foreground);
+        }
+        
+        .statistics-card {
+            background-color: var(--vscode-textBlockQuote-background);
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .statistics-section {
+            margin-bottom: 10px;
+        }
+        
+        .statistics-section:last-child {
+            margin-bottom: 0;
         }
         
         .profiling-chart-container {
@@ -2289,6 +2475,130 @@ class QvdEditorProvider {
                 \`;
                 card.appendChild(statsDiv);
                 
+                // Add statistics card for numeric fields
+                if (fieldResult.isNumeric && fieldResult.statistics && fieldResult.statistics.isNumeric) {
+                    const stats = fieldResult.statistics;
+                    const statisticsCard = document.createElement('div');
+                    statisticsCard.className = 'statistics-card';
+                    statisticsCard.innerHTML = \`
+                        <h4 style="margin: 0 0 15px 0; color: var(--vscode-foreground);">📈 Statistical Analysis</h4>
+                        
+                        <div class="statistics-section">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Descriptive Statistics</h5>
+                            <div class="field-stats">
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Min</span>
+                                    <span class="field-stat-value">\${stats.descriptive.min.toLocaleString()}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Max</span>
+                                    <span class="field-stat-value">\${stats.descriptive.max.toLocaleString()}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Mean</span>
+                                    <span class="field-stat-value">\${stats.descriptive.mean.toFixed(2)}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Median</span>
+                                    <span class="field-stat-value">\${stats.descriptive.median.toFixed(2)}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Sum</span>
+                                    <span class="field-stat-value">\${stats.descriptive.sum.toLocaleString()}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Count</span>
+                                    <span class="field-stat-value">\${stats.descriptive.count.toLocaleString()}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Spread Measures</h5>
+                            <div class="field-stats">
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Range</span>
+                                    <span class="field-stat-value">\${stats.spread.range.toFixed(2)}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Std Dev</span>
+                                    <span class="field-stat-value">\${stats.spread.stdDev.toFixed(2)}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Variance</span>
+                                    <span class="field-stat-value">\${stats.spread.variance.toFixed(2)}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">IQR</span>
+                                    <span class="field-stat-value">\${stats.spread.iqr.toFixed(2)}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Distribution Metrics</h5>
+                            <div class="field-stats">
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Q1 (25th %ile)</span>
+                                    <span class="field-stat-value">\${stats.distribution.quartiles.q1.toFixed(2)}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Q2 (Median)</span>
+                                    <span class="field-stat-value">\${stats.distribution.quartiles.q2.toFixed(2)}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Q3 (75th %ile)</span>
+                                    <span class="field-stat-value">\${stats.distribution.quartiles.q3.toFixed(2)}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">10th %ile</span>
+                                    <span class="field-stat-value">\${stats.distribution.percentiles.p10.toFixed(2)}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">90th %ile</span>
+                                    <span class="field-stat-value">\${stats.distribution.percentiles.p90.toFixed(2)}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Skewness</span>
+                                    <span class="field-stat-value">\${stats.distribution.skewness !== null ? stats.distribution.skewness.toFixed(3) : 'N/A'}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Kurtosis</span>
+                                    <span class="field-stat-value">\${stats.distribution.kurtosis !== null ? stats.distribution.kurtosis.toFixed(3) : 'N/A'}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Outlier Detection (1.5 × IQR)</h5>
+                            <div class="field-stats">
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Outlier Count</span>
+                                    <span class="field-stat-value">\${stats.outliers.count.toLocaleString()}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Outlier %</span>
+                                    <span class="field-stat-value">\${stats.outliers.percentage}%</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Lower Bound</span>
+                                    <span class="field-stat-value">\${stats.outliers.lowerBound !== null ? stats.outliers.lowerBound.toFixed(2) : 'N/A'}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Upper Bound</span>
+                                    <span class="field-stat-value">\${stats.outliers.upperBound !== null ? stats.outliers.upperBound.toFixed(2) : 'N/A'}</span>
+                                </div>
+                            </div>
+                            \${stats.outliers.count > 0 && stats.outliers.values.length > 0 ? \`
+                                <div style="margin-top: 10px;">
+                                    <span style="color: var(--vscode-descriptionForeground); font-size: 0.85em;">Sample Outliers: \${stats.outliers.values.slice(0, 10).map(v => v.toFixed(2)).join(', ')}\${stats.outliers.values.length > 10 ? '...' : ''}</span>
+                                </div>
+                            \` : ''}
+                        </div>
+                    \`;
+                    card.appendChild(statisticsCard);
+                }
+                
                 // Chart
                 const chartContainer = document.createElement('div');
                 chartContainer.className = 'profiling-chart-container';
@@ -2307,59 +2617,153 @@ class QvdEditorProvider {
                 
                 resultsDiv.appendChild(card);
                 
-                // Create chart
+                // Create chart - histogram for numeric fields, bar chart for categorical
                 const ctx = canvas.getContext('2d');
-                const topN = Math.min(20, fieldResult.distributions.length);
-                const chartData = fieldResult.distributions.slice(0, topN);
+                let chart;
                 
-                const chart = new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels: chartData.map(d => d.value),
-                        datasets: [{
-                            label: 'Count',
-                            data: chartData.map(d => d.count),
-                            backgroundColor: 'rgba(54, 162, 235, 0.6)',
-                            borderColor: 'rgba(54, 162, 235, 1)',
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: true,
-                        plugins: {
-                            legend: {
-                                display: false
-                            },
-                            title: {
-                                display: true,
-                                text: \`Top \${topN} Values by Frequency\`,
-                                color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
-                            }
+                if (fieldResult.isNumeric && fieldResult.statistics && fieldResult.statistics.isNumeric) {
+                    // Create histogram for numeric fields
+                    const stats = fieldResult.statistics;
+                    const min = stats.descriptive.min;
+                    const max = stats.descriptive.max;
+                    const binCount = Math.min(20, Math.ceil(Math.sqrt(stats.descriptive.count)));
+                    const binWidth = (max - min) / binCount;
+                    
+                    // Initialize bins
+                    const bins = Array(binCount).fill(0);
+                    const binLabels = [];
+                    
+                    // Create bin labels
+                    for (let i = 0; i < binCount; i++) {
+                        const binStart = min + i * binWidth;
+                        const binEnd = min + (i + 1) * binWidth;
+                        binLabels.push(\`\${binStart.toFixed(1)}-\${binEnd.toFixed(1)}\`);
+                    }
+                    
+                    // Count values in each bin (we need to re-extract numeric values from distributions)
+                    // Since we have frequency distribution, we can use it
+                    fieldResult.distributions.forEach(dist => {
+                        const value = parseFloat(dist.value);
+                        if (!isNaN(value) && value >= min && value <= max) {
+                            let binIndex = Math.floor((value - min) / binWidth);
+                            if (binIndex >= binCount) binIndex = binCount - 1; // Handle max value
+                            bins[binIndex] += dist.count;
+                        }
+                    });
+                    
+                    chart = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: binLabels,
+                            datasets: [{
+                                label: 'Frequency',
+                                data: bins,
+                                backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                                borderColor: 'rgba(75, 192, 192, 1)',
+                                borderWidth: 1
+                            }]
                         },
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                ticks: {
-                                    color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            plugins: {
+                                legend: {
+                                    display: false
                                 },
-                                grid: {
-                                    color: 'rgba(128, 128, 128, 0.2)'
+                                title: {
+                                    display: true,
+                                    text: 'Histogram: Value Distribution',
+                                    color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
                                 }
                             },
-                            x: {
-                                ticks: {
-                                    color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground'),
-                                    maxRotation: 45,
-                                    minRotation: 45
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: {
+                                        color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
+                                    },
+                                    grid: {
+                                        color: 'rgba(128, 128, 128, 0.2)'
+                                    },
+                                    title: {
+                                        display: true,
+                                        text: 'Frequency',
+                                        color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
+                                    }
                                 },
-                                grid: {
-                                    color: 'rgba(128, 128, 128, 0.2)'
+                                x: {
+                                    ticks: {
+                                        color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground'),
+                                        maxRotation: 45,
+                                        minRotation: 45
+                                    },
+                                    grid: {
+                                        color: 'rgba(128, 128, 128, 0.2)'
+                                    },
+                                    title: {
+                                        display: true,
+                                        text: 'Value Range',
+                                        color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
+                                    }
                                 }
                             }
                         }
-                    }
-                });
+                    });
+                } else {
+                    // Create bar chart for categorical fields (existing behavior)
+                    const topN = Math.min(20, fieldResult.distributions.length);
+                    const chartData = fieldResult.distributions.slice(0, topN);
+                    
+                    chart = new Chart(ctx, {
+                    chart = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: chartData.map(d => d.value),
+                            datasets: [{
+                                label: 'Count',
+                                data: chartData.map(d => d.count),
+                                backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                                borderColor: 'rgba(54, 162, 235, 1)',
+                                borderWidth: 1
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            plugins: {
+                                legend: {
+                                    display: false
+                                },
+                                title: {
+                                    display: true,
+                                    text: \`Top \${topN} Values by Frequency\`,
+                                    color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: {
+                                        color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
+                                    },
+                                    grid: {
+                                        color: 'rgba(128, 128, 128, 0.2)'
+                                    }
+                                },
+                                x: {
+                                    ticks: {
+                                        color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground'),
+                                        maxRotation: 45,
+                                        minRotation: 45
+                                    },
+                                    grid: {
+                                        color: 'rgba(128, 128, 128, 0.2)'
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
                 
                 profilingCharts.push(chart);
                 

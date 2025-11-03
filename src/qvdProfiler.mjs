@@ -3,6 +3,8 @@
  * Computes value distribution statistics for QVD fields
  */
 
+import { isNumericField, calculateStatistics } from './qvdStatistics.mjs';
+
 /**
  * Compute value frequency distribution for specified fields
  * @param {Array<Object>} data - Array of data rows
@@ -70,6 +72,14 @@ export function profileFields(data, fieldNames, maxUniqueValues = 1000) {
       });
     }
 
+    // Calculate statistics if field is numeric
+    const isNumeric = isNumericField(data, fieldName);
+    let statistics = null;
+    
+    if (isNumeric) {
+      statistics = calculateStatistics(data, fieldName);
+    }
+
     results.push({
       fieldName,
       totalRows,
@@ -78,6 +88,8 @@ export function profileFields(data, fieldNames, maxUniqueValues = 1000) {
       distributions: sortedValues,
       truncated,
       truncatedAt: maxUniqueValues,
+      isNumeric,
+      statistics,
     });
   }
 
