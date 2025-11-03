@@ -29,6 +29,12 @@ Open source with a permissive MIT license.<br>
 - **Data Profiling**: Analyze value distributions in your QVD fields ([detailed documentation](docs/PROFILING.md))
   - Select 1-3 fields for comparison
   - View frequency distributions in interactive bar charts
+  - **Statistical Analysis for Numeric Fields**:
+    - Descriptive statistics (min, max, mean, median, mode, sum, count)
+    - Spread measures (standard deviation, variance, range, IQR)
+    - Distribution metrics (quartiles, percentiles, skewness, kurtosis)
+    - Outlier detection using 1.5 × IQR method
+    - Histogram visualization for numeric distributions
   - See detailed value counts and percentages in sortable tables
   - Export profiling results as Qlik .qvs scripts for further analysis
   - Automatic warning for large files before loading all data

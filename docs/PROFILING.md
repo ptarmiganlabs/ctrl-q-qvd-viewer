@@ -54,12 +54,56 @@ Each field shows:
 - **Unique Values**: Count of distinct values in the field
 - **NULL/Empty**: Count of null or empty values
 
-### Interactive Bar Chart
+### Statistical Analysis for Numeric Fields
 
+For fields with predominantly numeric values (≥90% numeric), the profiling includes comprehensive statistical analysis:
+
+#### Descriptive Statistics
+- **Min/Max**: Minimum and maximum values
+- **Mean**: Average value
+- **Median**: Middle value (50th percentile)
+- **Mode**: Most frequently occurring value(s)
+- **Sum**: Total of all values
+- **Count**: Number of non-null numeric values
+
+#### Spread Measures
+- **Range**: Difference between max and min
+- **Standard Deviation**: Measure of data spread
+- **Variance**: Square of standard deviation
+- **Interquartile Range (IQR)**: Q3 - Q1, representing the middle 50% of data
+
+#### Distribution Metrics
+- **Quartiles**: Q1 (25th percentile), Q2 (median), Q3 (75th percentile)
+- **Percentiles**: 10th, 25th, 50th, 75th, and 90th percentiles
+- **Skewness**: Measure of distribution asymmetry
+  - Negative: Left-skewed (tail extends left)
+  - Zero: Symmetric distribution
+  - Positive: Right-skewed (tail extends right)
+- **Kurtosis**: Measure of tail heaviness (excess kurtosis)
+  - Negative: Lighter tails than normal distribution
+  - Zero: Similar to normal distribution
+  - Positive: Heavier tails than normal distribution
+
+#### Outlier Detection
+Using the 1.5 × IQR method:
+- **Outlier Count**: Number of values outside [Q1 - 1.5×IQR, Q3 + 1.5×IQR]
+- **Outlier Percentage**: Proportion of outliers in the dataset
+- **Lower/Upper Bounds**: Boundaries for outlier detection
+- **Sample Outliers**: List of the first 10 outlier values (if any)
+
+### Visualizations
+
+#### Interactive Bar Chart (Categorical Fields)
 - Displays the **top 20 most frequent values**
 - Uses VS Code theme colors for consistency
 - Responsive design adapts to window size
 - Interactive tooltips on hover
+
+#### Histogram (Numeric Fields)
+- Displays **value distribution across bins**
+- Bins calculated dynamically (up to 20 bins using square root rule)
+- Shows frequency distribution visually
+- X-axis shows value ranges, Y-axis shows frequency
 
 ### Distribution Table
 
@@ -224,6 +268,11 @@ Identify data issues through profiling:
 
 **Example:** Discover that a `country` field has 15 variations of "United States" due to inconsistent data entry.
 
+**Numeric Field Example:** Profile a `temperature` field and find:
+- Mean: 22.5°C, Median: 21.8°C (slightly right-skewed)
+- 15 outliers (0.3%) detected above 45°C
+- Standard deviation: 8.2°C indicates moderate variability
+
 ### 3. Performance Optimization
 
 Understand field characteristics for optimization:
@@ -235,7 +284,21 @@ Understand field characteristics for optimization:
 
 **Example:** Identify that an `order_id` field has 1 million unique values (100% cardinality) while `order_status` has only 5 unique values.
 
-### 4. Documentation and Analysis
+### 4. Quantitative Analysis
+
+Use statistical metrics for numeric fields:
+
+- **Sales Analysis**: Analyze revenue distribution, identify high-value outliers
+- **Inventory Management**: Monitor stock levels, detect unusual quantities
+- **Performance Metrics**: Understand response times, identify bottlenecks
+- **Sensor Data**: Analyze temperature, pressure, or other measurements
+
+**Example:** Profile an `order_amount` field:
+- Mean: $125, Median: $89 (distribution skewed by high-value orders)
+- Q1: $45, Q3: $178 (IQR: $133)
+- 87 outliers (2.1%) above $423 requiring review
+
+### 5. Documentation and Analysis
 
 Export profiling results for:
 
@@ -243,6 +306,7 @@ Export profiling results for:
 - Documenting field characteristics
 - Sharing insights with team members
 - Building data quality reports
+- Statistical analysis reports
 
 ## Performance Considerations
 
