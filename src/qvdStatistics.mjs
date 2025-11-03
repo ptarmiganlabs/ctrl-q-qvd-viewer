@@ -62,7 +62,7 @@ function sortNumeric(arr) {
 }
 
 /**
- * Calculate percentile value
+ * Calculate percentile value using linear interpolation (R-7 method / pandas default)
  * @param {Array<number>} sortedData - Sorted numeric array
  * @param {number} percentile - Percentile to calculate (0-1)
  * @returns {number} Percentile value
@@ -75,16 +75,42 @@ function calculatePercentile(sortedData, percentile) {
     return sortedData[0];
   }
 
-  const index = percentile * (sortedData.length - 1);
-  const lower = Math.floor(index);
-  const upper = Math.ceil(index);
-  const weight = index - lower;
+  const n = sortedData.length;
+
+  // R-7 method (default in R and pandas): h = 1 + (n-1)*p
+  // Convert to 0-indexed: position = (n-1)*p
+  const position = (n - 1) * percentile;
+
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  const weight = position - lower;
 
   if (lower === upper) {
     return sortedData[lower];
   }
 
   return sortedData[lower] * (1 - weight) + sortedData[upper] * weight;
+}
+
+/**
+ * Calculate median directly from sorted values
+ * @param {Array<number>} sortedValues - Sorted numeric array
+ * @returns {number} Median value
+ */
+function calculateMedianDirect(sortedValues) {
+  const n = sortedValues.length;
+  if (n === 0) {
+    return null;
+  }
+  if (n === 1) {
+    return sortedValues[0];
+  }
+
+  const mid = Math.floor(n / 2);
+  if (n % 2 === 0) {
+    return (sortedValues[mid - 1] + sortedValues[mid]) / 2;
+  }
+  return sortedValues[mid];
 }
 
 /**
@@ -217,48 +243,6 @@ function calculateKurtosis(values, mean, stdDev) {
 }
 
 /**
- * Detect outliers using IQR method
- * @param {Array<number>} sortedValues - Sorted array of numeric values
- * @param {number} q1 - First quartile
- * @param {number} q3 - Third quartile
- * @returns {Object} Outlier information
- */
-function detectOutliers(sortedValues, q1, q3) {
-  if (
-    sortedValues.length === 0 ||
-    q1 === null ||
-    q3 === null ||
-    q1 === undefined ||
-    q3 === undefined
-  ) {
-    return {
-      count: 0,
-      percentage: 0,
-      values: [],
-      lowerBound: null,
-      upperBound: null,
-    };
-  }
-
-  const iqr = q3 - q1;
-  const lowerBound = q1 - 1.5 * iqr;
-  const upperBound = q3 + 1.5 * iqr;
-
-  const outliers = sortedValues.filter(
-    (val) => val < lowerBound || val > upperBound
-  );
-
-  return {
-    count: outliers.length,
-    percentage: ((outliers.length / sortedValues.length) * 100).toFixed(2),
-    values: outliers.slice(0, 100), // Limit to first 100 outliers
-    lowerBound,
-    upperBound,
-    iqr,
-  };
-}
-
-/**
  * Calculate comprehensive statistics for numeric field
  * @param {Array<Object>} data - Array of data rows
  * @param {string} fieldName - Field name to analyze
@@ -321,28 +305,18 @@ export function calculateStatistics(data, fieldName) {
   const stdDev = calculateStdDev(variance);
 
   // Distribution metrics
-  const q1 = calculatePercentile(sortedValues, 0.25);
-  const q2 = median; // Q2 is the median
-  const q3 = calculatePercentile(sortedValues, 0.75);
-  const iqr = q3 - q1;
-
   const percentiles = {
     p10: calculatePercentile(sortedValues, 0.1),
-    p25: q1,
     p50: median,
-    p75: q3,
     p90: calculatePercentile(sortedValues, 0.9),
   };
 
   const skewness = calculateSkewness(numericValues, mean, stdDev);
   const kurtosis = calculateKurtosis(numericValues, mean, stdDev);
 
-  // Outlier detection
-  const outliers = detectOutliers(sortedValues, q1, q3);
-
   return {
     isNumeric: true,
-    
+
     // Descriptive statistics
     descriptive: {
       min,
@@ -359,19 +333,14 @@ export function calculateStatistics(data, fieldName) {
       range,
       variance,
       stdDev,
-      iqr,
     },
 
     // Distribution metrics
     distribution: {
-      quartiles: { q1, q2, q3 },
       percentiles,
       skewness,
       kurtosis,
     },
-
-    // Outliers
-    outliers,
 
     // Data quality
     quality: {
@@ -396,9 +365,18 @@ export function formatNumber(value, decimals = 2) {
     return "N/A";
   }
 
-  // Use more decimals for very small numbers
+  // Use exponential notation for very small numbers, but not if we have enough decimals
   if (Math.abs(value) < 0.01 && value !== 0) {
-    return value.toExponential(2);
+    // Check if the value can be represented with the given decimals
+    const formatted = value.toLocaleString(undefined, {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+    // If the formatted value rounds to 0, use exponential notation
+    if (parseFloat(formatted.replace(/,/g, "")) === 0) {
+      return value.toExponential(2);
+    }
+    return formatted;
   }
 
   return value.toLocaleString(undefined, {

@@ -1,7 +1,11 @@
 import * as vscode from "vscode";
 import QvdReader from "./qvdReader.mjs";
 import DataExporter from "./exporters/index.mjs";
-import { profileFields, generateQvsScript, shouldWarnLargeFile } from "./qvdProfiler.mjs";
+import {
+  profileFields,
+  generateQvsScript,
+  shouldWarnLargeFile,
+} from "./qvdProfiler.mjs";
 import { readFileSync, writeFileSync } from "fs";
 import { basename, dirname, extname, join } from "path";
 
@@ -203,26 +207,42 @@ class QvdEditorProvider {
           try {
             const fileName = basename(filePath, extname(filePath));
             const defaultName = `${fileName}_profiling.qvs`;
-            
+
             // Ask for delimiter
             const delimiterChoice = await vscode.window.showQuickPick(
               [
-                { label: "Tab (\\t)", value: "tab", description: "Good general purpose delimiter" },
-                { label: "Pipe (|)", value: "pipe", description: "Recommended when data contains commas" },
-                { label: "Comma (,)", value: "comma", description: "Standard CSV-style" },
-                { label: "Semicolon (;)", value: "semicolon", description: "Alternative to comma" },
+                {
+                  label: "Tab (\\t)",
+                  value: "tab",
+                  description: "Good general purpose delimiter",
+                },
+                {
+                  label: "Pipe (|)",
+                  value: "pipe",
+                  description: "Recommended when data contains commas",
+                },
+                {
+                  label: "Comma (,)",
+                  value: "comma",
+                  description: "Standard CSV-style",
+                },
+                {
+                  label: "Semicolon (;)",
+                  value: "semicolon",
+                  description: "Alternative to comma",
+                },
               ],
               {
                 placeHolder: "Select delimiter for QVS script",
-                title: "QVS Export - Delimiter"
+                title: "QVS Export - Delimiter",
               }
             );
-            
+
             if (!delimiterChoice) {
               // User cancelled
               break;
             }
-            
+
             // Ask for max rows per field
             const maxRowsChoice = await vscode.window.showQuickPick(
               [
@@ -234,19 +254,17 @@ class QvdEditorProvider {
               ],
               {
                 placeHolder: "Select how many values to export per field",
-                title: "QVS Export - Rows per Field"
+                title: "QVS Export - Rows per Field",
               }
             );
-            
+
             if (!maxRowsChoice) {
               // User cancelled
               break;
             }
-            
+
             const saveUri = await vscode.window.showSaveDialog({
-              defaultUri: vscode.Uri.file(
-                join(dirname(filePath), defaultName)
-              ),
+              defaultUri: vscode.Uri.file(join(dirname(filePath), defaultName)),
               filters: {
                 "Qlik Script Files": ["qvs"],
                 "All Files": ["*"],
@@ -259,11 +277,11 @@ class QvdEditorProvider {
                 basename(filePath),
                 {
                   delimiter: delimiterChoice.value,
-                  maxRows: parseInt(maxRowsChoice.value, 10)
+                  maxRows: parseInt(maxRowsChoice.value, 10),
                 }
               );
               writeFileSync(saveUri.fsPath, qvsContent, "utf8");
-              
+
               const action = await vscode.window.showInformationMessage(
                 `Profiling script exported to ${basename(saveUri.fsPath)}`,
                 "Open Folder"
@@ -287,10 +305,10 @@ class QvdEditorProvider {
           // Open profiling results in a new editor window
           try {
             const fieldResult = message.fieldResult;
-            const displayType = message.displayType || 'markdown';
+            const displayType = message.displayType || "markdown";
             const fileName = basename(filePath, extname(filePath));
-            
-            if (displayType === 'markdown') {
+
+            if (displayType === "markdown") {
               // Create markdown content with profiling results
               let markdownContent = `# Profiling: ${fieldResult.fieldName}\n\n`;
               markdownContent += `**Source:** ${basename(filePath)}\n\n`;
@@ -298,90 +316,106 @@ class QvdEditorProvider {
               markdownContent += `- **Total Rows:** ${fieldResult.totalRows.toLocaleString()}\n`;
               markdownContent += `- **Unique Values:** ${fieldResult.uniqueValues.toLocaleString()}\n`;
               markdownContent += `- **NULL/Empty:** ${fieldResult.nullCount.toLocaleString()}\n`;
-              
+
               // Add statistical analysis for numeric fields
-              if (fieldResult.isNumeric && fieldResult.statistics && fieldResult.statistics.isNumeric) {
+              if (
+                fieldResult.isNumeric &&
+                fieldResult.statistics &&
+                fieldResult.statistics.isNumeric
+              ) {
                 const stats = fieldResult.statistics;
-                
+
                 markdownContent += `\n## Statistical Analysis\n\n`;
-                
+
                 markdownContent += `### Descriptive Statistics\n\n`;
                 markdownContent += `| Metric | Value |\n`;
                 markdownContent += `|--------|-------|\n`;
                 markdownContent += `| Min | ${stats.descriptive.min.toLocaleString()} |\n`;
                 markdownContent += `| Max | ${stats.descriptive.max.toLocaleString()} |\n`;
-                markdownContent += `| Mean | ${stats.descriptive.mean.toFixed(2)} |\n`;
-                markdownContent += `| Median | ${stats.descriptive.median.toFixed(2)} |\n`;
-                if (stats.descriptive.mode && stats.descriptive.mode.length > 0) {
-                  markdownContent += `| Mode | ${stats.descriptive.mode.map(m => m.toFixed(2)).join(', ')} |\n`;
+                markdownContent += `| Mean | ${stats.descriptive.mean.toFixed(
+                  2
+                )} |\n`;
+                markdownContent += `| Median | ${stats.descriptive.median.toFixed(
+                  2
+                )} |\n`;
+                if (
+                  stats.descriptive.mode &&
+                  stats.descriptive.mode.length > 0
+                ) {
+                  markdownContent += `| Mode | ${stats.descriptive.mode
+                    .map((m) => m.toFixed(2))
+                    .join(", ")} |\n`;
                 }
                 markdownContent += `| Sum | ${stats.descriptive.sum.toLocaleString()} |\n`;
                 markdownContent += `| Count | ${stats.descriptive.count.toLocaleString()} |\n`;
-                
+
                 markdownContent += `\n### Spread Measures\n\n`;
                 markdownContent += `| Metric | Value |\n`;
                 markdownContent += `|--------|-------|\n`;
-                markdownContent += `| Range | ${stats.spread.range.toFixed(2)} |\n`;
-                markdownContent += `| Standard Deviation | ${stats.spread.stdDev.toFixed(2)} |\n`;
-                markdownContent += `| Variance | ${stats.spread.variance.toFixed(2)} |\n`;
-                markdownContent += `| Interquartile Range (IQR) | ${stats.spread.iqr.toFixed(2)} |\n`;
-                
+                markdownContent += `| Range | ${stats.spread.range.toFixed(
+                  2
+                )} |\n`;
+                markdownContent += `| Standard Deviation | ${stats.spread.stdDev.toFixed(
+                  2
+                )} |\n`;
+                markdownContent += `| Variance | ${stats.spread.variance.toFixed(
+                  2
+                )} |\n`;
+
                 markdownContent += `\n### Distribution Metrics\n\n`;
                 markdownContent += `| Metric | Value |\n`;
                 markdownContent += `|--------|-------|\n`;
-                markdownContent += `| Q1 (25th percentile) | ${stats.distribution.quartiles.q1.toFixed(2)} |\n`;
-                markdownContent += `| Q2 (Median) | ${stats.distribution.quartiles.q2.toFixed(2)} |\n`;
-                markdownContent += `| Q3 (75th percentile) | ${stats.distribution.quartiles.q3.toFixed(2)} |\n`;
-                markdownContent += `| 10th percentile | ${stats.distribution.percentiles.p10.toFixed(2)} |\n`;
-                markdownContent += `| 90th percentile | ${stats.distribution.percentiles.p90.toFixed(2)} |\n`;
+                markdownContent += `| 10th percentile | ${stats.distribution.percentiles.p10.toFixed(
+                  2
+                )} |\n`;
+                markdownContent += `| 50th percentile (Median) | ${stats.distribution.percentiles.p50.toFixed(
+                  2
+                )} |\n`;
+                markdownContent += `| 90th percentile | ${stats.distribution.percentiles.p90.toFixed(
+                  2
+                )} |\n`;
                 if (stats.distribution.skewness !== null) {
-                  markdownContent += `| Skewness | ${stats.distribution.skewness.toFixed(3)} |\n`;
+                  markdownContent += `| Skewness | ${stats.distribution.skewness.toFixed(
+                    3
+                  )} |\n`;
                 }
                 if (stats.distribution.kurtosis !== null) {
-                  markdownContent += `| Kurtosis | ${stats.distribution.kurtosis.toFixed(3)} |\n`;
-                }
-                
-                markdownContent += `\n### Outlier Detection (1.5 × IQR)\n\n`;
-                markdownContent += `| Metric | Value |\n`;
-                markdownContent += `|--------|-------|\n`;
-                markdownContent += `| Outlier Count | ${stats.outliers.count.toLocaleString()} |\n`;
-                markdownContent += `| Outlier Percentage | ${stats.outliers.percentage}% |\n`;
-                if (stats.outliers.lowerBound !== null) {
-                  markdownContent += `| Lower Bound | ${stats.outliers.lowerBound.toFixed(2)} |\n`;
-                }
-                if (stats.outliers.upperBound !== null) {
-                  markdownContent += `| Upper Bound | ${stats.outliers.upperBound.toFixed(2)} |\n`;
-                }
-                
-                if (stats.outliers.count > 0 && stats.outliers.values.length > 0) {
-                  markdownContent += `\n**Sample Outliers (first 10):** ${stats.outliers.values.slice(0, 10).map(v => v.toFixed(2)).join(', ')}${stats.outliers.values.length > 10 ? '...' : ''}\n`;
+                  markdownContent += `| Kurtosis | ${stats.distribution.kurtosis.toFixed(
+                    3
+                  )} |\n`;
                 }
               }
-              
+
               if (fieldResult.truncated) {
                 markdownContent += `\n> **Note:** Distribution truncated to top ${fieldResult.truncatedAt} values\n`;
               }
-              
+
               markdownContent += `\n## Value Distribution\n\n`;
               markdownContent += `| Value | Count | Percentage |\n`;
               markdownContent += `|-------|-------|------------|\n`;
-              
-              fieldResult.distributions.forEach(dist => {
-                markdownContent += `| ${dist.value} | ${dist.count.toLocaleString()} | ${dist.percentage}% |\n`;
+
+              fieldResult.distributions.forEach((dist) => {
+                markdownContent += `| ${
+                  dist.value
+                } | ${dist.count.toLocaleString()} | ${dist.percentage}% |\n`;
               });
-              
+
               // Create a new untitled document with markdown content
               const doc = await vscode.workspace.openTextDocument({
                 content: markdownContent,
-                language: 'markdown'
+                language: "markdown",
               });
-              
+
               // Show the document in a new editor column (to the side)
-              await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside, false);
-            } else if (displayType === 'visual') {
+              await vscode.window.showTextDocument(
+                doc,
+                vscode.ViewColumn.Beside,
+                false
+              );
+            } else if (displayType === "visual") {
               // Open visual analysis in a webview panel
               const panel = vscode.window.createWebviewPanel(
-                'qvdProfilingVisual',
+                "qvdProfilingVisual",
                 `Profiling: ${fieldResult.fieldName}`,
                 vscode.ViewColumn.Beside,
                 {
@@ -391,11 +425,14 @@ class QvdEditorProvider {
                   ],
                 }
               );
-              
+
               // Generate HTML for the visual analysis
-              panel.webview.html = this.getVisualAnalysisHtml(panel.webview, fieldResult, fileName);
+              panel.webview.html = this.getVisualAnalysisHtml(
+                panel.webview,
+                fieldResult,
+                fileName
+              );
             }
-            
           } catch (error) {
             vscode.window.showErrorMessage(
               `Failed to open profiling in window: ${error.message}`
@@ -559,13 +596,15 @@ class QvdEditorProvider {
     const tabulatorJs = this.getTabulatorJs();
     const tabulatorCss = this.getTabulatorCss();
     const chartJs = this.getChartJs();
-    
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${
+      webview.cspSource
+    } 'unsafe-inline'; script-src 'nonce-${nonce}';">
     <title>Profiling: ${this.escapeHtml(fieldResult.fieldName)}</title>
     <style nonce="${nonce}">
         ${tabulatorCss}
@@ -638,6 +677,110 @@ class QvdEditorProvider {
             margin-bottom: 10px;
             color: var(--vscode-foreground);
         }
+        
+        /* Tabulator overrides for VSCode theme */
+        .tabulator {
+            background-color: var(--vscode-editor-background);
+            border: none;
+            font-size: var(--vscode-font-size, 13px);
+        }
+        
+        .tabulator .tabulator-header {
+            background-color: var(--vscode-list-activeSelectionBackground);
+            border-bottom: 2px solid var(--vscode-contrastBorder, var(--vscode-panel-border));
+        }
+        
+        .tabulator .tabulator-header .tabulator-col {
+            background-color: var(--vscode-list-activeSelectionBackground);
+            border-right: 1px solid var(--vscode-contrastBorder, var(--vscode-panel-border));
+        }
+        
+        .tabulator .tabulator-header .tabulator-col .tabulator-col-content {
+            padding: 8px;
+            color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
+            font-weight: 600;
+        }
+        
+        .tabulator .tabulator-tableholder .tabulator-table {
+            background-color: var(--vscode-editor-background);
+            color: var(--vscode-foreground);
+        }
+        
+        .tabulator-row {
+            background-color: var(--vscode-list-inactiveSelectionBackground, rgba(128, 128, 128, 0.15));
+            border-bottom: 1px solid var(--vscode-contrastBorder, var(--vscode-panel-border));
+            color: var(--vscode-foreground);
+        }
+        
+        .tabulator-row.tabulator-row-even {
+            background-color: var(--vscode-list-inactiveSelectionBackground, rgba(128, 128, 128, 0.25));
+        }
+        
+        .tabulator-row:hover {
+            background-color: var(--vscode-list-hoverBackground) !important;
+            color: var(--vscode-list-hoverForeground, var(--vscode-foreground)) !important;
+        }
+        
+        .tabulator-cell {
+            border-right: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+            padding: 6px 8px;
+            color: var(--vscode-foreground);
+        }
+        
+        .tabulator-footer {
+            background-color: var(--vscode-sideBar-background, var(--vscode-editor-background)) !important;
+            border-top: 2px solid var(--vscode-contrastBorder, var(--vscode-panel-border)) !important;
+            color: var(--vscode-foreground) !important;
+            padding: 10px 8px !important;
+            font-weight: 600 !important;
+        }
+        
+        .tabulator-footer .tabulator-page {
+            background-color: var(--vscode-button-background) !important;
+            color: var(--vscode-button-foreground) !important;
+            border: 1px solid var(--vscode-contrastBorder, var(--vscode-button-border)) !important;
+            margin: 0 3px;
+            border-radius: 3px;
+            padding: 6px 10px;
+            font-weight: 600 !important;
+            min-width: 32px;
+            text-align: center;
+        }
+        
+        .tabulator-footer .tabulator-page:not(.disabled) {
+            cursor: pointer;
+        }
+        
+        .tabulator-footer .tabulator-page:not(.disabled):hover {
+            background-color: var(--vscode-button-hoverBackground) !important;
+            border-color: var(--vscode-focusBorder, var(--vscode-button-border)) !important;
+        }
+        
+        .tabulator-footer .tabulator-page.active {
+            background-color: var(--vscode-button-hoverBackground) !important;
+            border-color: var(--vscode-focusBorder) !important;
+            font-weight: 700 !important;
+        }
+        
+        .tabulator-footer .tabulator-page.disabled {
+            opacity: 0.4 !important;
+            cursor: not-allowed;
+        }
+        
+        .tabulator .tabulator-footer .tabulator-paginator {
+            color: var(--vscode-foreground) !important;
+        }
+        
+        .tabulator .tabulator-footer .tabulator-page-counter {
+            color: var(--vscode-foreground) !important;
+            font-weight: 600 !important;
+            opacity: 1 !important;
+        }
+        
+        .tabulator .tabulator-footer .tabulator-page-size {
+            color: var(--vscode-foreground) !important;
+            font-weight: 600 !important;
+        }
     </style>
 </head>
 <body>
@@ -659,13 +802,21 @@ class QvdEditorProvider {
         </div>
     </div>
     
-    ${fieldResult.truncated ? `
+    ${
+      fieldResult.truncated
+        ? `
     <div style="padding: 10px; background-color: var(--vscode-inputValidation-warningBackground); border-left: 4px solid var(--vscode-inputValidation-warningBorder); margin-bottom: 20px; border-radius: 2px;">
         ⚠️ Distribution truncated to top ${fieldResult.truncatedAt} values
     </div>
-    ` : ''}
+    `
+        : ""
+    }
     
-    ${fieldResult.isNumeric && fieldResult.statistics && fieldResult.statistics.isNumeric ? `
+    ${
+      fieldResult.isNumeric &&
+      fieldResult.statistics &&
+      fieldResult.statistics.isNumeric
+        ? `
     <div style="background-color: var(--vscode-textBlockQuote-background); border: 1px solid var(--vscode-panel-border); border-radius: 4px; padding: 15px; margin-bottom: 20px;">
         <h2 style="margin: 0 0 15px 0; font-size: 1.2em;">📈 Statistical Analysis</h2>
         
@@ -681,11 +832,15 @@ class QvdEditorProvider {
             </div>
             <div class="stat-item">
                 <span class="stat-label">Mean</span>
-                <span class="stat-value">${fieldResult.statistics.descriptive.mean.toFixed(2)}</span>
+                <span class="stat-value">${fieldResult.statistics.descriptive.mean.toFixed(
+                  2
+                )}</span>
             </div>
             <div class="stat-item">
                 <span class="stat-label">Median</span>
-                <span class="stat-value">${fieldResult.statistics.descriptive.median.toFixed(2)}</span>
+                <span class="stat-value">${fieldResult.statistics.descriptive.median.toFixed(
+                  2
+                )}</span>
             </div>
             <div class="stat-item">
                 <span class="stat-label">Sum</span>
@@ -701,80 +856,78 @@ class QvdEditorProvider {
         <div class="stats-container" style="margin-bottom: 15px;">
             <div class="stat-item">
                 <span class="stat-label">Range</span>
-                <span class="stat-value">${fieldResult.statistics.spread.range.toFixed(2)}</span>
+                <span class="stat-value">${fieldResult.statistics.spread.range.toFixed(
+                  2
+                )}</span>
             </div>
             <div class="stat-item">
                 <span class="stat-label">Std Dev</span>
-                <span class="stat-value">${fieldResult.statistics.spread.stdDev.toFixed(2)}</span>
+                <span class="stat-value">${fieldResult.statistics.spread.stdDev.toFixed(
+                  2
+                )}</span>
             </div>
             <div class="stat-item">
                 <span class="stat-label">Variance</span>
-                <span class="stat-value">${fieldResult.statistics.spread.variance.toFixed(2)}</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">IQR</span>
-                <span class="stat-value">${fieldResult.statistics.spread.iqr.toFixed(2)}</span>
+                <span class="stat-value">${fieldResult.statistics.spread.variance.toFixed(
+                  2
+                )}</span>
             </div>
         </div>
         
         <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Distribution Metrics</h3>
         <div class="stats-container" style="margin-bottom: 15px;">
             <div class="stat-item">
-                <span class="stat-label">Q1 (25th)</span>
-                <span class="stat-value">${fieldResult.statistics.distribution.quartiles.q1.toFixed(2)}</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Q2 (Median)</span>
-                <span class="stat-value">${fieldResult.statistics.distribution.quartiles.q2.toFixed(2)}</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Q3 (75th)</span>
-                <span class="stat-value">${fieldResult.statistics.distribution.quartiles.q3.toFixed(2)}</span>
-            </div>
-            <div class="stat-item">
                 <span class="stat-label">10th %ile</span>
-                <span class="stat-value">${fieldResult.statistics.distribution.percentiles.p10.toFixed(2)}</span>
+                <span class="stat-value">${fieldResult.statistics.distribution.percentiles.p10.toFixed(
+                  2
+                )}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">50th %ile (Median)</span>
+                <span class="stat-value">${fieldResult.statistics.distribution.percentiles.p50.toFixed(
+                  2
+                )}</span>
             </div>
             <div class="stat-item">
                 <span class="stat-label">90th %ile</span>
-                <span class="stat-value">${fieldResult.statistics.distribution.percentiles.p90.toFixed(2)}</span>
+                <span class="stat-value">${fieldResult.statistics.distribution.percentiles.p90.toFixed(
+                  2
+                )}</span>
             </div>
             <div class="stat-item">
                 <span class="stat-label">Skewness</span>
-                <span class="stat-value">${fieldResult.statistics.distribution.skewness !== null ? fieldResult.statistics.distribution.skewness.toFixed(3) : 'N/A'}</span>
+                <span class="stat-value">${
+                  fieldResult.statistics.distribution.skewness !== null
+                    ? fieldResult.statistics.distribution.skewness.toFixed(3)
+                    : "N/A"
+                }</span>
             </div>
             <div class="stat-item">
                 <span class="stat-label">Kurtosis</span>
-                <span class="stat-value">${fieldResult.statistics.distribution.kurtosis !== null ? fieldResult.statistics.distribution.kurtosis.toFixed(3) : 'N/A'}</span>
+                <span class="stat-value">${
+                  fieldResult.statistics.distribution.kurtosis !== null
+                    ? fieldResult.statistics.distribution.kurtosis.toFixed(3)
+                    : "N/A"
+                }</span>
             </div>
         </div>
-        
-        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Outlier Detection (1.5 × IQR)</h3>
-        <div class="stats-container">
-            <div class="stat-item">
-                <span class="stat-label">Outlier Count</span>
-                <span class="stat-value">${fieldResult.statistics.outliers.count.toLocaleString()}</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Outlier %</span>
-                <span class="stat-value">${fieldResult.statistics.outliers.percentage}%</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Lower Bound</span>
-                <span class="stat-value">${fieldResult.statistics.outliers.lowerBound !== null ? fieldResult.statistics.outliers.lowerBound.toFixed(2) : 'N/A'}</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Upper Bound</span>
-                <span class="stat-value">${fieldResult.statistics.outliers.upperBound !== null ? fieldResult.statistics.outliers.upperBound.toFixed(2) : 'N/A'}</span>
-            </div>
-        </div>
-        ${fieldResult.statistics.outliers.count > 0 && fieldResult.statistics.outliers.values.length > 0 ? `
-            <div style="margin-top: 10px; color: var(--vscode-descriptionForeground); font-size: 0.9em;">
-                <strong>Sample Outliers:</strong> ${fieldResult.statistics.outliers.values.slice(0, 10).map(v => v.toFixed(2)).join(', ')}${fieldResult.statistics.outliers.values.length > 10 ? '...' : ''}
-            </div>
-        ` : ''}
     </div>
-    ` : ''}
+    `
+        : ""
+    }
+    
+    ${
+      fieldResult.isNumeric &&
+      fieldResult.statistics &&
+      fieldResult.statistics.isNumeric
+        ? `
+    <div style="margin: 15px 0; display: flex; gap: 10px; justify-content: center;">
+        <button id="btn-histogram" class="chart-toggle-btn active" style="padding: 8px 16px; border: 1px solid var(--vscode-button-border); background: var(--vscode-button-background); color: var(--vscode-button-foreground); cursor: pointer; border-radius: 3px;">Histogram</button>
+        <button id="btn-frequency" class="chart-toggle-btn" style="padding: 8px 16px; border: 1px solid var(--vscode-button-border); background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); cursor: pointer; border-radius: 3px;">Frequency Chart</button>
+    </div>
+    `
+        : ""
+    }
     
     <div class="chart-container">
         <canvas id="profiling-chart"></canvas>
@@ -798,76 +951,263 @@ class QvdEditorProvider {
         
         // Create chart
         const ctx = document.getElementById('profiling-chart').getContext('2d');
-        const topN = Math.min(20, fieldResult.distributions.length);
-        const chartData = fieldResult.distributions.slice(0, topN);
+        let currentChart = null;
+        let currentTable = null;
         
-        new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: chartData.map(d => d.value),
-                datasets: [{
-                    label: 'Count',
-                    data: chartData.map(d => d.count),
-                    backgroundColor: 'rgba(54, 162, 235, 0.6)',
-                    borderColor: 'rgba(54, 162, 235, 1)',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: true,
-                plugins: {
-                    legend: {
-                        display: false
-                    },
-                    title: {
-                        display: true,
-                        text: \`Top \${topN} Values by Frequency\`,
-                        color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
+        function createHistogram() {
+            if (currentChart) {
+                currentChart.destroy();
+            }
+            
+            const stats = fieldResult.statistics;
+            
+            // Extract numeric values from distribution (unique values only, no expansion)
+            const uniqueNumericValues = [];
+            fieldResult.distributions.forEach(dist => {
+                const value = parseFloat(dist.value);
+                if (!isNaN(value)) {
+                    uniqueNumericValues.push(value);
+                }
+            });
+            
+            if (uniqueNumericValues.length === 0) {
+                return;
+            }
+            
+            // Use min/max from the actual values in distribution, not theoretical stats
+            const min = Math.min(...uniqueNumericValues);
+            const max = Math.max(...uniqueNumericValues);
+            
+            // Use total count for bin calculation (excluding nulls)
+            const totalCount = fieldResult.totalRows - fieldResult.nullCount;
+            const binCount = Math.min(20, Math.ceil(Math.sqrt(totalCount)));
+            const binWidth = (max - min) / binCount;
+            
+            // Initialize bins
+            const bins = Array(binCount).fill(0);
+            const binLabels = [];
+            
+            // Create bin labels
+            for (let i = 0; i < binCount; i++) {
+                const binStart = min + i * binWidth;
+                const binEnd = min + (i + 1) * binWidth;
+                binLabels.push(\`\${binStart.toFixed(1)}-\${binEnd.toFixed(1)}\`);
+            }
+            
+            // Count values in each bin using distribution counts
+            fieldResult.distributions.forEach(dist => {
+                const value = parseFloat(dist.value);
+                if (!isNaN(value)) {
+                    let binIndex;
+                    if (binWidth === 0) {
+                        binIndex = 0;
+                    } else {
+                        binIndex = Math.floor((value - min) / binWidth);
+                        if (binIndex >= binCount) binIndex = binCount - 1;
                     }
+                    bins[binIndex] += dist.count;
+                }
+            });
+            
+            currentChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: binLabels,
+                    datasets: [{
+                        label: 'Frequency',
+                        data: bins,
+                        backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
                 },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            display: false
                         },
-                        grid: {
-                            color: 'rgba(128, 128, 128, 0.2)'
+                        title: {
+                            display: true,
+                            text: 'Histogram: Value Distribution',
+                            color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
                         }
                     },
-                    x: {
-                        ticks: {
-                            color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground'),
-                            maxRotation: 45,
-                            minRotation: 45
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
+                            },
+                            grid: {
+                                color: 'rgba(128, 128, 128, 0.2)'
+                            },
+                            title: {
+                                display: true,
+                                text: 'Frequency',
+                                color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
+                            }
                         },
-                        grid: {
-                            color: 'rgba(128, 128, 128, 0.2)'
+                        x: {
+                            ticks: {
+                                color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground'),
+                                maxRotation: 45,
+                                minRotation: 45
+                            },
+                            grid: {
+                                color: 'rgba(128, 128, 128, 0.2)'
+                            },
+                            title: {
+                                display: true,
+                                text: 'Value Range',
+                                color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
+                            }
                         }
                     }
                 }
+            });
+            
+            // Update table with histogram data (using totalCount already declared above)
+            const histogramData = binLabels.map((label, i) => {
+                // Split the range label into from and to
+                const [from, to] = label.split('-');
+                return {
+                    from: from,
+                    to: to,
+                    count: bins[i],
+                    percentage: totalCount > 0 ? ((bins[i] / totalCount) * 100).toFixed(2) : '0.00'
+                };
+            });
+            
+            if (currentTable) {
+                currentTable.destroy();
             }
-        });
+            
+            currentTable = new Tabulator('#profiling-table', {
+                data: histogramData,
+                columns: [
+                    { title: 'From', field: 'from', headerSort: true, widthGrow: 1 },
+                    { title: 'To', field: 'to', headerSort: true, widthGrow: 1 },
+                    { title: 'Count', field: 'count', headerSort: true, widthGrow: 1 },
+                    { title: 'Percentage', field: 'percentage', headerSort: true, widthGrow: 1, 
+                      formatter: (cell) => cell.getValue() + '%' }
+                ],
+                layout: 'fitDataStretch',
+                pagination: true,
+                paginationSize: 50,
+                paginationSizeSelector: [25, 50, 100],
+                paginationCounter: 'rows',
+                resizableColumns: true
+            });
+        }
         
-        // Create table
-        const tableColumns = [
-            { title: 'Value', field: 'value', headerSort: false, widthGrow: 2 },
-            { title: 'Count', field: 'count', headerSort: false, widthGrow: 1 },
-            { title: 'Percentage', field: 'percentage', headerSort: false, widthGrow: 1, 
-              formatter: (cell) => cell.getValue() + '%' }
-        ];
+        function createFrequencyChart() {
+            if (currentChart) {
+                currentChart.destroy();
+            }
+            
+            const topN = Math.min(20, fieldResult.distributions.length);
+            const chartData = fieldResult.distributions.slice(0, topN);
+            
+            currentChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: chartData.map(d => d.value),
+                    datasets: [{
+                        label: 'Count',
+                        data: chartData.map(d => d.count),
+                        backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        title: {
+                            display: true,
+                            text: \`Top \${topN} Values by Frequency\`,
+                            color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
+                            },
+                            grid: {
+                                color: 'rgba(128, 128, 128, 0.2)'
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground'),
+                                maxRotation: 45,
+                                minRotation: 45
+                            },
+                            grid: {
+                                color: 'rgba(128, 128, 128, 0.2)'
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // Update table with frequency data
+            if (currentTable) {
+                currentTable.destroy();
+            }
+            
+            currentTable = new Tabulator('#profiling-table', {
+                data: fieldResult.distributions,
+                columns: [
+                    { title: 'Value', field: 'value', headerSort: true, widthGrow: 2 },
+                    { title: 'Count', field: 'count', headerSort: true, widthGrow: 1 },
+                    { title: 'Percentage', field: 'percentage', headerSort: true, widthGrow: 1, 
+                      formatter: (cell) => cell.getValue() + '%' }
+                ],
+                layout: 'fitDataStretch',
+                pagination: true,
+                paginationSize: 50,
+                paginationSizeSelector: [25, 50, 100],
+                paginationCounter: 'rows',
+                resizableColumns: true
+            });
+        }
         
-        new Tabulator('#profiling-table', {
-            data: fieldResult.distributions,
-            columns: tableColumns,
-            layout: 'fitDataStretch',
-            pagination: true,
-            paginationSize: 25,
-            paginationSizeSelector: [10, 25, 50, 100],
-            paginationCounter: 'rows',
-            height: '500px'
-        });
+        // Create initial chart based on field type
+        if (fieldResult.isNumeric && fieldResult.statistics && fieldResult.statistics.isNumeric) {
+            createHistogram();
+            
+            // Add event listeners for chart toggle buttons
+            document.getElementById('btn-histogram').addEventListener('click', function() {
+                createHistogram();
+                document.querySelectorAll('.chart-toggle-btn').forEach(btn => btn.classList.remove('active'));
+                this.classList.add('active');
+                this.style.background = 'var(--vscode-button-background)';
+                this.style.color = 'var(--vscode-button-foreground)';
+                document.getElementById('btn-frequency').style.background = 'var(--vscode-button-secondaryBackground)';
+                document.getElementById('btn-frequency').style.color = 'var(--vscode-button-secondaryForeground)';
+            });
+            
+            document.getElementById('btn-frequency').addEventListener('click', function() {
+                createFrequencyChart();
+                document.querySelectorAll('.chart-toggle-btn').forEach(btn => btn.classList.remove('active'));
+                this.classList.add('active');
+                this.style.background = 'var(--vscode-button-background)';
+                this.style.color = 'var(--vscode-button-foreground)';
+                document.getElementById('btn-histogram').style.background = 'var(--vscode-button-secondaryBackground)';
+                document.getElementById('btn-histogram').style.color = 'var(--vscode-button-secondaryForeground)';
+            });
+        } else {
+            createFrequencyChart();
+        }
     </script>
 </body>
 </html>`;
@@ -1781,12 +2121,20 @@ class QvdEditorProvider {
                                       (field) =>
                                         `<div class="field-checkbox-item">
                                             <input type="checkbox" 
-                                                   id="field-${this.escapeHtml(field.name)}" 
+                                                   id="field-${this.escapeHtml(
+                                                     field.name
+                                                   )}" 
                                                    name="field-checkbox" 
-                                                   value="${this.escapeHtml(field.name)}">
-                                            <label for="field-${this.escapeHtml(field.name)}">
+                                                   value="${this.escapeHtml(
+                                                     field.name
+                                                   )}">
+                                            <label for="field-${this.escapeHtml(
+                                              field.name
+                                            )}">
                                                 ${this.escapeHtml(field.name)}
-                                                <span class="field-unique-count">(${field.noOfSymbols} unique values)</span>
+                                                <span class="field-unique-count">(${
+                                                  field.noOfSymbols
+                                                } unique values)</span>
                                             </label>
                                         </div>`
                                     )
@@ -1834,9 +2182,7 @@ class QvdEditorProvider {
         
         // Available field names for profiling
         const availableFields = ${JSON.stringify(
-          metadata && metadata.fields
-            ? metadata.fields.map((f) => f.name)
-            : []
+          metadata && metadata.fields ? metadata.fields.map((f) => f.name) : []
         )};
         
         let currentContextCell = null;
@@ -2031,32 +2377,44 @@ class QvdEditorProvider {
         }
         
         function initializeTables() {
-            // Initialize Data Table
-            if (tableData.length > 0) {
-                const columns = Object.keys(tableData[0]).map(key => ({
-                    title: key,
-                    field: key,
-                    headerSort: true,
-                    headerFilter: false
-                }));
-                
-                dataTable = new Tabulator("#data-table", {
-                    data: tableData,
-                    columns: columns,
-                    layout: "fitDataStretch",
-                    pagination: true,
-                    paginationSize: 100,
-                    paginationSizeSelector: [25, 50, 100, 250, 500],
-                    paginationCounter: "rows",
-                    movableColumns: true,
-                    resizableColumns: true
-                });
-                
-                // Add context menu handler
-                dataTable.on("cellContext", function(e, cell){
-                    e.preventDefault();
-                    showContextMenu(e, cell);
-                });
+            console.log('Initializing tables...');
+            console.log('tableData length:', tableData ? tableData.length : 'undefined');
+            console.log('Tabulator available:', typeof Tabulator !== 'undefined');
+            
+            try {
+                // Initialize Data Table
+                if (tableData.length > 0) {
+                    const columns = Object.keys(tableData[0]).map(key => ({
+                        title: key,
+                        field: key,
+                        headerSort: true,
+                        headerFilter: false
+                    }));
+                    
+                    console.log('Creating data table with', columns.length, 'columns');
+                    
+                    dataTable = new Tabulator("#data-table", {
+                        data: tableData,
+                        columns: columns,
+                        layout: "fitDataStretch",
+                        pagination: true,
+                        paginationSize: 100,
+                        paginationSizeSelector: [25, 50, 100, 250, 500],
+                        paginationCounter: "rows",
+                        movableColumns: true,
+                        resizableColumns: true
+                    });
+                    
+                    console.log('Data table created successfully');
+                    
+                    // Add context menu handler
+                    dataTable.on("cellContext", function(e, cell){
+                        e.preventDefault();
+                        showContextMenu(e, cell);
+                    });
+                }
+            } catch (error) {
+                console.error('Error initializing data table:', error);
             }
             
             // Initialize Schema Table
@@ -2379,21 +2737,24 @@ class QvdEditorProvider {
         }
         
         function displayProfilingResults(results) {
-            if (results.error) {
-                showProfilingStatus('❌ ' + results.error, 'warning');
-                return;
-            }
-            
-            currentProfilingResults = results;
-            const resultsDiv = document.getElementById('profiling-results');
-            resultsDiv.innerHTML = '';
-            
-            // Destroy existing charts
-            profilingCharts.forEach(chart => chart.destroy());
-            profilingCharts = [];
-            
-            // Display results for each field
-            results.fields.forEach((fieldResult, index) => {
+            try {
+                if (results.error) {
+                    showProfilingStatus('❌ ' + results.error, 'warning');
+                    return;
+                }
+                
+                currentProfilingResults = results;
+                const resultsDiv = document.getElementById('profiling-results');
+                resultsDiv.innerHTML = '';
+                
+                // Destroy existing charts
+                profilingCharts.forEach(chart => chart.destroy());
+                profilingCharts = [];
+                
+                // Display results for each field
+                results.fields.forEach((fieldResult, index) => {
+                console.log(\`Processing field \${index}: \${fieldResult.fieldName}, isNumeric: \${fieldResult.isNumeric}, hasStats: \${!!fieldResult.statistics}\`);
+                
                 const card = document.createElement('div');
                 card.className = 'field-profiling-card';
                 
@@ -2528,10 +2889,6 @@ class QvdEditorProvider {
                                     <span class="field-stat-label">Variance</span>
                                     <span class="field-stat-value">\${stats.spread.variance.toFixed(2)}</span>
                                 </div>
-                                <div class="field-stat-item">
-                                    <span class="field-stat-label">IQR</span>
-                                    <span class="field-stat-value">\${stats.spread.iqr.toFixed(2)}</span>
-                                </div>
                             </div>
                         </div>
                         
@@ -2539,20 +2896,12 @@ class QvdEditorProvider {
                             <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Distribution Metrics</h5>
                             <div class="field-stats">
                                 <div class="field-stat-item">
-                                    <span class="field-stat-label">Q1 (25th %ile)</span>
-                                    <span class="field-stat-value">\${stats.distribution.quartiles.q1.toFixed(2)}</span>
-                                </div>
-                                <div class="field-stat-item">
-                                    <span class="field-stat-label">Q2 (Median)</span>
-                                    <span class="field-stat-value">\${stats.distribution.quartiles.q2.toFixed(2)}</span>
-                                </div>
-                                <div class="field-stat-item">
-                                    <span class="field-stat-label">Q3 (75th %ile)</span>
-                                    <span class="field-stat-value">\${stats.distribution.quartiles.q3.toFixed(2)}</span>
-                                </div>
-                                <div class="field-stat-item">
                                     <span class="field-stat-label">10th %ile</span>
                                     <span class="field-stat-value">\${stats.distribution.percentiles.p10.toFixed(2)}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">50th %ile (Median)</span>
+                                    <span class="field-stat-value">\${stats.distribution.percentiles.p50.toFixed(2)}</span>
                                 </div>
                                 <div class="field-stat-item">
                                     <span class="field-stat-label">90th %ile</span>
@@ -2568,35 +2917,43 @@ class QvdEditorProvider {
                                 </div>
                             </div>
                         </div>
-                        
-                        <div class="statistics-section" style="margin-top: 15px;">
-                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Outlier Detection (1.5 × IQR)</h5>
-                            <div class="field-stats">
-                                <div class="field-stat-item">
-                                    <span class="field-stat-label">Outlier Count</span>
-                                    <span class="field-stat-value">\${stats.outliers.count.toLocaleString()}</span>
-                                </div>
-                                <div class="field-stat-item">
-                                    <span class="field-stat-label">Outlier %</span>
-                                    <span class="field-stat-value">\${stats.outliers.percentage}%</span>
-                                </div>
-                                <div class="field-stat-item">
-                                    <span class="field-stat-label">Lower Bound</span>
-                                    <span class="field-stat-value">\${stats.outliers.lowerBound !== null ? stats.outliers.lowerBound.toFixed(2) : 'N/A'}</span>
-                                </div>
-                                <div class="field-stat-item">
-                                    <span class="field-stat-label">Upper Bound</span>
-                                    <span class="field-stat-value">\${stats.outliers.upperBound !== null ? stats.outliers.upperBound.toFixed(2) : 'N/A'}</span>
-                                </div>
-                            </div>
-                            \${stats.outliers.count > 0 && stats.outliers.values.length > 0 ? \`
-                                <div style="margin-top: 10px;">
-                                    <span style="color: var(--vscode-descriptionForeground); font-size: 0.85em;">Sample Outliers: \${stats.outliers.values.slice(0, 10).map(v => v.toFixed(2)).join(', ')}\${stats.outliers.values.length > 10 ? '...' : ''}</span>
-                                </div>
-                            \` : ''}
-                        </div>
                     \`;
                     card.appendChild(statisticsCard);
+                }
+                
+                // Add chart toggle buttons for numeric fields
+                if (fieldResult.isNumeric && fieldResult.statistics && fieldResult.statistics.isNumeric) {
+                    const toggleContainer = document.createElement('div');
+                    toggleContainer.style.margin = '15px 0';
+                    toggleContainer.style.display = 'flex';
+                    toggleContainer.style.gap = '10px';
+                    toggleContainer.style.justifyContent = 'center';
+                    
+                    const histogramBtn = document.createElement('button');
+                    histogramBtn.id = \`btn-histogram-\${index}\`;
+                    histogramBtn.className = 'chart-toggle-btn active';
+                    histogramBtn.textContent = 'Histogram';
+                    histogramBtn.style.padding = '8px 16px';
+                    histogramBtn.style.border = '1px solid var(--vscode-button-border)';
+                    histogramBtn.style.background = 'var(--vscode-button-background)';
+                    histogramBtn.style.color = 'var(--vscode-button-foreground)';
+                    histogramBtn.style.cursor = 'pointer';
+                    histogramBtn.style.borderRadius = '3px';
+                    
+                    const frequencyBtn = document.createElement('button');
+                    frequencyBtn.id = \`btn-frequency-\${index}\`;
+                    frequencyBtn.className = 'chart-toggle-btn';
+                    frequencyBtn.textContent = 'Frequency Chart';
+                    frequencyBtn.style.padding = '8px 16px';
+                    frequencyBtn.style.border = '1px solid var(--vscode-button-border)';
+                    frequencyBtn.style.background = 'var(--vscode-button-secondaryBackground)';
+                    frequencyBtn.style.color = 'var(--vscode-button-secondaryForeground)';
+                    frequencyBtn.style.cursor = 'pointer';
+                    frequencyBtn.style.borderRadius = '3px';
+                    
+                    toggleContainer.appendChild(histogramBtn);
+                    toggleContainer.appendChild(frequencyBtn);
+                    card.appendChild(toggleContainer);
                 }
                 
                 // Chart
@@ -2620,13 +2977,37 @@ class QvdEditorProvider {
                 // Create chart - histogram for numeric fields, bar chart for categorical
                 const ctx = canvas.getContext('2d');
                 let chart;
+                let profilingTable = null;
                 
-                if (fieldResult.isNumeric && fieldResult.statistics && fieldResult.statistics.isNumeric) {
-                    // Create histogram for numeric fields
+                // Helper functions for creating different chart types
+                const createHistogramChart = () => {
+                    if (chart) {
+                        chart.destroy();
+                    }
+                    
                     const stats = fieldResult.statistics;
-                    const min = stats.descriptive.min;
-                    const max = stats.descriptive.max;
-                    const binCount = Math.min(20, Math.ceil(Math.sqrt(stats.descriptive.count)));
+                    
+                    // Extract numeric values from distribution (don't expand by count to avoid stack overflow)
+                    const uniqueNumericValues = [];
+                    fieldResult.distributions.forEach(dist => {
+                        const value = parseFloat(dist.value);
+                        if (!isNaN(value)) {
+                            uniqueNumericValues.push(value);
+                        }
+                    });
+                    
+                    if (uniqueNumericValues.length === 0) {
+                        console.error('No numeric values found for histogram');
+                        return;
+                    }
+                    
+                    // Calculate min/max from actual values we have
+                    const min = Math.min(...uniqueNumericValues);
+                    const max = Math.max(...uniqueNumericValues);
+                    
+                    // Use statistics count for bin calculation
+                    const totalCount = fieldResult.totalRows - fieldResult.nullCount;
+                    const binCount = Math.min(20, Math.ceil(Math.sqrt(totalCount)));
                     const binWidth = (max - min) / binCount;
                     
                     // Initialize bins
@@ -2640,18 +3021,16 @@ class QvdEditorProvider {
                         binLabels.push(\`\${binStart.toFixed(1)}-\${binEnd.toFixed(1)}\`);
                     }
                     
-                    // Count values in each bin (we need to re-extract numeric values from distributions)
-                    // Since we have frequency distribution, we can use it
+                    // Count values in each bin using the distribution counts
                     fieldResult.distributions.forEach(dist => {
                         const value = parseFloat(dist.value);
-                        if (!isNaN(value) && value >= min && value <= max) {
+                        if (!isNaN(value)) {
                             let binIndex;
                             if (binWidth === 0) {
-                                // All values are the same, put everything in first bin
                                 binIndex = 0;
                             } else {
                                 binIndex = Math.floor((value - min) / binWidth);
-                                if (binIndex >= binCount) binIndex = binCount - 1; // Handle max value
+                                if (binIndex >= binCount) binIndex = binCount - 1;
                             }
                             bins[binIndex] += dist.count;
                         }
@@ -2715,8 +3094,52 @@ class QvdEditorProvider {
                             }
                         }
                     });
-                } else {
-                    // Create bar chart for categorical fields (existing behavior)
+                    
+                    // Update chart in tracking array
+                    const chartIndex = profilingCharts.findIndex(c => c.canvas === canvas);
+                    if (chartIndex !== -1) {
+                        profilingCharts[chartIndex] = chart;
+                    }
+                    
+                    // Update table with histogram data (using totalCount already declared above)
+                    const histogramData = binLabels.map((label, i) => {
+                        // Split the range label into from and to
+                        const [from, to] = label.split('-');
+                        return {
+                            from: from,
+                            to: to,
+                            count: bins[i],
+                            percentage: totalCount > 0 ? ((bins[i] / totalCount) * 100).toFixed(2) : '0.00'
+                        };
+                    });
+                    
+                    if (profilingTable) {
+                        profilingTable.destroy();
+                    }
+                    
+                    profilingTable = new Tabulator(\`#profiling-table-\${index}\`, {
+                        data: histogramData,
+                        columns: [
+                            { title: 'From', field: 'from', headerSort: true, widthGrow: 1 },
+                            { title: 'To', field: 'to', headerSort: true, widthGrow: 1 },
+                            { title: 'Count', field: 'count', headerSort: true, widthGrow: 1 },
+                            { title: 'Percentage', field: 'percentage', headerSort: true, widthGrow: 1, 
+                              formatter: (cell) => cell.getValue() + '%' }
+                        ],
+                        layout: 'fitDataStretch',
+                        pagination: true,
+                        paginationSize: 50,
+                        paginationSizeSelector: [25, 50, 100],
+                        paginationCounter: 'rows',
+                        resizableColumns: true
+                    });
+                };
+                
+                const createFrequencyChart = () => {
+                    if (chart) {
+                        chart.destroy();
+                    }
+                    
                     const topN = Math.min(20, fieldResult.distributions.length);
                     const chartData = fieldResult.distributions.slice(0, topN);
                     
@@ -2768,32 +3191,90 @@ class QvdEditorProvider {
                             }
                         }
                     });
+                    
+                    // Update chart in tracking array
+                    const chartIndex = profilingCharts.findIndex(c => c.canvas === canvas);
+                    if (chartIndex !== -1) {
+                        profilingCharts[chartIndex] = chart;
+                    }
+                    
+                    // Update table with frequency data
+                    if (profilingTable) {
+                        profilingTable.destroy();
+                    }
+                    
+                    profilingTable = new Tabulator(\`#profiling-table-\${index}\`, {
+                        data: fieldResult.distributions,
+                        columns: [
+                            { title: 'Value', field: 'value', headerSort: true, widthGrow: 2 },
+                            { title: 'Count', field: 'count', headerSort: true, widthGrow: 1 },
+                            { title: 'Percentage', field: 'percentage', headerSort: true, widthGrow: 1, 
+                              formatter: (cell) => cell.getValue() + '%' }
+                        ],
+                        layout: 'fitDataStretch',
+                        pagination: true,
+                        paginationSize: 50,
+                        paginationSizeSelector: [25, 50, 100],
+                        paginationCounter: 'rows',
+                        resizableColumns: true
+                    });
+                };
+                
+                if (fieldResult.isNumeric && fieldResult.statistics && fieldResult.statistics.isNumeric) {
+                    // Create histogram by default
+                    try {
+                        createHistogramChart();
+                    } catch (err) {
+                        console.error(\`Error creating histogram for field \${index} (\${fieldResult.fieldName}):\`, err);
+                    }
+                    
+                    // Add event listeners for toggle buttons
+                    const histogramBtn = document.getElementById(\`btn-histogram-\${index}\`);
+                    const frequencyBtn = document.getElementById(\`btn-frequency-\${index}\`);
+                    
+                    if (histogramBtn && frequencyBtn) {
+                        histogramBtn.addEventListener('click', function() {
+                            createHistogramChart();
+                            this.classList.add('active');
+                            this.style.background = 'var(--vscode-button-background)';
+                            this.style.color = 'var(--vscode-button-foreground)';
+                            frequencyBtn.classList.remove('active');
+                            frequencyBtn.style.background = 'var(--vscode-button-secondaryBackground)';
+                            frequencyBtn.style.color = 'var(--vscode-button-secondaryForeground)';
+                        });
+                        
+                        frequencyBtn.addEventListener('click', function() {
+                            createFrequencyChart();
+                            this.classList.add('active');
+                            this.style.background = 'var(--vscode-button-background)';
+                            this.style.color = 'var(--vscode-button-foreground)';
+                            histogramBtn.classList.remove('active');
+                            histogramBtn.style.background = 'var(--vscode-button-secondaryBackground)';
+                            histogramBtn.style.color = 'var(--vscode-button-secondaryForeground)';
+                        });
+                    } else {
+                        console.error(\`Toggle buttons not found for field \${index}\`);
+                    }
+                } else {
+                    // Create frequency chart for categorical fields
+                    try {
+                        createFrequencyChart();
+                    } catch (err) {
+                        console.error(\`Error creating frequency chart for field \${index} (\${fieldResult.fieldName}):\`, err);
+                    }
                 }
                 
-                profilingCharts.push(chart);
-                
-                // Create table with Tabulator
-                const tableColumns = [
-                    { title: 'Value', field: 'value', headerSort: false, widthGrow: 2 },
-                    { title: 'Count', field: 'count', headerSort: false, widthGrow: 1 },
-                    { title: 'Percentage', field: 'percentage', headerSort: false, widthGrow: 1, 
-                      formatter: (cell) => cell.getValue() + '%' }
-                ];
-                
-                const profilingTable = new Tabulator(\`#profiling-table-\${index}\`, {
-                    data: fieldResult.distributions,
-                    columns: tableColumns,
-                    layout: 'fitDataStretch',
-                    pagination: true,
-                    paginationSize: 25,
-                    paginationSizeSelector: [10, 25, 50, 100],
-                    paginationCounter: 'rows',
-                    height: '400px'
-                });
+                if (chart) {
+                    profilingCharts.push(chart);
+                }
             });
             
             showProfilingStatus(\`✅ Profiling complete for \${results.fields.length} field(s)\`, 'info');
             document.getElementById('export-qvs-btn').style.display = 'inline-block';
+            } catch (error) {
+                console.error('Error displaying profiling results:', error);
+                showProfilingStatus(\`❌ Error displaying results: \${error.message}\`, 'warning');
+            }
         }
         
         function openProfilingInWindow(fieldResult, displayType) {

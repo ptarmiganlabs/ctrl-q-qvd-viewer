@@ -93,50 +93,6 @@ suite("Statistical Analysis Test Suite", () => {
       Math.abs(stats.spread.stdDev - 15.81) < 0.1,
       "Sample standard deviation should be approximately 15.81"
     );
-    assert.strictEqual(stats.spread.iqr, 20); // Q3(40) - Q1(20)
-  });
-
-  test("Statistics calculation - quartiles", () => {
-    const data = [
-      { value: 1 },
-      { value: 2 },
-      { value: 3 },
-      { value: 4 },
-      { value: 5 },
-      { value: 6 },
-      { value: 7 },
-      { value: 8 },
-      { value: 9 },
-    ];
-
-    const stats = qvdStatistics.calculateStatistics(data, "value");
-
-    assert.strictEqual(stats.distribution.quartiles.q1, 2.5);
-    assert.strictEqual(stats.distribution.quartiles.q2, 5);
-    assert.strictEqual(stats.distribution.quartiles.q3, 7.5);
-  });
-
-  test("Statistics calculation - outlier detection", () => {
-    const data = [
-      { value: 10 },
-      { value: 12 },
-      { value: 14 },
-      { value: 16 },
-      { value: 18 },
-      { value: 20 },
-      { value: 100 }, // Outlier
-    ];
-
-    const stats = qvdStatistics.calculateStatistics(data, "value");
-
-    assert.ok(
-      stats.outliers.count > 0,
-      "Should detect outliers"
-    );
-    assert.ok(
-      stats.outliers.values.includes(100),
-      "Should include 100 as outlier"
-    );
   });
 
   test("Statistics calculation - with nulls", () => {
@@ -238,11 +194,7 @@ suite("Statistical Analysis Test Suite", () => {
   });
 
   test("Statistics calculation - non-numeric field", () => {
-    const data = [
-      { name: "Alice" },
-      { name: "Bob" },
-      { name: "Charlie" },
-    ];
+    const data = [{ name: "Alice" }, { name: "Bob" }, { name: "Charlie" }];
 
     const stats = qvdStatistics.calculateStatistics(data, "name");
 
@@ -280,11 +232,7 @@ suite("Statistical Analysis Test Suite", () => {
   });
 
   test("Statistics calculation - all nulls", () => {
-    const data = [
-      { value: null },
-      { value: null },
-      { value: null },
-    ];
+    const data = [{ value: null }, { value: null }, { value: null }];
 
     const stats = qvdStatistics.calculateStatistics(data, "value");
 
