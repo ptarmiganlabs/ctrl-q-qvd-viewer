@@ -4,6 +4,28 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [1.1.0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.0.2...v1.1.0) (2025-11-03)
+
+
+### Features
+
+* Test the extension against both earliest supported and latest versions of VS Code ([29a94aa](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/29a94aadc3e3a586d2f2940fb0c9450cc93e3a78))
+
+
+### Bug Fixes
+
+* downgrade @types/vscode to version 1.100.0 for compatibility ([6dab137](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/6dab137a52272ee2fd35fc12b729b2a21edaeb3b))
+
+
+### Documentation
+
+* Improve formatting and clarity in PROFILING.md ([6ce3da7](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/6ce3da7b875be972a14968663030860f21d2e65c))
+
+
+### Miscellaneous
+
+* **deps:** update dependencies ([49eaeaf](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/49eaeaf1018aa7f69ee67a36df76a1f5a2b87a2b))
+
 ## [1.0.2](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.0.1...v1.0.2) (2025-10-31)
 
 
