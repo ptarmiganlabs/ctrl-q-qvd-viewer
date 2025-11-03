@@ -289,6 +289,7 @@ suite("Statistical Analysis Test Suite", () => {
     const stats = qvdStatistics.calculateStatistics(data, "value");
 
     assert.strictEqual(stats.isNumeric, false);
-    assert.strictEqual(stats.quality ? stats.quality.nullCount : stats.nullCount, 3);
+    // For non-numeric fields, nullCount is at the top level
+    assert.strictEqual(stats.nullCount, 3);
   });
 });
