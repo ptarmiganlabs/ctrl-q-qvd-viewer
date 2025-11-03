@@ -90,8 +90,8 @@ suite("Statistical Analysis Test Suite", () => {
 
     assert.strictEqual(stats.spread.range, 40);
     assert.ok(
-      Math.abs(stats.spread.stdDev - 14.14) < 0.1,
-      "Standard deviation should be approximately 14.14"
+      Math.abs(stats.spread.stdDev - 15.81) < 0.1,
+      "Sample standard deviation should be approximately 15.81"
     );
     assert.strictEqual(stats.spread.iqr, 20); // Q3(40) - Q1(20)
   });
@@ -289,6 +289,6 @@ suite("Statistical Analysis Test Suite", () => {
     const stats = qvdStatistics.calculateStatistics(data, "value");
 
     assert.strictEqual(stats.isNumeric, false);
-    assert.strictEqual(stats.nullCount, 3);
+    assert.strictEqual(stats.quality ? stats.quality.nullCount : stats.nullCount, 3);
   });
 });

@@ -145,17 +145,21 @@ function calculateMode(values) {
 }
 
 /**
- * Calculate variance
+ * Calculate variance (sample variance)
  * @param {Array<number>} values - Array of numeric values
  * @param {number} mean - Pre-calculated mean
- * @returns {number} Variance
+ * @returns {number} Sample variance
  */
 function calculateVariance(values, mean) {
   if (values.length === 0) {
     return null;
   }
+  if (values.length === 1) {
+    return 0;
+  }
   const squaredDiffs = values.map((val) => Math.pow(val - mean, 2));
-  return squaredDiffs.reduce((acc, val) => acc + val, 0) / values.length;
+  // Use sample variance (n-1) for better statistical inference
+  return squaredDiffs.reduce((acc, val) => acc + val, 0) / (values.length - 1);
 }
 
 /**

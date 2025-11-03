@@ -2645,8 +2645,14 @@ class QvdEditorProvider {
                     fieldResult.distributions.forEach(dist => {
                         const value = parseFloat(dist.value);
                         if (!isNaN(value) && value >= min && value <= max) {
-                            let binIndex = Math.floor((value - min) / binWidth);
-                            if (binIndex >= binCount) binIndex = binCount - 1; // Handle max value
+                            let binIndex;
+                            if (binWidth === 0) {
+                                // All values are the same, put everything in first bin
+                                binIndex = 0;
+                            } else {
+                                binIndex = Math.floor((value - min) / binWidth);
+                                if (binIndex >= binCount) binIndex = binCount - 1; // Handle max value
+                            }
                             bins[binIndex] += dist.count;
                         }
                     });
