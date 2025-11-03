@@ -30,7 +30,7 @@
     "xml"
   ],
   "engines": {
-    "vscode": "^1.105.0"
+    "vscode": "^1.100.0"
   },
   "categories": [
     "Data Science",
@@ -111,19 +111,20 @@
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/node": "22.x",
-    "@types/vscode": "^1.105.0",
+    "@types/node": "^24.10.0",
+    "@types/vscode": "^1.100.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.6.2",
-    "esbuild": "^0.25.11",
-    "eslint": "^9.36.0",
+    "esbuild": "^0.25.12",
+    "eslint": "^9.39.0",
     "npm-run-all": "^4.1.5",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "apache-arrow": "^21.1.0",
     "avsc": "^5.7.9",
+    "chart.js": "^4.5.1",
     "exceljs": "^4.4.0",
     "js-yaml": "^4.1.0",
     "papaparse": "^5.5.3",

@@ -387,6 +387,10 @@ class AboutPanel {
                             <p style="margin: 5px 0;">View QVD metadata, field details, and paginated data previews with configurable row limits.</p>
                         </div>
                         <div class="info-box">
+                            <h3 style="margin: 0 0 10px 0; font-size: 1.1em;">📈 Data Profiling</h3>
+                            <p style="margin: 5px 0;">Analyze value distributions with interactive charts and tables. Export as Qlik scripts.</p>
+                        </div>
+                        <div class="info-box">
                             <h3 style="margin: 0 0 10px 0; font-size: 1.1em;">📤 11 Export Formats</h3>
                             <p style="margin: 5px 0;">Export to CSV, Excel, JSON, Parquet, Arrow, Avro, SQLite, PostgreSQL, XML, YAML, and Qlik scripts.</p>
                         </div>
@@ -411,6 +415,29 @@ class AboutPanel {
                         <li>Efficient pagination controls for navigating through large datasets</li>
                         <li>Safe read-only access to QVD files - no risk of modifying original data</li>
                     </ul>
+                </div>
+                
+                <div class="section">
+                    <h2>Data Profiling</h2>
+                    <p style="color: var(--vscode-descriptionForeground); margin-bottom: 15px;">Understand value distributions and field characteristics - especially valuable for dimensional data in star schemas.</p>
+                    
+                    <ul class="feature-list">
+                        <li><strong>Field Analysis</strong> - Profile 1-3 fields simultaneously to compare distributions</li>
+                        <li><strong>Interactive Charts</strong> - View top 20 values in bar charts with VS Code theme integration</li>
+                        <li><strong>Distribution Tables</strong> - Complete frequency data with counts and percentages, paginated for easy navigation</li>
+                        <li><strong>Statistics</strong> - Total rows, unique values, and NULL counts for each field</li>
+                        <li><strong>Export to QVS</strong> - Generate Qlik scripts with customizable delimiters and row limits</li>
+                        <li><strong>Multiple Views</strong> - Open results as Markdown (text) or Visual Analysis (interactive charts/tables)</li>
+                        <li><strong>Smart Warnings</strong> - Automatic alerts for large files (>100k rows) before loading all data</li>
+                    </ul>
+                    
+                    <div class="info-box" style="margin-top: 15px;">
+                        <p><strong>📖 Learn More:</strong></p>
+                        <p style="margin: 10px 0;">
+                            For detailed profiling documentation including use cases, export options, and best practices, see the 
+                            <a href="#" onclick="openExternal('https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/blob/main/docs/PROFILING.md'); return false;" style="color: var(--vscode-textLink-foreground); text-decoration: underline;">Profiling Guide</a>.
+                        </p>
+                    </div>
                 </div>
                 
                 <div class="section">
