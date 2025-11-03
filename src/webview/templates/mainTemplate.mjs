@@ -974,6 +974,22 @@ export function getHtmlForWebview(result, webview, context) {
         const totalRowsInFile = ${totalRows};
         const currentLoadedRows = ${data.length};
         
+        // Logging helper - sends logs to extension
+        const logger = {
+            log: (message, data) => {
+                vscode.postMessage({ command: 'log', level: 'log', message, data });
+                console.log(message, data || '');
+            },
+            error: (message, data) => {
+                vscode.postMessage({ command: 'log', level: 'error', message, data });
+                console.error(message, data || '');
+            },
+            warn: (message, data) => {
+                vscode.postMessage({ command: 'log', level: 'warn', message, data });
+                console.warn(message, data || '');
+            }
+        };
+        
         // Data for tables
         const tableData = ${JSON.stringify(data)};
         const schemaData = ${JSON.stringify(schemaData)};
@@ -1177,9 +1193,9 @@ export function getHtmlForWebview(result, webview, context) {
         }
         
         function initializeTables() {
-            console.log('Initializing tables...');
-            console.log('tableData length:', tableData ? tableData.length : 'undefined');
-            console.log('Tabulator available:', typeof Tabulator !== 'undefined');
+            logger.log('Initializing tables...');
+            logger.log('tableData length:', tableData ? tableData.length : 'undefined');
+            logger.log('Tabulator available:', typeof Tabulator !== 'undefined');
             
             try {
                 // Initialize Data Table
@@ -1191,7 +1207,7 @@ export function getHtmlForWebview(result, webview, context) {
                         headerFilter: false
                     }));
                     
-                    console.log('Creating data table with', columns.length, 'columns');
+                    logger.log('Creating data table with', columns.length, 'columns');
                     
                     dataTable = new Tabulator("#data-table", {
                         data: tableData,
@@ -1205,7 +1221,7 @@ export function getHtmlForWebview(result, webview, context) {
                         resizableColumns: true
                     });
                     
-                    console.log('Data table created successfully');
+                    logger.log('Data table created successfully');
                     
                     // Add context menu handler
                     dataTable.on("cellContext", function(e, cell){
@@ -1214,7 +1230,7 @@ export function getHtmlForWebview(result, webview, context) {
                     });
                 }
             } catch (error) {
-                console.error('Error initializing data table:', error);
+                logger.error('Error initializing data table:', error);
             }
             
             // Initialize Schema Table
@@ -1553,7 +1569,7 @@ export function getHtmlForWebview(result, webview, context) {
                 
                 // Display results for each field
                 results.fields.forEach((fieldResult, index) => {
-                console.log(\`Processing field \${index}: \${fieldResult.fieldName}, isNumeric: \${fieldResult.isNumeric}, hasStats: \${!!fieldResult.statistics}\`);
+                logger.log(\`Processing field \${index}: \${fieldResult.fieldName}, isNumeric: \${fieldResult.isNumeric}, hasStats: \${!!fieldResult.statistics}\`);
                 
                 const card = document.createElement('div');
                 card.className = 'field-profiling-card';
@@ -1797,7 +1813,7 @@ export function getHtmlForWebview(result, webview, context) {
                     });
                     
                     if (uniqueNumericValues.length === 0) {
-                        console.error('No numeric values found for histogram');
+                        logger.error('No numeric values found for histogram');
                         return;
                     }
                     
@@ -2025,7 +2041,7 @@ export function getHtmlForWebview(result, webview, context) {
                     try {
                         createHistogramChart();
                     } catch (err) {
-                        console.error(\`Error creating histogram for field \${index} (\${fieldResult.fieldName}):\`, err);
+                        logger.error(\`Error creating histogram for field \${index} (\${fieldResult.fieldName}):\`, err);
                     }
                     
                     // Add event listeners for toggle buttons
@@ -2053,14 +2069,14 @@ export function getHtmlForWebview(result, webview, context) {
                             histogramBtn.style.color = 'var(--vscode-button-secondaryForeground)';
                         });
                     } else {
-                        console.error(\`Toggle buttons not found for field \${index}\`);
+                        logger.error(\`Toggle buttons not found for field \${index}\`);
                     }
                 } else {
                     // Create frequency chart for categorical fields
                     try {
                         createFrequencyChart();
                     } catch (err) {
-                        console.error(\`Error creating frequency chart for field \${index} (\${fieldResult.fieldName}):\`, err);
+                        logger.error(\`Error creating frequency chart for field \${index} (\${fieldResult.fieldName}):\`, err);
                     }
                 }
                 
@@ -2072,7 +2088,7 @@ export function getHtmlForWebview(result, webview, context) {
             showProfilingStatus(\`✅ Profiling complete for \${results.fields.length} field(s)\`, 'info');
             document.getElementById('export-qvs-btn').style.display = 'inline-block';
             } catch (error) {
-                console.error('Error displaying profiling results:', error);
+                logger.error('Error displaying profiling results:', error);
                 showProfilingStatus(\`❌ Error displaying results: \${error.message}\`, 'warning');
             }
         }
