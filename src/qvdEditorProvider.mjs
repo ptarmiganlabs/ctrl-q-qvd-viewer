@@ -2715,7 +2715,6 @@ class QvdEditorProvider {
                     const chartData = fieldResult.distributions.slice(0, topN);
                     
                     chart = new Chart(ctx, {
-                    chart = new Chart(ctx, {
                         type: 'bar',
                         data: {
                             labels: chartData.map(d => d.value),

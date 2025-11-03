@@ -175,7 +175,7 @@ function calculateStdDev(variance) {
  * @returns {number} Skewness
  */
 function calculateSkewness(values, mean, stdDev) {
-  if (values.length === 0 || stdDev === 0 || stdDev === null) {
+  if (values.length < 3 || stdDev === 0 || stdDev === null) {
     return null;
   }
 
@@ -194,7 +194,7 @@ function calculateSkewness(values, mean, stdDev) {
  * @returns {number} Excess kurtosis
  */
 function calculateKurtosis(values, mean, stdDev) {
-  if (values.length === 0 || stdDev === 0 || stdDev === null) {
+  if (values.length < 4 || stdDev === 0 || stdDev === null) {
     return null;
   }
 
