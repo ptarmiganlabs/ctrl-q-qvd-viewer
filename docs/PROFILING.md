@@ -5,6 +5,7 @@ The data profiling feature in Ctrl-Q QVD Viewer helps you understand the distrib
 ## Overview
 
 Data profiling analyzes value distributions in QVD fields, providing:
+
 - **Visual analysis** with interactive bar charts showing top values
 - **Detailed tables** with complete frequency distributions
 - **Statistical summaries** including total rows, unique values, and NULL counts
@@ -28,6 +29,7 @@ The profiling tab presents all fields in the QVD as checkboxes with their unique
 ```
 
 **Selection Rules:**
+
 - Select a minimum of 1 field
 - Select a maximum of 3 fields (for comparison)
 - Attempting to select more than 3 fields shows a warning and prevents selection
@@ -45,18 +47,22 @@ This ensures you're aware of potential performance impacts when profiling large 
 After clicking "Run Profiling", the extension loads all data from the QVD and computes value distributions. Results are displayed for each selected field:
 
 ### Statistics Card
+
 Each field shows:
+
 - **Total Rows**: Number of rows analyzed
 - **Unique Values**: Count of distinct values in the field
 - **NULL/Empty**: Count of null or empty values
 
 ### Interactive Bar Chart
+
 - Displays the **top 20 most frequent values**
 - Uses VS Code theme colors for consistency
 - Responsive design adapts to window size
 - Interactive tooltips on hover
 
 ### Distribution Table
+
 - Shows **complete value distribution** with pagination
 - Columns: Value, Count, Percentage
 - Features:
@@ -66,7 +72,9 @@ Each field shows:
   - Configurable page sizes (10, 25, 50, 100 items)
 
 ### Truncation Notice
+
 If a field has more than 1,000 unique values, the distribution is truncated for performance:
+
 > Distribution truncated to top 1,000 values
 
 ## Opening Results in New Windows
@@ -74,13 +82,16 @@ If a field has more than 1,000 unique values, the distribution is truncated for 
 Each profiled field has an **"Open in new Window"** dropdown button with two options:
 
 ### 📝 Markdown
+
 Opens the profiling results as markdown in a new editor column:
+
 - Text-based format
 - Easy to save as a `.md` file
 - Good for documentation and sharing
 - Contains statistics and complete distribution table
 
 **Example Markdown Output:**
+
 ```markdown
 # Profiling: color_id
 
@@ -94,16 +105,19 @@ Opens the profiling results as markdown in a new editor column:
 
 ## Value Distribution
 
-| Value | Count | Percentage |
-|-------|-------|------------|
-| 0     | 115,176 | 19.85% |
-| 15    | 66,549  | 11.47% |
-| 71    | 55,317  | 9.53%  |
+| Value | Count   | Percentage |
+| ----- | ------- | ---------- |
+| 0     | 115,176 | 19.85%     |
+| 15    | 66,549  | 11.47%     |
+| 71    | 55,317  | 9.53%      |
+
 ...
 ```
 
 ### 📊 Visual Analysis
+
 Opens an interactive webview panel with visualizations:
+
 - Statistics cards
 - Interactive Chart.js bar chart (top 20 values)
 - Tabulator table with complete distribution
@@ -111,6 +125,7 @@ Opens an interactive webview panel with visualizations:
 - VS Code theme integration
 
 **When to use each option:**
+
 - **Markdown**: For documentation, reports, or text-based analysis
 - **Visual Analysis**: For interactive exploration and data visualization
 
@@ -121,14 +136,18 @@ Click the **💾 Export to QVS Script** button to create a Qlik Sense/QlikView l
 ### Export Options
 
 #### 1. Delimiter Selection
+
 Choose the delimiter for the INLINE statement:
+
 - **Tab** (\\t) - Good general purpose delimiter (default)
 - **Pipe** (|) - Recommended when data contains commas
 - **Comma** (,) - Standard CSV-style
 - **Semicolon** (;) - Alternative to comma
 
 #### 2. Row Limit Selection
+
 Choose how many values to export per field:
+
 - **Top 20 values**
 - **Top 100 values**
 - **Top 1,000 values**
@@ -138,12 +157,14 @@ Choose how many values to export per field:
 ### Generated QVS Script
 
 The exported script includes:
+
 - Header comments with generation date and source QVD
 - Field statistics in comments
 - INLINE LOAD statements with the chosen delimiter
 - Proper delimiter specification in the statement
 
 **Example with Pipe delimiter, top 100 values:**
+
 ```qlik
 // QVD Profiling Data Export
 // Generated: 2025-11-03T07:00:00.000Z
@@ -182,7 +203,9 @@ Value|Count|Percentage
 ## Use Cases
 
 ### 1. Dimension Analysis in Star Schemas
+
 Profile dimension fields to understand their distribution:
+
 - Customer segments
 - Product categories
 - Geographic regions
@@ -191,7 +214,9 @@ Profile dimension fields to understand their distribution:
 **Example:** Profile a `customer_type` field to discover 70% are "Retail" customers and 30% are "Wholesale".
 
 ### 2. Data Quality Checks
+
 Identify data issues through profiling:
+
 - Unexpected NULL values
 - Unusual value frequencies
 - Data entry errors
@@ -200,7 +225,9 @@ Identify data issues through profiling:
 **Example:** Discover that a `country` field has 15 variations of "United States" due to inconsistent data entry.
 
 ### 3. Performance Optimization
+
 Understand field characteristics for optimization:
+
 - High-cardinality fields (many unique values)
 - Low-cardinality fields (few unique values)
 - Null percentages
@@ -209,7 +236,9 @@ Understand field characteristics for optimization:
 **Example:** Identify that an `order_id` field has 1 million unique values (100% cardinality) while `order_status` has only 5 unique values.
 
 ### 4. Documentation and Analysis
+
 Export profiling results for:
+
 - Creating data dictionaries
 - Documenting field characteristics
 - Sharing insights with team members
@@ -218,17 +247,13 @@ Export profiling results for:
 ## Performance Considerations
 
 ### Memory Usage
+
 - Profiling loads **all data** from the QVD into memory
 - The extension truncates at 1,000 unique values per field
 - Large files (>100k rows) trigger a warning
 
-### Processing Time
-- Small QVDs (<10k rows): Near instant
-- Medium QVDs (10k-100k rows): A few seconds
-- Large QVDs (>100k rows): May take 10-30 seconds
-- Very large QVDs (>1M rows): May take several minutes
-
 ### Best Practices
+
 1. Profile smaller QVDs first to understand the feature
 2. Heed large file warnings before profiling
 3. Select only the fields you need (1-3 max)
@@ -240,12 +265,14 @@ Export profiling results for:
 The profiling feature provides similar insights to Qlik Sense's field profiling, but:
 
 **Advantages:**
+
 - Available directly in VS Code (no need to load data into Qlik)
 - Works on QVD files without a Qlik Sense app
 - Quickly analyze multiple fields side-by-side
 - Export frequency data for use in any application
 
 **Limitations:**
+
 - Maximum of 3 fields at once (Qlik Sense handles more)
 - Truncated at 1,000 unique values per field
 - All data must fit in memory
@@ -268,20 +295,24 @@ The profiling feature provides similar insights to Qlik Sense's field profiling,
 ## Troubleshooting
 
 ### Profiling Takes Too Long
+
 - Check the file size (number of rows)
 - Select fewer fields (1 instead of 3)
 - Ensure you have enough available memory
 
 ### "Maximum of 3 fields" Warning
+
 - Uncheck some fields before selecting more
 - The limit prevents memory and performance issues
 
 ### Truncated Results
+
 - This is normal for high-cardinality fields (>1,000 unique values)
 - Use the "All values" export option if you need the complete distribution
 - Consider if you really need all values for your analysis
 
 ### Memory Issues
+
 - Close other applications to free up memory
 - Profile smaller QVDs first
 - Select fewer fields simultaneously
@@ -296,6 +327,7 @@ The profiling feature provides similar insights to Qlik Sense's field profiling,
 ## Feedback and Contributions
 
 Found a bug or have a feature suggestion? Please:
+
 - Open an issue on [GitHub](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer)
 - Contribute improvements via pull requests
 - Share your use cases and workflows
