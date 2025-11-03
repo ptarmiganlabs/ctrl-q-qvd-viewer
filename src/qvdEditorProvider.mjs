@@ -204,6 +204,45 @@ class QvdEditorProvider {
             const fileName = basename(filePath, extname(filePath));
             const defaultName = `${fileName}_profiling.qvs`;
             
+            // Ask for delimiter
+            const delimiterChoice = await vscode.window.showQuickPick(
+              [
+                { label: "Tab (\\t)", value: "tab", description: "Good general purpose delimiter" },
+                { label: "Pipe (|)", value: "pipe", description: "Recommended when data contains commas" },
+                { label: "Comma (,)", value: "comma", description: "Standard CSV-style" },
+                { label: "Semicolon (;)", value: "semicolon", description: "Alternative to comma" },
+              ],
+              {
+                placeHolder: "Select delimiter for QVS script",
+                title: "QVS Export - Delimiter"
+              }
+            );
+            
+            if (!delimiterChoice) {
+              // User cancelled
+              break;
+            }
+            
+            // Ask for max rows per field
+            const maxRowsChoice = await vscode.window.showQuickPick(
+              [
+                { label: "Top 20 values", value: "20" },
+                { label: "Top 100 values", value: "100" },
+                { label: "Top 1,000 values", value: "1000" },
+                { label: "Top 10,000 values", value: "10000" },
+                { label: "All values (complete)", value: "0" },
+              ],
+              {
+                placeHolder: "Select how many values to export per field",
+                title: "QVS Export - Rows per Field"
+              }
+            );
+            
+            if (!maxRowsChoice) {
+              // User cancelled
+              break;
+            }
+            
             const saveUri = await vscode.window.showSaveDialog({
               defaultUri: vscode.Uri.file(
                 join(dirname(filePath), defaultName)
@@ -217,7 +256,11 @@ class QvdEditorProvider {
             if (saveUri) {
               const qvsContent = generateQvsScript(
                 message.profilingResults,
-                basename(filePath)
+                basename(filePath),
+                {
+                  delimiter: delimiterChoice.value,
+                  maxRows: parseInt(maxRowsChoice.value, 10)
+                }
               );
               writeFileSync(saveUri.fsPath, qvsContent, "utf8");
               
@@ -1519,6 +1562,12 @@ class QvdEditorProvider {
             if (exportQvsBtn) {
                 exportQvsBtn.addEventListener('click', exportProfilingQvs);
             }
+            
+            // Add checkbox validation for profiling fields
+            const fieldCheckboxes = document.querySelectorAll('input[name="field-checkbox"]');
+            fieldCheckboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', validateFieldSelection);
+            });
         }
         
         function initializeTables() {
@@ -1826,6 +1875,24 @@ class QvdEditorProvider {
             // Clear field selection
             const checkboxes = document.querySelectorAll('input[name="field-checkbox"]');
             checkboxes.forEach(cb => cb.checked = false);
+        }
+        
+        function validateFieldSelection() {
+            const checkedBoxes = document.querySelectorAll('input[name="field-checkbox"]:checked');
+            
+            if (checkedBoxes.length > 3) {
+                // Show warning and uncheck the last selected checkbox
+                showProfilingStatus('⚠️ Maximum of 3 fields can be selected for profiling. Please unselect one field before selecting another.', 'warning');
+                
+                // Uncheck this checkbox
+                this.checked = false;
+            } else if (checkedBoxes.length === 0) {
+                // Clear any warning when no fields are selected
+                const statusDiv = document.getElementById('profiling-status');
+                if (statusDiv && statusDiv.textContent.includes('Maximum of 3 fields')) {
+                    statusDiv.style.display = 'none';
+                }
+            }
         }
         
         function exportProfilingQvs() {

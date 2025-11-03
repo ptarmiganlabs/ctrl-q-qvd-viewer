@@ -90,26 +90,50 @@ export function profileFields(data, fieldNames, maxUniqueValues = 1000) {
 /**
  * Escape special characters in values for QVS inline format
  * @param {string} value - Value to escape
+ * @param {string} delimiter - Delimiter character to replace
  * @returns {string} Escaped value
  */
-function escapeQvsValue(value) {
+function escapeQvsValue(value, delimiter = "\t") {
   return String(value)
-    .replace(/\t/g, " ")
+    .replace(new RegExp(delimiter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), " ")
     .replace(/\n/g, " ")
     .replace(/\r/g, "");
+}
+
+/**
+ * Get delimiter configuration for QVS export
+ * @param {string} delimiterChoice - User's delimiter choice
+ * @returns {Object} Delimiter object with char and escapeChar
+ */
+function getDelimiterConfig(delimiterChoice) {
+  const delimiters = {
+    tab: { char: "\t", escapeChar: "\\t", description: "Tab" },
+    pipe: { char: "|", escapeChar: "|", description: "Pipe (|)" },
+    comma: { char: ",", escapeChar: ",", description: "Comma (,)" },
+    semicolon: { char: ";", escapeChar: ";", description: "Semicolon (;)" },
+  };
+
+  return delimiters[delimiterChoice] || delimiters.tab;
 }
 
 /**
  * Generate Qlik .qvs script for loading profiling data
  * @param {Array<Object>} profilingResults - Results from profileFields
  * @param {string} qvdFileName - Original QVD file name
+ * @param {Object} options - Export options
+ * @param {string} options.delimiter - Delimiter choice ('tab', 'pipe', 'comma', 'semicolon')
+ * @param {number} options.maxRows - Maximum rows per field (0 = all, 20, 100, 1000, 10000)
  * @returns {string} QVS script content
  */
-export function generateQvsScript(profilingResults, qvdFileName) {
+export function generateQvsScript(profilingResults, qvdFileName, options = {}) {
+  const { delimiter = 'tab', maxRows = 0 } = options;
+  const delimiterConfig = getDelimiterConfig(delimiter);
+  
   let script = `// QVD Profiling Data Export
 // Generated: ${new Date().toISOString()}
 // Source QVD: ${qvdFileName}
-// 
+// Delimiter: ${delimiterConfig.description}
+${maxRows > 0 ? `// Max rows per field: ${maxRows}\n` : ''}// 
 // This script loads value distribution data for analyzed fields
 //\n\n`;
 
@@ -123,17 +147,24 @@ export function generateQvsScript(profilingResults, qvdFileName) {
     if (truncated) {
       script += `\n// WARNING: Distribution truncated to top ${distributions.length} values`;
     }
+    
+    // Limit distributions if maxRows is specified
+    const exportDistributions = maxRows > 0 ? distributions.slice(0, maxRows) : distributions;
+    
+    if (maxRows > 0 && maxRows < distributions.length) {
+      script += `\n// NOTE: Exporting top ${maxRows} values out of ${distributions.length} total`;
+    }
 
     script += `\n\n`;
     script += `[${fieldName}_Distribution]:\nLOAD * INLINE [\n`;
-    script += `Value\tCount\tPercentage\n`;
+    script += `Value${delimiterConfig.char}Count${delimiterConfig.char}Percentage\n`;
 
-    for (const dist of distributions) {
-      const escapedValue = escapeQvsValue(dist.value);
-      script += `${escapedValue}\t${dist.count}\t${dist.percentage}\n`;
+    for (const dist of exportDistributions) {
+      const escapedValue = escapeQvsValue(dist.value, delimiterConfig.char);
+      script += `${escapedValue}${delimiterConfig.char}${dist.count}${delimiterConfig.char}${dist.percentage}\n`;
     }
 
-    script += `];\n\n`;
+    script += `] (Delimiter is '${delimiterConfig.escapeChar}');\n\n`;
   }
 
   return script;
