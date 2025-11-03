@@ -30,7 +30,7 @@
     "xml"
   ],
   "engines": {
-    "vscode": "^1.105.0"
+    "vscode": "^1.100.0"
   },
   "categories": [
     "Data Science",
