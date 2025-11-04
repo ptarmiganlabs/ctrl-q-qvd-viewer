@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { readFile } from "fs/promises";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import logger from "./logger.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -121,7 +122,7 @@ class AboutPanel {
       repository = packageJson.repository.url;
       license = packageJson.license;
     } catch (error) {
-      console.error("Failed to read package.json:", error);
+      logger.error("Failed to read package.json:", error);
     }
 
     // Get URIs for logo images

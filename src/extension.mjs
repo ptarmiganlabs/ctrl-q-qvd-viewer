@@ -2,6 +2,7 @@
 import * as vscode from "vscode";
 import QvdEditorProvider from "./qvdEditorProvider.mjs";
 import AboutPanel from "./aboutPanel.mjs";
+import logger from "./logger.mjs";
 
 /**
  * Activate the extension
@@ -9,7 +10,9 @@ import AboutPanel from "./aboutPanel.mjs";
  * @returns {Promise<void>}
  */
 export async function activate(context) {
-  console.log("Ctrl-Q QVD Viewer extension is now active");
+  // Initialize logger
+  logger.initialize();
+  logger.log("Ctrl-Q QVD Viewer extension is now active");
 
   // Register the custom editor provider for QVD files
   const qvdEditorProvider = new QvdEditorProvider(context);
@@ -61,10 +64,31 @@ export async function activate(context) {
   );
 
   context.subscriptions.push(aboutCommand);
+
+  // Register command to show logs
+  const showLogsCommand = vscode.commands.registerCommand(
+    "ctrl-q-qvd-viewer.showLogs",
+    () => {
+      logger.show();
+    }
+  );
+
+  context.subscriptions.push(showLogsCommand);
+
+  // Add logger to subscriptions for proper cleanup
+  context.subscriptions.push({
+    dispose: () => logger.dispose(),
+  });
+
+  // Return the logger so tests can access it
+  return { logger };
 }
 
 /**
  * Deactivate the extension
  * @returns {void}
  */
-export function deactivate() {}
+export function deactivate() {
+  logger.log("Ctrl-Q QVD Viewer extension is deactivating");
+  logger.dispose();
+}

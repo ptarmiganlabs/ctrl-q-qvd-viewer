@@ -50,6 +50,11 @@
         "command": "ctrl-q-qvd-viewer.about",
         "title": "About",
         "category": "QVD"
+      },
+      {
+        "command": "ctrl-q-qvd-viewer.showLogs",
+        "title": "Show Extension Logs",
+        "category": "QVD"
       }
     ],
     "customEditors": [
