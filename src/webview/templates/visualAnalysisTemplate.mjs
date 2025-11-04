@@ -325,7 +325,7 @@ export function getVisualAnalysisHtml(
             left: 20px;
             top: 50%;
             transform: translateY(-50%);
-            white-space: normal;
+            white-space: pre-line;
             pointer-events: none;
         }
         
@@ -544,8 +544,8 @@ export function getVisualAnalysisHtml(
                 : "error"
             }">
                 ${fieldResult.qualityMetrics.assessment.qualityScore}/100 - ${
-          fieldResult.qualityMetrics.assessment.qualityLevel
-        }
+            fieldResult.qualityMetrics.assessment.qualityLevel
+          }
             </span>
         </div>
         
@@ -554,7 +554,10 @@ export function getVisualAnalysisHtml(
             ? `
         <div class="quality-issues">
             ${fieldResult.qualityMetrics.assessment.issues
-              .map((issue) => `<div class="quality-issue-item error">❌ ${issue}</div>`)
+              .map(
+                (issue) =>
+                  `<div class="quality-issue-item error">❌ ${issue}</div>`
+              )
               .join("")}
         </div>
         `
@@ -566,7 +569,10 @@ export function getVisualAnalysisHtml(
             ? `
         <div class="quality-issues">
             ${fieldResult.qualityMetrics.assessment.warnings
-              .map((warning) => `<div class="quality-issue-item warning">⚠️ ${warning}</div>`)
+              .map(
+                (warning) =>
+                  `<div class="quality-issue-item warning">⚠️ ${warning}</div>`
+              )
               .join("")}
         </div>
         `
@@ -579,7 +585,7 @@ export function getVisualAnalysisHtml(
                 <div class="quality-metric-item">
                     <div class="quality-metric-label">
                         <span>Non-Null %</span>
-                        ${createHelpIconHtml('nonNullPercentage')}
+                        ${createHelpIconHtml("nonNullPercentage")}
                     </div>
                     <div class="quality-metric-value">${fieldResult.qualityMetrics.completeness.nonNullPercentage.toFixed(
                       1
@@ -588,7 +594,7 @@ export function getVisualAnalysisHtml(
                 <div class="quality-metric-item">
                     <div class="quality-metric-label">
                         <span>Fill Rate</span>
-                        ${createHelpIconHtml('fillRate')}
+                        ${createHelpIconHtml("fillRate")}
                     </div>
                     <div class="quality-metric-value">${fieldResult.qualityMetrics.completeness.fillRate.toFixed(
                       1
@@ -597,11 +603,11 @@ export function getVisualAnalysisHtml(
                 <div class="quality-metric-item">
                     <div class="quality-metric-label">
                         <span>Missing Values</span>
-                        ${createHelpIconHtml('missingValues')}
+                        ${createHelpIconHtml("missingValues")}
                     </div>
                     <div class="quality-metric-value">${fieldResult.qualityMetrics.completeness.missingCount.toLocaleString()} (${fieldResult.qualityMetrics.completeness.missingPercentage.toFixed(
-          1
-        )}%)</div>
+            1
+          )}%)</div>
                 </div>
                 ${
                   fieldResult.qualityMetrics.completeness.emptyStringCount > 0
@@ -609,11 +615,11 @@ export function getVisualAnalysisHtml(
                 <div class="quality-metric-item">
                     <div class="quality-metric-label">
                         <span>Empty Strings</span>
-                        ${createHelpIconHtml('emptyStrings')}
+                        ${createHelpIconHtml("emptyStrings")}
                     </div>
                     <div class="quality-metric-value">${fieldResult.qualityMetrics.completeness.emptyStringCount.toLocaleString()} (${fieldResult.qualityMetrics.completeness.emptyStringPercentage.toFixed(
-                      1
-                    )}%)</div>
+                        1
+                      )}%)</div>
                 </div>
                 `
                     : ""
@@ -627,7 +633,7 @@ export function getVisualAnalysisHtml(
                 <div class="quality-metric-item">
                     <div class="quality-metric-label">
                         <span>Cardinality Ratio</span>
-                        ${createHelpIconHtml('cardinalityRatio')}
+                        ${createHelpIconHtml("cardinalityRatio")}
                     </div>
                     <div class="quality-metric-value">${(
                       fieldResult.qualityMetrics.cardinality.ratio * 100
@@ -636,7 +642,7 @@ export function getVisualAnalysisHtml(
                 <div class="quality-metric-item">
                     <div class="quality-metric-label">
                         <span>Classification</span>
-                        ${createHelpIconHtml('classification')}
+                        ${createHelpIconHtml("classification")}
                     </div>
                     <div class="quality-metric-value">${
                       fieldResult.qualityMetrics.cardinality.level
@@ -656,7 +662,7 @@ export function getVisualAnalysisHtml(
                 <div class="quality-metric-item">
                     <div class="quality-metric-label">
                         <span>Unique Values</span>
-                        ${createHelpIconHtml('uniqueValues')}
+                        ${createHelpIconHtml("uniqueValues")}
                     </div>
                     <div class="quality-metric-value">${fieldResult.qualityMetrics.uniqueness.uniquePercentage.toFixed(
                       1
@@ -665,19 +671,20 @@ export function getVisualAnalysisHtml(
                 <div class="quality-metric-item">
                     <div class="quality-metric-label">
                         <span>Duplicate Count</span>
-                        ${createHelpIconHtml('duplicateCount')}
+                        ${createHelpIconHtml("duplicateCount")}
                     </div>
                     <div class="quality-metric-value">${fieldResult.qualityMetrics.uniqueness.duplicateCount.toLocaleString()} (${fieldResult.qualityMetrics.uniqueness.duplicatePercentage.toFixed(
-          1
-        )}%)</div>
+            1
+          )}%)</div>
                 </div>
                 ${
-                  fieldResult.qualityMetrics.uniqueness.duplicatedDistinctValues > 0
+                  fieldResult.qualityMetrics.uniqueness
+                    .duplicatedDistinctValues > 0
                     ? `
                 <div class="quality-metric-item">
                     <div class="quality-metric-label">
                         <span>Duplicated Distinct Values</span>
-                        ${createHelpIconHtml('duplicatedDistinctValues')}
+                        ${createHelpIconHtml("duplicatedDistinctValues")}
                     </div>
                     <div class="quality-metric-value">${fieldResult.qualityMetrics.uniqueness.duplicatedDistinctValues.toLocaleString()}</div>
                 </div>
@@ -697,7 +704,9 @@ export function getVisualAnalysisHtml(
                         (dup) => `
                     <div style="display: flex; justify-content: space-between; padding: 4px 8px; font-size: 0.85em; border-bottom: 1px solid var(--vscode-panel-border);">
                         <span>${dup.value}</span>
-                        <span>${dup.count.toLocaleString()} (${dup.percentage}%)</span>
+                        <span>${dup.count.toLocaleString()} (${
+                          dup.percentage
+                        }%)</span>
                     </div>
                     `
                       )
@@ -715,16 +724,17 @@ export function getVisualAnalysisHtml(
                 <div class="quality-metric-item">
                     <div class="quality-metric-label">
                         <span>Evenness Score</span>
-                        ${createHelpIconHtml('evennessScore')}
+                        ${createHelpIconHtml("evennessScore")}
                     </div>
                     <div class="quality-metric-value">${(
-                      fieldResult.qualityMetrics.distribution.evennessScore * 100
+                      fieldResult.qualityMetrics.distribution.evennessScore *
+                      100
                     ).toFixed(1)}%</div>
                 </div>
                 <div class="quality-metric-item">
                     <div class="quality-metric-label">
                         <span>Distribution Type</span>
-                        ${createHelpIconHtml('distributionType')}
+                        ${createHelpIconHtml("distributionType")}
                     </div>
                     <div class="quality-metric-value">${
                       fieldResult.qualityMetrics.distribution.skewness
@@ -733,7 +743,7 @@ export function getVisualAnalysisHtml(
                 <div class="quality-metric-item">
                     <div class="quality-metric-label">
                         <span>Shannon Entropy</span>
-                        ${createHelpIconHtml('shannonEntropy')}
+                        ${createHelpIconHtml("shannonEntropy")}
                     </div>
                     <div class="quality-metric-value">${fieldResult.qualityMetrics.distribution.shannonEntropy.toFixed(
                       3

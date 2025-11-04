@@ -881,7 +881,7 @@ export function getHtmlForWebview(result, webview, context) {
             left: 20px;
             top: 50%;
             transform: translateY(-50%);
-            white-space: normal;
+            white-space: pre-line;
             pointer-events: none;
         }
         
@@ -1766,7 +1766,9 @@ export function getHtmlForWebview(result, webview, context) {
                 
                 // Helper function to create help icon with tooltip
                 function createHelpIcon(metricKey) {
-                    const help = ${JSON.stringify(metricHelpContent)}[metricKey];
+                    const help = ${JSON.stringify(
+                      metricHelpContent
+                    )}[metricKey];
                     if (!help) return '';
                     
                     // Escape HTML special characters in the text
