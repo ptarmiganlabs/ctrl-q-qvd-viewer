@@ -21,7 +21,7 @@ const CARDINALITY_THRESHOLDS = {
  */
 function calculateCompletenessMetrics(data, fieldName, nullCount) {
   const totalRows = data.length;
-  
+
   if (totalRows === 0) {
     return {
       nonNullPercentage: 0,
@@ -42,7 +42,7 @@ function calculateCompletenessMetrics(data, fieldName, nullCount) {
 
   const nonNullCount = totalRows - nullCount;
   const populatedCount = nonNullCount - emptyStringCount;
-  
+
   return {
     nonNullPercentage: (nonNullCount / totalRows) * 100,
     fillRate: (populatedCount / totalRows) * 100,
@@ -56,29 +56,45 @@ function calculateCompletenessMetrics(data, fieldName, nullCount) {
 /**
  * Classify cardinality level and provide recommendations
  * @param {number} cardinalityRatio - Ratio of unique values to total rows
+ * @param {number} uniqueValues - Absolute number of unique values
  * @returns {Object} Classification and recommendations
  */
-function classifyCardinality(cardinalityRatio) {
+function classifyCardinality(cardinalityRatio, uniqueValues) {
+  // For very small numbers of unique values (≤3), always classify as Low
+  // regardless of the ratio (binary/ternary fields are always low cardinality)
+  if (uniqueValues <= 3) {
+    return {
+      level: "Low",
+      classification: "Low Cardinality",
+      color: "green",
+      recommendation:
+        "Good dimension candidate. Suitable for filtering, grouping, and categorical analysis.",
+    };
+  }
+
   if (cardinalityRatio > CARDINALITY_THRESHOLDS.HIGH) {
     return {
       level: "High",
       classification: "High Cardinality",
       color: "blue",
-      recommendation: "Potential identifier/key field. Consider using as a primary key or unique identifier.",
+      recommendation:
+        "Potential identifier/key field. Consider using as a primary key or unique identifier.",
     };
   } else if (cardinalityRatio < CARDINALITY_THRESHOLDS.LOW) {
     return {
       level: "Low",
       classification: "Low Cardinality",
       color: "green",
-      recommendation: "Good dimension candidate. Suitable for filtering, grouping, and categorical analysis.",
+      recommendation:
+        "Good dimension candidate. Suitable for filtering, grouping, and categorical analysis.",
     };
   } else {
     return {
       level: "Medium",
       classification: "Medium Cardinality",
       color: "yellow",
-      recommendation: "Good for filtering and grouping operations. Balanced selectivity for analysis.",
+      recommendation:
+        "Good for filtering and grouping operations. Balanced selectivity for analysis.",
     };
   }
 }
@@ -91,9 +107,14 @@ function classifyCardinality(cardinalityRatio) {
  * @param {Map} valueCounts - Map of value frequencies (optional, for efficiency)
  * @returns {Object} Uniqueness metrics
  */
-function calculateUniquenessMetrics(data, fieldName, uniqueValues, valueCounts = null) {
+function calculateUniquenessMetrics(
+  data,
+  fieldName,
+  uniqueValues,
+  valueCounts = null
+) {
   const totalRows = data.length;
-  
+
   if (totalRows === 0) {
     return {
       uniquePercentage: 0,
@@ -118,7 +139,7 @@ function calculateUniquenessMetrics(data, fieldName, uniqueValues, valueCounts =
   // Count values that appear more than once
   let duplicateValueCount = 0; // Number of duplicate occurrences
   let duplicatedDistinctValues = 0; // Number of distinct values that have duplicates
-  
+
   for (const [value, count] of valueCounts.entries()) {
     if (count > 1) {
       duplicateValueCount += count; // All occurrences of duplicated values
@@ -254,7 +275,9 @@ function generateQualityAssessment(metrics) {
     issues.push("Critical: More than 50% of values are missing");
     qualityScore -= 40;
   } else if (completeness.nonNullPercentage < 90) {
-    warnings.push(`${completeness.missingPercentage.toFixed(1)}% of values are missing`);
+    warnings.push(
+      `${completeness.missingPercentage.toFixed(1)}% of values are missing`
+    );
     qualityScore -= 10;
   }
 
@@ -262,7 +285,9 @@ function generateQualityAssessment(metrics) {
     issues.push("Critical: Low fill rate with many empty strings");
     qualityScore -= 20;
   } else if (completeness.fillRate < 80) {
-    warnings.push(`Fill rate is ${completeness.fillRate.toFixed(1)}% (many empty strings)`);
+    warnings.push(
+      `Fill rate is ${completeness.fillRate.toFixed(1)}% (many empty strings)`
+    );
     qualityScore -= 5;
   }
 
@@ -277,7 +302,8 @@ function generateQualityAssessment(metrics) {
 
   return {
     qualityScore,
-    qualityLevel: qualityScore >= 80 ? "Good" : qualityScore >= 50 ? "Fair" : "Poor",
+    qualityLevel:
+      qualityScore >= 80 ? "Good" : qualityScore >= 50 ? "Fair" : "Poor",
     issues,
     warnings,
     color: getQualityColor(metrics),
@@ -311,7 +337,7 @@ export function calculateDataQualityMetrics(
 
   // Calculate cardinality ratio
   const cardinalityRatio = totalRows > 0 ? uniqueValues / totalRows : 0;
-  const cardinalityInfo = classifyCardinality(cardinalityRatio);
+  const cardinalityInfo = classifyCardinality(cardinalityRatio, uniqueValues);
 
   // Calculate completeness metrics
   const completeness = calculateCompletenessMetrics(data, fieldName, nullCount);
@@ -379,7 +405,8 @@ export function formatQualityMetrics(quality) {
       missingCount: quality.completeness.missingCount,
       missingPercentage: quality.completeness.missingPercentage.toFixed(2),
       emptyStringCount: quality.completeness.emptyStringCount,
-      emptyStringPercentage: quality.completeness.emptyStringPercentage.toFixed(2),
+      emptyStringPercentage:
+        quality.completeness.emptyStringPercentage.toFixed(2),
     },
     cardinality: {
       ratio: quality.cardinality.ratio.toFixed(4),

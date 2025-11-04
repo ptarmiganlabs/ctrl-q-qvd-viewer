@@ -298,6 +298,8 @@ suite("Data Quality Metrics Test Suite", () => {
         { field: "A" },
         { field: "A" },
         { field: "A" },
+        { field: "A" },
+        { field: "A" },
         { field: "B" },
         { field: "B" },
         { field: "C" },
@@ -405,7 +407,8 @@ suite("Data Quality Metrics Test Suite", () => {
       );
 
       assert.ok(
-        metrics.assessment.color === "red" || metrics.assessment.color === "yellow"
+        metrics.assessment.color === "red" ||
+          metrics.assessment.color === "yellow"
       );
       assert.ok(
         metrics.assessment.issues.length > 0 ||
@@ -434,12 +437,18 @@ suite("Data Quality Metrics Test Suite", () => {
       const formatted = qvdDataQuality.formatQualityMetrics(metrics);
 
       // Check that percentages are formatted as strings with decimals
-      assert.strictEqual(typeof formatted.completeness.nonNullPercentage, "string");
+      assert.strictEqual(
+        typeof formatted.completeness.nonNullPercentage,
+        "string"
+      );
       assert.ok(formatted.completeness.nonNullPercentage.includes("."));
-      
+
       assert.strictEqual(typeof formatted.cardinality.ratio, "string");
-      assert.strictEqual(typeof formatted.cardinality.ratioPercentage, "string");
-      
+      assert.strictEqual(
+        typeof formatted.cardinality.ratioPercentage,
+        "string"
+      );
+
       assert.strictEqual(typeof formatted.distribution.evennessScore, "string");
     });
   });
@@ -474,11 +483,7 @@ suite("Data Quality Metrics Test Suite", () => {
     });
 
     test("All null values", () => {
-      const data = [
-        { field: null },
-        { field: null },
-        { field: null },
-      ];
+      const data = [{ field: null }, { field: null }, { field: null }];
 
       const metrics = qvdDataQuality.calculateDataQualityMetrics(
         data,
