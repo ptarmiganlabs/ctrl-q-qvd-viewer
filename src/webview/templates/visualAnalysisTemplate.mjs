@@ -63,14 +63,17 @@ export function getVisualAnalysisHtml(
             flex-wrap: wrap;
             gap: 20px;
             margin-bottom: 20px;
-            padding: 15px;
-            background-color: var(--vscode-textBlockQuote-background);
-            border-radius: 4px;
         }
         
         .stat-item {
             display: flex;
             flex-direction: column;
+            background-color: var(--vscode-input-background);
+            padding: 12px;
+            border-radius: 4px;
+            border: 1px solid var(--vscode-panel-border);
+            min-width: 180px;
+            flex: 0 1 auto;
         }
         
         .stat-label {
