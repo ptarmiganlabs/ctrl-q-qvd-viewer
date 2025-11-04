@@ -60,6 +60,7 @@ export function getVisualAnalysisHtml(
         
         .stats-container {
             display: flex;
+            flex-wrap: wrap;
             gap: 20px;
             margin-bottom: 20px;
             padding: 15px;
@@ -76,6 +77,9 @@ export function getVisualAnalysisHtml(
             color: var(--vscode-descriptionForeground);
             font-size: 0.85em;
             margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
         }
         
         .stat-value {
