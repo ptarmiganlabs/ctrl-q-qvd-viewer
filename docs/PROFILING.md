@@ -92,6 +92,112 @@ Using the 1.5 × IQR method:
 - **Lower/Upper Bounds**: Boundaries for outlier detection
 - **Sample Outliers**: List of the first 10 outlier values (if any)
 
+### Temporal Analysis for Date/Timestamp Fields
+
+For fields with predominantly date or timestamp values (≥80% valid dates), the profiling includes specialized temporal analysis:
+
+#### Date Range Analysis
+- **Earliest Date**: The oldest date in the dataset
+- **Latest Date**: The most recent date in the dataset
+- **Time Span**: Human-readable description of the total time period (e.g., "2 years, 3 months", "45 days", "3 weeks")
+- **Format Detection**: Automatically identifies the date format used
+  - ISO 8601 date (YYYY-MM-DD)
+  - ISO 8601 with time (YYYY-MM-DDTHH:mm:ss.sssZ)
+  - Unix timestamp (milliseconds or seconds)
+  - US format (M/D/YYYY)
+  - EU format (D.M.YYYY)
+  - Compact format (YYYYMMDD)
+  - Mixed or other formats
+
+**Example:**
+- Earliest: 2022-01-01
+- Latest: 2024-12-31
+- Time Span: 3 years
+- Format: ISO 8601 date (YYYY-MM-DD)
+
+#### Temporal Distribution
+Distribution of dates across different time periods:
+
+- **Yearly Distribution**: Count of records per year
+- **Monthly Distribution**: Count of records per month (January through December)
+- **Day of Week Distribution**: Count of records per day (Sunday through Saturday)
+- **Quarterly Distribution**: Count of records per quarter (Q1-Q4 by year)
+
+**Example:**
+```
+Yearly: 2022 (1,250), 2023 (2,840), 2024 (3,120)
+Monthly: January (520), February (480), March (540), ...
+Day of Week: Monday (890), Tuesday (920), ...
+```
+
+This helps identify:
+- Seasonal patterns in the data
+- Business cycles and trends
+- Data collection patterns
+- Weekday vs. weekend activity
+
+#### Gap Detection
+Identifies missing dates in sequences and measures data coverage:
+
+- **Has Gaps**: Whether any gaps exist in the date sequence
+- **Gap Count**: Number of gaps detected
+- **Largest Gap**: The longest period without data (in days)
+- **Coverage**: Percentage of expected dates that are present
+  - 100% = No missing dates
+  - <100% = Some dates are missing in the sequence
+- **Expected vs. Actual**: Comparison of expected dates in range vs. actual dates
+
+**Example:**
+- Has Gaps: Yes
+- Gap Count: 3
+- Largest Gap: 14 days (from 2024-06-15 to 2024-06-29)
+- Coverage: 92.5% (334 actual dates vs. 361 expected)
+
+This helps identify:
+- Data collection issues
+- Business closure periods (holidays, weekends)
+- System downtime or data loss
+- Incomplete data sets
+
+#### Time Series Trends
+Analysis of temporal patterns and trends over time:
+
+- **Trend Type**: Classification of the overall pattern
+  - Strong Growth: Significant increase over time
+  - Moderate Growth: Steady increase over time
+  - Constant: Relatively stable over time
+  - Moderate Decline: Steady decrease over time
+  - Strong Decline: Significant decrease over time
+  - Insufficient Data: Too few data points for analysis
+- **Description**: Human-readable explanation of the trend
+- **Group Unit**: Time period used for analysis (day/week/month based on data span)
+- **Period Count**: Number of time periods analyzed
+
+**Example:**
+- Trend Type: Moderate Growth
+- Description: Moderate growth trend detected
+- Analysis: Based on 12 monthly periods
+
+This helps identify:
+- Business growth or decline
+- Seasonal cycles
+- Data quality issues (sudden drops or spikes)
+- Long-term patterns
+
+#### Data Quality Metrics
+Specific quality metrics for temporal data:
+
+- **Valid Dates**: Count of successfully parsed dates
+- **Invalid Dates**: Count of values that couldn't be parsed as dates
+- **Null Count**: Number of null or empty values
+- **Valid Percentage**: Percentage of total values that are valid dates
+
+**Example:**
+- Valid Dates: 4,850
+- Invalid Dates: 15
+- Null Count: 135
+- Valid %: 97.0%
+
 ### Data Quality Assessment
 
 Every profiled field includes a comprehensive data quality assessment with actionable insights:
@@ -396,7 +502,34 @@ Use statistical metrics for numeric fields:
 - Q1: $45, Q3: $178 (IQR: $133)
 - 87 outliers (2.1%) above $423 requiring review
 
-### 5. Documentation and Analysis
+### 5. Temporal Analysis for Time-Series Data
+
+Use temporal analysis for date/timestamp fields:
+
+- **Transaction Analysis**: Understand when sales/orders occur
+- **Event Tracking**: Analyze event patterns over time
+- **Log Analysis**: Identify logging patterns and gaps
+- **Maintenance Records**: Track maintenance schedules and gaps
+- **Sensor Readings**: Analyze temporal patterns in IoT data
+
+**Example:** Profile a `transaction_date` field:
+- Date Range: 2022-01-01 to 2024-12-31 (3 years)
+- Format: ISO 8601 (YYYY-MM-DD)
+- Yearly Distribution: 2022 (12,450), 2023 (18,720), 2024 (22,130) - showing growth
+- Gap Analysis: 15 gaps detected, largest gap 21 days (holiday period)
+- Coverage: 94.2% (expected vs. actual)
+- Trend: Strong growth trend detected
+- Day of Week: Higher activity Monday-Friday, lower on weekends
+
+**Quality Insights:**
+- Valid Dates: 53,250 (99.8%)
+- Invalid Dates: 50 (0.1%)
+- Null Count: 50 (0.1%)
+- Trend indicates business growth
+- Gaps correlate with known holiday periods
+- Weekend activity suggests 24/7 operations with reduced load
+
+### 6. Documentation and Analysis
 
 Export profiling results for:
 
@@ -503,6 +636,34 @@ The quality score (0-100) is calculated based on multiple factors:
   - Dominant values will drive aggregates
   - Consider filtering out extremes for certain analyses
 
+### Temporal Analysis Interpretation
+
+**Supported Date Formats**
+
+The temporal analysis automatically detects and parses these date formats:
+
+1. **ISO 8601 Date**: `YYYY-MM-DD` (e.g., `2024-01-15`)
+2. **ISO 8601 DateTime**: `YYYY-MM-DDTHH:mm:ss.sssZ` (e.g., `2024-01-15T10:30:00.000Z`)
+3. **Unix Timestamp (milliseconds)**: 13-digit number (e.g., `1704067200000`)
+4. **Unix Timestamp (seconds)**: 10-digit number (e.g., `1704067200`)
+5. **US Date Format**: `M/D/YYYY` or `MM/DD/YYYY` (e.g., `1/15/2024`, `01/15/2024`)
+6. **EU Date Format**: `D.M.YYYY` or `DD.MM.YYYY` (e.g., `15.1.2024`, `15.01.2024`)
+7. **Compact Format**: `YYYYMMDD` (e.g., `20240115`)
+
+**Gap Analysis Guidelines**
+
+- **No Gaps (100% coverage)**: Complete data set, all expected dates present
+- **High Coverage (90-99%)**: Mostly complete with minor gaps (holidays, weekends)
+- **Medium Coverage (70-89%)**: Significant gaps, investigate data collection
+- **Low Coverage (<70%)**: Major data quality issues, requires attention
+
+**Trend Interpretation**
+
+- **Strong Growth/Decline**: Consider business expansion, seasonal effects, or data quality issues
+- **Moderate Growth/Decline**: Normal business evolution
+- **Constant**: Stable operations or balanced data collection
+- **Cyclical Patterns**: Look at monthly/quarterly distributions for seasonality
+
 ## Tips and Tricks
 
 1. **Compare Field Distributions**: Select 2-3 related fields to compare their distributions visually
@@ -520,6 +681,14 @@ The quality score (0-100) is calculated based on multiple factors:
 7. **Track Completeness Over Time**: Compare completeness metrics across different data loads to identify data quality trends
 
 8. **Export for Documentation**: Use the Markdown option to create data dictionaries with quality metrics
+
+9. **Temporal Analysis for Time-Series**: Profile date fields to identify gaps, trends, and seasonal patterns in your data
+
+10. **Verify Date Formats**: Check the detected format to ensure dates are being parsed correctly
+
+11. **Use Gap Detection**: Identify missing data periods that may indicate system downtime or data collection issues
+
+12. **Analyze Trends**: Use trend analysis to validate business growth assumptions or detect anomalies
 
 9. **Build Analysis Apps**: Export to QVS and load into Qlik Sense for deeper analysis
 
