@@ -329,6 +329,16 @@ export function getVisualAnalysisHtml(
             pointer-events: none;
         }
         
+        /* Invisible bridge to keep tooltip open when moving mouse */
+        .quality-metric-tooltip::before {
+            content: '';
+            position: absolute;
+            right: 100%;
+            top: 0;
+            bottom: 0;
+            width: 20px;
+        }
+        
         .quality-metric-help:hover .quality-metric-tooltip,
         .quality-metric-tooltip:hover {
             visibility: visible;
