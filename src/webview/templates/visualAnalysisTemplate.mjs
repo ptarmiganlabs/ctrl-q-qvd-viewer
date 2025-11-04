@@ -63,9 +63,6 @@ export function getVisualAnalysisHtml(
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 12px;
             margin-bottom: 20px;
-            padding: 15px;
-            background-color: var(--vscode-textBlockQuote-background);
-            border-radius: 4px;
         }
         
         .stat-item {
