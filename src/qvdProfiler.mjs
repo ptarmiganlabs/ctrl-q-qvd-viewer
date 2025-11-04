@@ -4,6 +4,7 @@
  */
 
 import { isNumericField, calculateStatistics } from './qvdStatistics.mjs';
+import { calculateDataQualityMetrics } from './qvdDataQuality.mjs';
 
 /**
  * Compute value frequency distribution for specified fields
@@ -80,6 +81,15 @@ export function profileFields(data, fieldNames, maxUniqueValues = 1000) {
       statistics = calculateStatistics(data, fieldName);
     }
 
+    // Calculate data quality metrics
+    const qualityMetrics = calculateDataQualityMetrics(
+      data,
+      fieldName,
+      uniqueValueCount,
+      nullCount,
+      valueCounts
+    );
+
     results.push({
       fieldName,
       totalRows,
@@ -90,6 +100,7 @@ export function profileFields(data, fieldNames, maxUniqueValues = 1000) {
       truncatedAt: maxUniqueValues,
       isNumeric,
       statistics,
+      qualityMetrics,
     });
   }
 
