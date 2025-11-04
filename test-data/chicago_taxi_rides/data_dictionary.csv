@@ -1,0 +1,22 @@
+taxi_id,INTEGER,A unique identifier for the taxi.
+trip_start_timestamp,TIMESTAMP,"When the trip started, rounded to the nearest 15 minutes."
+trip_end_timestamp,TIMESTAMP,"When the trip ended, rounded to the nearest 15 minutes."
+trip_seconds,INTEGER,Time of the trip in seconds.
+trip_miles,FLOAT,Distance of the trip in miles.
+pickup_census_tract,INTEGER,"The Census Tract where the trip began. For privacy, this Census Tract is not shown for some trips."
+dropoff_census_tract,INTEGER,"The Census Tract where the trip ended. For privacy, this Census Tract is not shown for some trips."
+pickup_community_area,INTEGER,The Community Area where the trip began.
+dropoff_community_area,INTEGER,The Community Area where the trip ended.
+fare,FLOAT,The fare for the trip.
+tips,FLOAT,The tip for the trip. Cash tips generally will not be recorded.
+tolls,FLOAT,The tolls for the trip.
+extras,FLOAT,Extra charges for the trip.
+trip_total,FLOAT,"Total cost of the trip, the total of the fare, tips, tolls, and extras."
+payment_type,STRING,Type of payment for the trip.
+company,INTEGER,The id code for the taxi company.
+pickup_latitude,INTEGER,The id code for the latitude of the center of the pickup census tract or the community area if the census tract has been hidden for privacy.
+pickup_longitude,INTEGER,The id code for the center of the pickup census tract or the community area if the census tract has been hidden for privacy.
+pickup_location,STRING,The location of the center of the pickup census tract or the community area if the census tract has been hidden for privacy.
+dropoff_latitude,INTEGER,The id code for the center of the dropoff census tract or the community area if the census tract has been hidden for privacy.
+dropoff_longitude,INTEGER,The id code for the center of the dropoff census tract or the community area if the census tract has been hidden for privacy.
+dropoff_location,STRING,The location of the center of the dropoff census tract or the community area if the census tract has been hidden for privacy.
