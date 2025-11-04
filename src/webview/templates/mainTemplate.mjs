@@ -1966,6 +1966,81 @@ export function getHtmlForWebview(result, webview, context) {
                     card.appendChild(statisticsCard);
                 }
                 
+                // Add temporal analysis card for date fields
+                if (fieldResult.isDate && fieldResult.temporalAnalysis && fieldResult.temporalAnalysis.isDate) {
+                    const temporal = fieldResult.temporalAnalysis;
+                    const temporalCard = document.createElement('div');
+                    temporalCard.className = 'statistics-card';
+                    temporalCard.innerHTML = \`
+                        <h4 style="margin: 0 0 15px 0; color: var(--vscode-foreground); font-size: 1.1em;">📅 Temporal Analysis</h4>
+                        
+                        <div class="statistics-section">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Date Range</h5>
+                            <div class="field-stats-grid">
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Earliest</span>
+                                    <span class="field-stat-value">\${temporal.range.earliest ? new Date(temporal.range.earliest).toISOString().split('T')[0] : 'N/A'}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Latest</span>
+                                    <span class="field-stat-value">\${temporal.range.latest ? new Date(temporal.range.latest).toISOString().split('T')[0] : 'N/A'}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Time Span</span>
+                                    <span class="field-stat-value">\${temporal.range.spanDescription}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Format</span>
+                                    <span class="field-stat-value">\${temporal.range.format.formatDescription}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        \${temporal.gaps ? \`
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Gap Analysis</h5>
+                            <div class="field-stats-grid">
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Has Gaps</span>
+                                    <span class="field-stat-value">\${temporal.gaps.hasGaps ? 'Yes' : 'No'}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Gap Count</span>
+                                    <span class="field-stat-value">\${temporal.gaps.gapCount}</span>
+                                </div>
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Coverage</span>
+                                    <span class="field-stat-value">\${temporal.gaps.coverage.toFixed(1)}%</span>
+                                </div>
+                                \${temporal.gaps.largestGap ? \`
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Largest Gap</span>
+                                    <span class="field-stat-value">\${temporal.gaps.largestGap.days} days</span>
+                                </div>
+                                \` : ''}
+                            </div>
+                        </div>
+                        \` : ''}
+                        
+                        \${temporal.trends ? \`
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Trend Analysis</h5>
+                            <div class="field-stats-grid">
+                                <div class="field-stat-item">
+                                    <span class="field-stat-label">Trend Type</span>
+                                    <span class="field-stat-value">\${temporal.trends.trendType.replace(/_/g, ' ')}</span>
+                                </div>
+                                <div class="field-stat-item" style="grid-column: span 2;">
+                                    <span class="field-stat-label">Description</span>
+                                    <span class="field-stat-value">\${temporal.trends.description}</span>
+                                </div>
+                            </div>
+                        </div>
+                        \` : ''}
+                    \`;
+                    card.appendChild(temporalCard);
+                }
+                
                 // Add data quality metrics card
                 if (fieldResult.qualityMetrics && !fieldResult.qualityMetrics.error) {
                     const quality = fieldResult.qualityMetrics;

@@ -525,6 +525,132 @@ export function getVisualAnalysisHtml(
     }
     
     ${
+      fieldResult.isDate &&
+      fieldResult.temporalAnalysis &&
+      fieldResult.temporalAnalysis.isDate
+        ? `
+    <div style="background-color: var(--vscode-textBlockQuote-background); border: 1px solid var(--vscode-panel-border); border-radius: 4px; padding: 15px; margin-bottom: 20px;">
+        <h2 style="margin: 0 0 15px 0; font-size: 1.2em;">📅 Temporal Analysis</h2>
+        
+        <h3 style="margin: 0 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Date Range</h3>
+        <div class="stats-container" style="margin-bottom: 15px;">
+            <div class="stat-item">
+                <span class="stat-label">Earliest</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.range.earliest ? new Date(fieldResult.temporalAnalysis.range.earliest).toISOString().split('T')[0] : 'N/A'}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Latest</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.range.latest ? new Date(fieldResult.temporalAnalysis.range.latest).toISOString().split('T')[0] : 'N/A'}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Time Span</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.range.spanDescription}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Format</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.range.format.formatDescription}</span>
+            </div>
+        </div>
+        
+        ${fieldResult.temporalAnalysis.distribution.byYear.length > 0 ? `
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Yearly Distribution</h3>
+        <div class="stats-container" style="margin-bottom: 15px; max-height: 200px; overflow-y: auto;">
+            ${fieldResult.temporalAnalysis.distribution.byYear.slice(0, 10).map(item => `
+            <div class="stat-item">
+                <span class="stat-label">${item.period}</span>
+                <span class="stat-value">${item.count.toLocaleString()}</span>
+            </div>
+            `).join('')}
+        </div>
+        ` : ''}
+        
+        ${fieldResult.temporalAnalysis.distribution.byMonth.length > 0 ? `
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Monthly Distribution</h3>
+        <div class="stats-container" style="margin-bottom: 15px;">
+            ${fieldResult.temporalAnalysis.distribution.byMonth.map(item => `
+            <div class="stat-item">
+                <span class="stat-label">${item.period}</span>
+                <span class="stat-value">${item.count.toLocaleString()}</span>
+            </div>
+            `).join('')}
+        </div>
+        ` : ''}
+        
+        ${fieldResult.temporalAnalysis.distribution.byDayOfWeek.length > 0 ? `
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Day of Week Distribution</h3>
+        <div class="stats-container" style="margin-bottom: 15px;">
+            ${fieldResult.temporalAnalysis.distribution.byDayOfWeek.map(item => `
+            <div class="stat-item">
+                <span class="stat-label">${item.period}</span>
+                <span class="stat-value">${item.count.toLocaleString()}</span>
+            </div>
+            `).join('')}
+        </div>
+        ` : ''}
+        
+        ${fieldResult.temporalAnalysis.gaps ? `
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Gap Analysis</h3>
+        <div class="stats-container" style="margin-bottom: 15px;">
+            <div class="stat-item">
+                <span class="stat-label">Has Gaps</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.gaps.hasGaps ? 'Yes' : 'No'}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Gap Count</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.gaps.gapCount}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Coverage</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.gaps.coverage.toFixed(1)}%</span>
+            </div>
+            ${fieldResult.temporalAnalysis.gaps.largestGap ? `
+            <div class="stat-item">
+                <span class="stat-label">Largest Gap</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.gaps.largestGap.days} days</span>
+            </div>
+            ` : ''}
+        </div>
+        ` : ''}
+        
+        ${fieldResult.temporalAnalysis.trends ? `
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Trend Analysis</h3>
+        <div class="stats-container" style="margin-bottom: 15px;">
+            <div class="stat-item">
+                <span class="stat-label">Trend Type</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.trends.trendType.replace(/_/g, ' ')}</span>
+            </div>
+            <div class="stat-item" style="grid-column: span 2;">
+                <span class="stat-label">Description</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.trends.description}</span>
+            </div>
+        </div>
+        ` : ''}
+        
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Data Quality</h3>
+        <div class="stats-container">
+            <div class="stat-item">
+                <span class="stat-label">Valid Dates</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.quality.validDateCount.toLocaleString()}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Invalid Dates</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.quality.invalidDateCount.toLocaleString()}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Null Count</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.quality.nullCount.toLocaleString()}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Valid %</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.quality.validPercentage.toFixed(1)}%</span>
+            </div>
+        </div>
+    </div>
+    `
+        : ""
+    }
+    
+    ${
       fieldResult.qualityMetrics && !fieldResult.qualityMetrics.error
         ? `
     <div class="quality-card quality-${
