@@ -326,10 +326,13 @@ export function getVisualAnalysisHtml(
             top: 50%;
             transform: translateY(-50%);
             white-space: normal;
+            pointer-events: none;
         }
         
-        .quality-metric-help:hover .quality-metric-tooltip {
+        .quality-metric-help:hover .quality-metric-tooltip,
+        .quality-metric-tooltip:hover {
             visibility: visible;
+            pointer-events: auto;
         }
         
         .quality-metric-tooltip a {
