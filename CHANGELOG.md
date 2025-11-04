@@ -4,6 +4,19 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [1.2.0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.1.0...v1.2.0) (2025-11-04)
+
+
+### Features
+
+* **logging:** Implement centralized logging system for better debugging and error tracking ([7d33871](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/7d33871d6a975bea6fb64beddf7253d794af139d))
+* **security:** Add automated security scan to CI workflow ([d3568db](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/d3568db8093e6225b49de5b65f500192856916a4))
+
+
+### Code Refactoring
+
+* Split the various web views into separate files to prepare for future features ([55be82b](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/55be82b84f3d91c42a2de8ae20dd496482bd8a05))
+
 ## [1.1.0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.0.2...v1.1.0) (2025-11-03)
 
 
