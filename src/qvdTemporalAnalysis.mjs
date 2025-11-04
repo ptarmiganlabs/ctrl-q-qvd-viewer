@@ -2,18 +2,18 @@
  * QVD Temporal Analysis - Main Module
  * Provides specialized profiling for date and timestamp fields including
  * range analysis, temporal distribution, gap detection, and trend analysis
- * 
+ *
  * This module orchestrates the various temporal analysis components.
  */
 
-import { isDateField, parseDate } from './temporal/dateDetection.mjs';
-import { calculateDateRange } from './temporal/dateRange.mjs';
-import { calculateTemporalDistribution } from './temporal/distribution.mjs';
-import { detectDateGaps } from './temporal/gapDetection.mjs';
-import { analyzeTimeSeries } from './temporal/trendAnalysis.mjs';
+import { isDateField, parseDate } from "./temporal/dateDetection.mjs";
+import { calculateDateRange } from "./temporal/dateRange.mjs";
+import { calculateTemporalDistribution } from "./temporal/distribution.mjs";
+import { detectDateGaps } from "./temporal/gapDetection.mjs";
+import { analyzeTimeSeries } from "./temporal/trendAnalysis.mjs";
 
 // Re-export detection function
-export { isDateField } from './temporal/dateDetection.mjs';
+export { isDateField } from "./temporal/dateDetection.mjs";
 
 /**
  * Calculate comprehensive temporal analysis for a date field
@@ -25,7 +25,7 @@ export function calculateTemporalAnalysis(data, fieldName) {
   if (!data || data.length === 0) {
     return {
       isDate: false,
-      error: 'No data available',
+      error: "No data available",
     };
   }
 
@@ -53,8 +53,10 @@ export function calculateTemporalAnalysis(data, fieldName) {
   }
 
   // Check if field is predominantly dates
+  // Use 60% threshold to allow for some invalid entries while still
+  // recognizing the field as temporal
   const totalNonNull = parsedDates.length + invalidDateCount;
-  if (totalNonNull === 0 || parsedDates.length / totalNonNull < 0.8) {
+  if (totalNonNull === 0 || parsedDates.length / totalNonNull < 0.6) {
     return {
       isDate: false,
       dateCount: parsedDates.length,
@@ -102,9 +104,9 @@ export function calculateTemporalAnalysis(data, fieldName) {
  */
 export function formatDate(date) {
   if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
-    return 'N/A';
+    return "N/A";
   }
-  return date.toISOString().split('T')[0];
+  return date.toISOString().split("T")[0];
 }
 
 /**
@@ -114,7 +116,7 @@ export function formatDate(date) {
  */
 export function formatDateTime(date) {
   if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
-    return 'N/A';
+    return "N/A";
   }
   return date.toISOString();
 }

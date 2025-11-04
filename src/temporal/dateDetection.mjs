@@ -7,7 +7,8 @@
  * Date format patterns for detection
  */
 const DATE_PATTERNS = {
-  ISO_8601: /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[+-]\d{2}:\d{2})?)?$/,
+  ISO_8601:
+    /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[+-]\d{2}:\d{2})?)?$/,
   ISO_DATE: /^\d{4}-\d{2}-\d{2}$/,
   US_DATE: /^\d{1,2}\/\d{1,2}\/\d{4}$/,
   EU_DATE: /^\d{1,2}\.\d{1,2}\.\d{4}$/,
@@ -29,7 +30,10 @@ export function parseDate(value) {
   const valueStr = String(value).trim();
 
   // Try ISO 8601 format
-  if (DATE_PATTERNS.ISO_8601.test(valueStr) || DATE_PATTERNS.ISO_DATE.test(valueStr)) {
+  if (
+    DATE_PATTERNS.ISO_8601.test(valueStr) ||
+    DATE_PATTERNS.ISO_DATE.test(valueStr)
+  ) {
     const date = new Date(valueStr);
     if (!isNaN(date.getTime())) {
       return date;
@@ -67,7 +71,7 @@ export function parseDate(value) {
 
   // Try US date format (M/D/YYYY or MM/DD/YYYY)
   if (DATE_PATTERNS.US_DATE.test(valueStr)) {
-    const parts = valueStr.split('/');
+    const parts = valueStr.split("/");
     const month = parseInt(parts[0], 10) - 1;
     const day = parseInt(parts[1], 10);
     const year = parseInt(parts[2], 10);
@@ -79,7 +83,7 @@ export function parseDate(value) {
 
   // Try EU date format (D.M.YYYY or DD.MM.YYYY)
   if (DATE_PATTERNS.EU_DATE.test(valueStr)) {
-    const parts = valueStr.split('.');
+    const parts = valueStr.split(".");
     const day = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10) - 1;
     const year = parseInt(parts[2], 10);
@@ -91,7 +95,11 @@ export function parseDate(value) {
 
   // Try native Date parsing as last resort
   const date = new Date(valueStr);
-  if (!isNaN(date.getTime()) && date.getFullYear() >= 1900 && date.getFullYear() <= 2100) {
+  if (
+    !isNaN(date.getTime()) &&
+    date.getFullYear() >= 1900 &&
+    date.getFullYear() <= 2100
+  ) {
     return date;
   }
 
@@ -127,10 +135,11 @@ export function detectDateFormat(values) {
     const valueStr = String(value).trim();
     sampleCount++;
 
-    if (DATE_PATTERNS.ISO_8601.test(valueStr)) {
-      formatCounts.ISO_8601++;
-    } else if (DATE_PATTERNS.ISO_DATE.test(valueStr)) {
+    // Check ISO_DATE before ISO_8601 since ISO_DATE is more specific
+    if (DATE_PATTERNS.ISO_DATE.test(valueStr)) {
       formatCounts.ISO_DATE++;
+    } else if (DATE_PATTERNS.ISO_8601.test(valueStr)) {
+      formatCounts.ISO_8601++;
     } else if (DATE_PATTERNS.US_DATE.test(valueStr)) {
       formatCounts.US_DATE++;
     } else if (DATE_PATTERNS.EU_DATE.test(valueStr)) {
@@ -147,7 +156,7 @@ export function detectDateFormat(values) {
   }
 
   // Find dominant format
-  let dominantFormat = 'OTHER';
+  let dominantFormat = "OTHER";
   let maxCount = 0;
   for (const [format, count] of Object.entries(formatCounts)) {
     if (count > maxCount) {
@@ -157,14 +166,14 @@ export function detectDateFormat(values) {
   }
 
   const formatDescriptions = {
-    ISO_8601: 'ISO 8601 with time',
-    ISO_DATE: 'ISO 8601 date (YYYY-MM-DD)',
-    US_DATE: 'US format (M/D/YYYY)',
-    EU_DATE: 'EU format (D.M.YYYY)',
-    TIMESTAMP_MS: 'Unix timestamp (milliseconds)',
-    TIMESTAMP_S: 'Unix timestamp (seconds)',
-    YYYYMMDD: 'Compact format (YYYYMMDD)',
-    OTHER: 'Mixed or other format',
+    ISO_8601: "ISO 8601 with time",
+    ISO_DATE: "ISO 8601 date (YYYY-MM-DD)",
+    US_DATE: "US format (M/D/YYYY)",
+    EU_DATE: "EU format (D.M.YYYY)",
+    TIMESTAMP_MS: "Unix timestamp (milliseconds)",
+    TIMESTAMP_S: "Unix timestamp (seconds)",
+    YYYYMMDD: "Compact format (YYYYMMDD)",
+    OTHER: "Mixed or other format",
   };
 
   return {
