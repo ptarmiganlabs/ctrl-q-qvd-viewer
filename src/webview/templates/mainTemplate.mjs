@@ -746,6 +746,37 @@ export function getHtmlForWebview(result, webview, context) {
             color: var(--vscode-foreground);
         }
         
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+        
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            background-color: var(--vscode-input-background);
+            padding: 8px 12px;
+            border-radius: 3px;
+            border: 1px solid var(--vscode-input-border);
+        }
+        
+        .stat-label {
+            color: var(--vscode-descriptionForeground);
+            font-size: 0.85em;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .stat-value {
+            font-weight: 600;
+            font-size: 1.1em;
+            color: var(--vscode-foreground);
+        }
+        
         .statistics-card {
             background-color: var(--vscode-textBlockQuote-background);
             border: 1px solid var(--vscode-panel-border);
@@ -787,6 +818,26 @@ export function getHtmlForWebview(result, webview, context) {
             justify-content: space-between;
             align-items: center;
             margin-bottom: 15px;
+        }
+        
+        .quality-score-container {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .beta-badge {
+            position: absolute;
+            top: -6px;
+            right: -8px;
+            font-size: 0.55em;
+            font-weight: 700;
+            padding: 2px 5px;
+            border-radius: 3px;
+            background-color: var(--vscode-statusBarItem-warningBackground);
+            color: var(--vscode-statusBarItem-warningForeground);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
         }
         
         .quality-score {
@@ -866,6 +917,7 @@ export function getHtmlForWebview(result, webview, context) {
         
         .quality-metric-tooltip {
             visibility: hidden;
+            opacity: 0;
             position: absolute;
             z-index: 10000;
             background-color: var(--vscode-editorHoverWidget-background);
@@ -878,27 +930,42 @@ export function getHtmlForWebview(result, webview, context) {
             max-width: 300px;
             width: max-content;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-            left: 20px;
+            left: 25px;
             top: 50%;
             transform: translateY(-50%);
             white-space: pre-line;
-            pointer-events: none;
+            transition: opacity 0.15s ease-in-out, visibility 0s linear 0.2s;
         }
         
-        /* Invisible bridge to keep tooltip open when moving mouse */
+        /* When tooltip would overflow on the right, position it on the left */
+        .quality-metric-help:last-child .quality-metric-tooltip,
+        [style*="justify-content: space-between"] .quality-metric-help:last-of-type .quality-metric-tooltip {
+            left: auto;
+            right: 25px;
+        }
+        
+        /* Invisible bridge to keep tooltip open when moving mouse - extends from icon to tooltip */
         .quality-metric-tooltip::before {
             content: '';
             position: absolute;
-            right: 100%;
-            top: 0;
-            bottom: 0;
-            width: 20px;
+            left: -25px;
+            top: -10px;
+            bottom: -10px;
+            width: 30px;
+        }
+        
+        /* Bridge on the right side when tooltip is on the left of the icon */
+        .quality-metric-help:last-child .quality-metric-tooltip::before,
+        [style*="justify-content: space-between"] .quality-metric-help:last-of-type .quality-metric-tooltip::before {
+            left: auto;
+            right: -25px;
         }
         
         .quality-metric-help:hover .quality-metric-tooltip,
         .quality-metric-tooltip:hover {
             visibility: visible;
-            pointer-events: auto;
+            opacity: 1;
+            transition-delay: 0s;
         }
         
         .quality-metric-tooltip a {
@@ -1146,6 +1213,20 @@ export function getHtmlForWebview(result, webview, context) {
                                 : ""
                             }
                         </div>
+                        ${
+                          data.length < totalRows
+                            ? `
+                        <div class="info-banner" style="margin-top: 12px;">
+                            ℹ️ <strong>Data Loaded:</strong> Profiling will analyze ${data.length.toLocaleString()} of ${totalRows.toLocaleString()} total rows (limited for performance).
+                            ${
+                              totalRows <= 100000
+                                ? `<button class="load-button" onclick="vscode.postMessage({command: 'loadMore', loadAll: true})">📥 Load All Rows</button> for more accurate profiling.`
+                                : `This limit is configurable in <button class="load-button" onclick="vscode.postMessage({command: 'openSettings'})">⚙️ Settings</button>.`
+                            }
+                        </div>
+                        `
+                            : ""
+                        }
                         <div class="profiling-buttons">
                             <button class="header-button" id="run-profiling-btn">▶️ Run Profiling</button>
                             <button class="header-button" id="clear-profiling-btn">✕ Clear Results</button>
@@ -1813,9 +1894,6 @@ export function getHtmlForWebview(result, webview, context) {
                 const header = document.createElement('h3');
                 header.style.margin = '0';
                 header.innerHTML = \`📊 \${fieldResult.fieldName}\`;
-                if (fieldResult.truncated) {
-                    header.innerHTML += \` <span style="color: var(--vscode-descriptionForeground); font-size: 0.85em;">(showing top \${fieldResult.truncatedAt} values)</span>\`;
-                }
                 
                 const openButton = document.createElement('div');
                 openButton.className = 'open-in-window-dropdown';
@@ -1867,7 +1945,10 @@ export function getHtmlForWebview(result, webview, context) {
                 statsDiv.className = 'field-stats';
                 statsDiv.innerHTML = \`
                     <div class="field-stat-item">
-                        <span class="field-stat-label">Total Rows</span>
+                        <span class="field-stat-label">
+                            Total Rows
+                            \${createHelpIcon('totalRowsProfiling')}
+                        </span>
                         <span class="field-stat-value">\${fieldResult.totalRows.toLocaleString()}</span>
                     </div>
                     <div class="field-stat-item">
@@ -1966,6 +2047,195 @@ export function getHtmlForWebview(result, webview, context) {
                     card.appendChild(statisticsCard);
                 }
                 
+                // Add temporal analysis card for date fields
+                if (fieldResult.isDate && fieldResult.temporalAnalysis && fieldResult.temporalAnalysis.isDate) {
+                    const temporal = fieldResult.temporalAnalysis;
+                    const temporalCard = document.createElement('div');
+                    temporalCard.className = 'statistics-card';
+                    temporalCard.innerHTML = \`
+                        <h4 style="margin: 0 0 15px 0; color: var(--vscode-foreground); font-size: 1.1em;">📅 Temporal Analysis</h4>
+                        
+                        <div class="statistics-section">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Date Range</h5>
+                            <div class="stats-container" style="margin-bottom: 15px;">
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Earliest
+                                        \${createHelpIcon('temporalEarliest')}
+                                    </span>
+                                    <span class="stat-value">\${temporal.range.earliest ? new Date(temporal.range.earliest).toISOString().split('T')[0] : 'N/A'}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Latest
+                                        \${createHelpIcon('temporalLatest')}
+                                    </span>
+                                    <span class="stat-value">\${temporal.range.latest ? new Date(temporal.range.latest).toISOString().split('T')[0] : 'N/A'}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Time Span
+                                        \${createHelpIcon('temporalTimeSpan')}
+                                    </span>
+                                    <span class="stat-value">\${temporal.range.spanDescription}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Format
+                                        \${createHelpIcon('temporalFormat')}
+                                    </span>
+                                    <span class="stat-value">\${temporal.range.format.formatDescription}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        \${temporal.distribution && temporal.distribution.byYear && temporal.distribution.byYear.length > 0 ? \`
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">
+                                Yearly Distribution
+                                \${createHelpIcon('temporalYearlyDistribution')}
+                            </h5>
+                            <div class="stats-container" style="margin-bottom: 15px; max-height: 200px; overflow-y: auto; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
+                                \${temporal.distribution.byYear.slice(0, 10).map(item => \`
+                                <div class="stat-item">
+                                    <span class="stat-label">\${item.period}</span>
+                                    <span class="stat-value">\${item.count.toLocaleString()}</span>
+                                </div>
+                                \`).join('')}
+                            </div>
+                        </div>
+                        \` : ''}
+                        
+                        \${temporal.distribution && temporal.distribution.byMonth && temporal.distribution.byMonth.length > 0 ? \`
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">
+                                Monthly Distribution
+                                \${createHelpIcon('temporalMonthlyDistribution')}
+                            </h5>
+                            <div class="stats-container" style="margin-bottom: 15px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
+                                \${temporal.distribution.byMonth.map(item => \`
+                                <div class="stat-item">
+                                    <span class="stat-label">\${item.period}</span>
+                                    <span class="stat-value">\${item.count.toLocaleString()}</span>
+                                </div>
+                                \`).join('')}
+                            </div>
+                        </div>
+                        \` : ''}
+                        
+                        \${temporal.distribution && temporal.distribution.byDayOfWeek && temporal.distribution.byDayOfWeek.length > 0 ? \`
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">
+                                Day of Week Distribution
+                                \${createHelpIcon('temporalDayOfWeekDistribution')}
+                            </h5>
+                            <div class="stats-container" style="margin-bottom: 15px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
+                                \${temporal.distribution.byDayOfWeek.map(item => \`
+                                <div class="stat-item">
+                                    <span class="stat-label">\${item.period}</span>
+                                    <span class="stat-value">\${item.count.toLocaleString()}</span>
+                                </div>
+                                \`).join('')}
+                            </div>
+                        </div>
+                        \` : ''}
+                        
+                        \${temporal.gaps ? \`
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Gap Analysis</h5>
+                            <div class="stats-container" style="margin-bottom: 15px;">
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Has Gaps
+                                        \${createHelpIcon('temporalHasGaps')}
+                                    </span>
+                                    <span class="stat-value">\${temporal.gaps.hasGaps ? 'Yes' : 'No'}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Gap Count
+                                        \${createHelpIcon('temporalGapCount')}
+                                    </span>
+                                    <span class="stat-value">\${temporal.gaps.gapCount}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Coverage
+                                        \${createHelpIcon('temporalCoverage')}
+                                    </span>
+                                    <span class="stat-value">\${temporal.gaps.coverage.toFixed(1)}%</span>
+                                </div>
+                                \${temporal.gaps.largestGap ? \`
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Largest Gap
+                                        \${createHelpIcon('temporalLargestGap')}
+                                    </span>
+                                    <span class="stat-value">\${temporal.gaps.largestGap.days} days</span>
+                                </div>
+                                \` : ''}
+                            </div>
+                        </div>
+                        \` : ''}
+                        
+                        \${temporal.trends ? \`
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Trend Analysis</h5>
+                            <div class="stats-container" style="margin-bottom: 15px;">
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Trend Type
+                                        \${createHelpIcon('temporalTrendType')}
+                                    </span>
+                                    <span class="stat-value">\${temporal.trends.trendType.replace(/_/g, ' ')}</span>
+                                </div>
+                                <div class="stat-item" style="grid-column: span 2;">
+                                    <span class="stat-label">
+                                        Description
+                                        \${createHelpIcon('temporalTrendDescription')}
+                                    </span>
+                                    <span class="stat-value">\${temporal.trends.description}</span>
+                                </div>
+                            </div>
+                        </div>
+                        \` : ''}
+                        
+                        \${temporal.quality ? \`
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Data Quality</h5>
+                            <div class="stats-container">
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Valid Dates
+                                        \${createHelpIcon('temporalValidDates')}
+                                    </span>
+                                    <span class="stat-value">\${temporal.quality.validDateCount.toLocaleString()}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Invalid Dates
+                                        \${createHelpIcon('temporalInvalidDates')}
+                                    </span>
+                                    <span class="stat-value">\${temporal.quality.invalidDateCount.toLocaleString()}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Null Count</span>
+                                    <span class="stat-value">\${temporal.quality.nullCount.toLocaleString()}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Valid %
+                                        \${createHelpIcon('temporalValidPercentage')}
+                                    </span>
+                                    <span class="stat-value">\${temporal.quality.validPercentage.toFixed(1)}%</span>
+                                </div>
+                            </div>
+                        </div>
+                        \` : ''}
+                    \`;
+                    card.appendChild(temporalCard);
+                }
+                
                 // Add data quality metrics card
                 if (fieldResult.qualityMetrics && !fieldResult.qualityMetrics.error) {
                     const quality = fieldResult.qualityMetrics;
@@ -1976,10 +2246,16 @@ export function getHtmlForWebview(result, webview, context) {
                     
                     let qualityHtml = \`
                         <div class="quality-header">
-                            <h4 style="margin: 0; color: var(--vscode-foreground);">🎯 Data Quality Assessment</h4>
-                            <span class="quality-score \${assessment.color === 'green' ? 'good' : assessment.color === 'yellow' ? 'warning' : 'error'}">
-                                \${assessment.qualityScore}/100 - \${assessment.qualityLevel}
-                            </span>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <h4 style="margin: 0; color: var(--vscode-foreground);">🎯 Data Quality Assessment</h4>
+                                \${createHelpIcon('dataQualityAssessment')}
+                            </div>
+                            <div class="quality-score-container">
+                                <span class="quality-score \${assessment.color === 'green' ? 'good' : assessment.color === 'yellow' ? 'warning' : 'error'}">
+                                    \${assessment.qualityScore}/100 - \${assessment.qualityLevel}
+                                </span>
+                                <span class="beta-badge">Beta</span>
+                            </div>
                         </div>
                     \`;
                     
@@ -2206,6 +2482,24 @@ export function getHtmlForWebview(result, webview, context) {
                 // Table
                 const tableContainer = document.createElement('div');
                 tableContainer.className = 'profiling-table-container';
+                
+                // Add table header with title and optional truncation notice
+                const tableHeader = document.createElement('div');
+                tableHeader.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
+                const tableTitle = document.createElement('h4');
+                tableTitle.style.cssText = 'margin: 0; color: var(--vscode-foreground);';
+                tableTitle.textContent = 'Value Distribution';
+                tableHeader.appendChild(tableTitle);
+                
+                if (fieldResult.truncated) {
+                    const truncationNotice = document.createElement('span');
+                    truncationNotice.style.cssText = 'color: var(--vscode-descriptionForeground); font-size: 0.85em;';
+                    truncationNotice.innerHTML = \`Showing top \${fieldResult.truncatedAt} unique values \${createHelpIcon('truncatedDistribution')}\`;
+                    tableHeader.appendChild(truncationNotice);
+                }
+                
+                tableContainer.appendChild(tableHeader);
+                
                 const tableDiv = document.createElement('div');
                 tableDiv.id = \`profiling-table-\${index}\`;
                 tableContainer.appendChild(tableDiv);
@@ -2507,6 +2801,31 @@ export function getHtmlForWebview(result, webview, context) {
                     profilingCharts.push(chart);
                 }
             });
+            
+            // Adjust tooltip positioning to prevent overflow
+            setTimeout(() => {
+                document.querySelectorAll('.quality-metric-help').forEach(helpIcon => {
+                    const tooltip = helpIcon.querySelector('.quality-metric-tooltip');
+                    if (!tooltip) return;
+                    
+                    helpIcon.addEventListener('mouseenter', () => {
+                        const iconRect = helpIcon.getBoundingClientRect();
+                        const tooltipRect = tooltip.getBoundingClientRect();
+                        const windowWidth = window.innerWidth;
+                        
+                        // Check if tooltip would overflow on the right
+                        if (iconRect.right + tooltipRect.width + 40 > windowWidth) {
+                            // Position on the left instead
+                            tooltip.style.left = 'auto';
+                            tooltip.style.right = '20px';
+                        } else {
+                            // Position on the right (default)
+                            tooltip.style.left = '20px';
+                            tooltip.style.right = 'auto';
+                        }
+                    });
+                });
+            }, 100);
             
             showProfilingStatus(\`✅ Profiling complete for \${results.fields.length} field(s)\`, 'info');
             document.getElementById('export-qvs-btn').style.display = 'inline-block';

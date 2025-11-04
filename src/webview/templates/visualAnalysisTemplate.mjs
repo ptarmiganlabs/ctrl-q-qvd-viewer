@@ -59,23 +59,28 @@ export function getVisualAnalysisHtml(
         }
         
         .stats-container {
-            display: flex;
-            gap: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
             margin-bottom: 20px;
-            padding: 15px;
-            background-color: var(--vscode-textBlockQuote-background);
-            border-radius: 4px;
         }
         
         .stat-item {
             display: flex;
             flex-direction: column;
+            background-color: var(--vscode-input-background);
+            padding: 8px 12px;
+            border-radius: 3px;
+            border: 1px solid var(--vscode-input-border);
         }
         
         .stat-label {
             color: var(--vscode-descriptionForeground);
             font-size: 0.85em;
             margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
         }
         
         .stat-value {
@@ -239,6 +244,26 @@ export function getVisualAnalysisHtml(
             margin-bottom: 15px;
         }
         
+        .quality-score-container {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .beta-badge {
+            position: absolute;
+            top: -6px;
+            right: -8px;
+            font-size: 0.55em;
+            font-weight: 700;
+            padding: 2px 5px;
+            border-radius: 3px;
+            background-color: var(--vscode-statusBarItem-warningBackground);
+            color: var(--vscode-statusBarItem-warningForeground);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        }
+        
         .quality-score {
             font-size: 1.2em;
             font-weight: 700;
@@ -310,6 +335,7 @@ export function getVisualAnalysisHtml(
         
         .quality-metric-tooltip {
             visibility: hidden;
+            opacity: 0;
             position: absolute;
             z-index: 10000;
             background-color: var(--vscode-editorHoverWidget-background);
@@ -322,27 +348,28 @@ export function getVisualAnalysisHtml(
             max-width: 300px;
             width: max-content;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-            left: 20px;
+            left: 25px;
             top: 50%;
             transform: translateY(-50%);
             white-space: pre-line;
-            pointer-events: none;
+            transition: opacity 0.15s ease-in-out, visibility 0s linear 0.2s;
         }
         
-        /* Invisible bridge to keep tooltip open when moving mouse */
+        /* Invisible bridge to keep tooltip open when moving mouse - extends from icon to tooltip */
         .quality-metric-tooltip::before {
             content: '';
             position: absolute;
-            right: 100%;
-            top: 0;
-            bottom: 0;
-            width: 20px;
+            left: -25px;
+            top: -10px;
+            bottom: -10px;
+            width: 30px;
         }
         
         .quality-metric-help:hover .quality-metric-tooltip,
         .quality-metric-tooltip:hover {
             visibility: visible;
-            pointer-events: auto;
+            opacity: 1;
+            transition-delay: 0s;
         }
         
         .quality-metric-tooltip a {
@@ -397,7 +424,10 @@ export function getVisualAnalysisHtml(
     
     <div class="stats-container">
         <div class="stat-item">
-            <span class="stat-label">Total Rows</span>
+            <span class="stat-label">
+                Total Rows
+                ${createHelpIconHtml("totalRowsProfiling")}
+            </span>
             <span class="stat-value">${fieldResult.totalRows.toLocaleString()}</span>
         </div>
         <div class="stat-item">
@@ -409,16 +439,6 @@ export function getVisualAnalysisHtml(
             <span class="stat-value">${fieldResult.nullCount.toLocaleString()}</span>
         </div>
     </div>
-    
-    ${
-      fieldResult.truncated
-        ? `
-    <div style="padding: 10px; background-color: var(--vscode-inputValidation-warningBackground); border-left: 4px solid var(--vscode-inputValidation-warningBorder); margin-bottom: 20px; border-radius: 2px;">
-        ⚠️ Distribution truncated to top ${fieldResult.truncatedAt} values
-    </div>
-    `
-        : ""
-    }
     
     ${
       fieldResult.isNumeric &&
@@ -525,6 +545,248 @@ export function getVisualAnalysisHtml(
     }
     
     ${
+      fieldResult.isDate &&
+      fieldResult.temporalAnalysis &&
+      fieldResult.temporalAnalysis.isDate
+        ? `
+    <div style="background-color: var(--vscode-textBlockQuote-background); border: 1px solid var(--vscode-panel-border); border-radius: 4px; padding: 15px; margin-bottom: 20px;">
+        <h2 style="margin: 0 0 15px 0; font-size: 1.2em;">📅 Temporal Analysis</h2>
+        
+        <h3 style="margin: 0 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Date Range</h3>
+        <div class="stats-container" style="margin-bottom: 15px;">
+            <div class="stat-item">
+                <span class="stat-label">
+                    Earliest
+                    ${createHelpIconHtml("temporalEarliest")}
+                </span>
+                <span class="stat-value">${
+                  fieldResult.temporalAnalysis.range.earliest
+                    ? new Date(fieldResult.temporalAnalysis.range.earliest)
+                        .toISOString()
+                        .split("T")[0]
+                    : "N/A"
+                }</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">
+                    Latest
+                    ${createHelpIconHtml("temporalLatest")}
+                </span>
+                <span class="stat-value">${
+                  fieldResult.temporalAnalysis.range.latest
+                    ? new Date(fieldResult.temporalAnalysis.range.latest)
+                        .toISOString()
+                        .split("T")[0]
+                    : "N/A"
+                }</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">
+                    Time Span
+                    ${createHelpIconHtml("temporalTimeSpan")}
+                </span>
+                <span class="stat-value">${
+                  fieldResult.temporalAnalysis.range.spanDescription
+                }</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">
+                    Format
+                    ${createHelpIconHtml("temporalFormat")}
+                </span>
+                <span class="stat-value">${
+                  fieldResult.temporalAnalysis.range.format.formatDescription
+                }</span>
+            </div>
+        </div>
+        
+        ${
+          fieldResult.temporalAnalysis.distribution.byYear.length > 0
+            ? `
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">
+            Yearly Distribution
+            ${createHelpIconHtml("temporalYearlyDistribution")}
+        </h3>
+        <div class="stats-container" style="margin-bottom: 15px; max-height: 200px; overflow-y: auto; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
+            ${fieldResult.temporalAnalysis.distribution.byYear
+              .slice(0, 10)
+              .map(
+                (item) => `
+            <div class="stat-item">
+                <span class="stat-label">${item.period}</span>
+                <span class="stat-value">${item.count.toLocaleString()}</span>
+            </div>
+            `
+              )
+              .join("")}
+        </div>
+        `
+            : ""
+        }
+        
+        ${
+          fieldResult.temporalAnalysis.distribution.byMonth.length > 0
+            ? `
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">
+            Monthly Distribution
+            ${createHelpIconHtml("temporalMonthlyDistribution")}
+        </h3>
+        <div class="stats-container" style="margin-bottom: 15px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
+            ${fieldResult.temporalAnalysis.distribution.byMonth
+              .map(
+                (item) => `
+            <div class="stat-item">
+                <span class="stat-label">${item.period}</span>
+                <span class="stat-value">${item.count.toLocaleString()}</span>
+            </div>
+            `
+              )
+              .join("")}
+        </div>
+        `
+            : ""
+        }
+        
+        ${
+          fieldResult.temporalAnalysis.distribution.byDayOfWeek.length > 0
+            ? `
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">
+            Day of Week Distribution
+            ${createHelpIconHtml("temporalDayOfWeekDistribution")}
+        </h3>
+        <div class="stats-container" style="margin-bottom: 15px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
+            ${fieldResult.temporalAnalysis.distribution.byDayOfWeek
+              .map(
+                (item) => `
+            <div class="stat-item">
+                <span class="stat-label">${item.period}</span>
+                <span class="stat-value">${item.count.toLocaleString()}</span>
+            </div>
+            `
+              )
+              .join("")}
+        </div>
+        `
+            : ""
+        }
+        
+        ${
+          fieldResult.temporalAnalysis.gaps
+            ? `
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Gap Analysis</h3>
+        <div class="stats-container" style="margin-bottom: 15px;">
+            <div class="stat-item">
+                <span class="stat-label">
+                    Has Gaps
+                    ${createHelpIconHtml("temporalHasGaps")}
+                </span>
+                <span class="stat-value">${
+                  fieldResult.temporalAnalysis.gaps.hasGaps ? "Yes" : "No"
+                }</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">
+                    Gap Count
+                    ${createHelpIconHtml("temporalGapCount")}
+                </span>
+                <span class="stat-value">${
+                  fieldResult.temporalAnalysis.gaps.gapCount
+                }</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">
+                    Coverage
+                    ${createHelpIconHtml("temporalCoverage")}
+                </span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.gaps.coverage.toFixed(
+                  1
+                )}%</span>
+            </div>
+            ${
+              fieldResult.temporalAnalysis.gaps.largestGap
+                ? `
+            <div class="stat-item">
+                <span class="stat-label">
+                    Largest Gap
+                    ${createHelpIconHtml("temporalLargestGap")}
+                </span>
+                <span class="stat-value">${
+                  fieldResult.temporalAnalysis.gaps.largestGap.days
+                } days</span>
+            </div>
+            `
+                : ""
+            }
+        </div>
+        `
+            : ""
+        }
+        
+        ${
+          fieldResult.temporalAnalysis.trends
+            ? `
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Trend Analysis</h3>
+        <div class="stats-container" style="margin-bottom: 15px;">
+            <div class="stat-item">
+                <span class="stat-label">
+                    Trend Type
+                    ${createHelpIconHtml("temporalTrendType")}
+                </span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.trends.trendType.replace(
+                  /_/g,
+                  " "
+                )}</span>
+            </div>
+            <div class="stat-item" style="grid-column: span 2;">
+                <span class="stat-label">
+                    Description
+                    ${createHelpIconHtml("temporalTrendDescription")}
+                </span>
+                <span class="stat-value">${
+                  fieldResult.temporalAnalysis.trends.description
+                }</span>
+            </div>
+        </div>
+        `
+            : ""
+        }
+        
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Data Quality</h3>
+        <div class="stats-container">
+            <div class="stat-item">
+                <span class="stat-label">
+                    Valid Dates
+                    ${createHelpIconHtml("temporalValidDates")}
+                </span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.quality.validDateCount.toLocaleString()}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">
+                    Invalid Dates
+                    ${createHelpIconHtml("temporalInvalidDates")}
+                </span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.quality.invalidDateCount.toLocaleString()}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Null Count</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.quality.nullCount.toLocaleString()}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">
+                    Valid %
+                    ${createHelpIconHtml("temporalValidPercentage")}
+                </span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.quality.validPercentage.toFixed(
+                  1
+                )}%</span>
+            </div>
+        </div>
+    </div>
+    `
+        : ""
+    }
+    
+    ${
       fieldResult.qualityMetrics && !fieldResult.qualityMetrics.error
         ? `
     <div class="quality-card quality-${
@@ -535,18 +797,25 @@ export function getVisualAnalysisHtml(
         : "error"
     }">
         <div class="quality-header">
-            <h2 style="margin: 0; font-size: 1.2em;">🎯 Data Quality Assessment</h2>
-            <span class="quality-score ${
-              fieldResult.qualityMetrics.assessment.color === "green"
-                ? "good"
-                : fieldResult.qualityMetrics.assessment.color === "yellow"
-                ? "warning"
-                : "error"
-            }">
-                ${fieldResult.qualityMetrics.assessment.qualityScore}/100 - ${
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <h2 style="margin: 0; font-size: 1.2em;">🎯 Data Quality Assessment</h2>
+            </div>
+            <div class="quality-score-container">
+                <span class="quality-score ${
+                  fieldResult.qualityMetrics.assessment.color === "green"
+                    ? "good"
+                    : fieldResult.qualityMetrics.assessment.color === "yellow"
+                    ? "warning"
+                    : "error"
+                }">
+                    ${
+                      fieldResult.qualityMetrics.assessment.qualityScore
+                    }/100 - ${
             fieldResult.qualityMetrics.assessment.qualityLevel
           }
-            </span>
+                </span>
+                <span class="beta-badge">Beta</span>
+            </div>
         </div>
         
         ${
@@ -774,7 +1043,18 @@ export function getVisualAnalysisHtml(
     </div>
     
     <div class="table-container">
-        <div class="table-title">Value Distribution</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div class="table-title">Value Distribution</div>
+            ${
+              fieldResult.truncated
+                ? `<span style="color: var(--vscode-descriptionForeground); font-size: 0.85em;">Showing top ${
+                    fieldResult.truncatedAt
+                  } unique values ${createHelpIconHtml(
+                    "truncatedDistribution"
+                  )}</span>`
+                : ""
+            }
+        </div>
         <div id="profiling-table"></div>
     </div>
     
