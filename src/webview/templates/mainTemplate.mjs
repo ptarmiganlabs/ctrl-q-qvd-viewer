@@ -916,6 +916,13 @@ export function getHtmlForWebview(result, webview, context) {
             pointer-events: none;
         }
         
+        /* When tooltip would overflow on the right, position it on the left */
+        .quality-metric-help:last-child .quality-metric-tooltip,
+        [style*="justify-content: space-between"] .quality-metric-help:last-of-type .quality-metric-tooltip {
+            left: auto;
+            right: 20px;
+        }
+        
         /* Invisible bridge to keep tooltip open when moving mouse */
         .quality-metric-tooltip::before {
             content: '';
@@ -924,6 +931,13 @@ export function getHtmlForWebview(result, webview, context) {
             top: 0;
             bottom: 0;
             width: 20px;
+        }
+        
+        /* Bridge on the other side when tooltip is on the left */
+        .quality-metric-help:last-child .quality-metric-tooltip::before,
+        [style*="justify-content: space-between"] .quality-metric-help:last-of-type .quality-metric-tooltip::before {
+            right: auto;
+            left: 100%;
         }
         
         .quality-metric-help:hover .quality-metric-tooltip,
@@ -1177,6 +1191,20 @@ export function getHtmlForWebview(result, webview, context) {
                                 : ""
                             }
                         </div>
+                        ${
+                          data.length < totalRows
+                            ? `
+                        <div class="info-banner" style="margin-top: 12px;">
+                            ℹ️ <strong>Data Loaded:</strong> Profiling will analyze ${data.length.toLocaleString()} of ${totalRows.toLocaleString()} total rows (limited for performance).
+                            ${
+                              totalRows <= 100000
+                                ? `<button class="load-button" onclick="vscode.postMessage({command: 'loadMore', loadAll: true})">📥 Load All Rows</button> for more accurate profiling.`
+                                : `This limit is configurable in <button class="load-button" onclick="vscode.postMessage({command: 'openSettings'})">⚙️ Settings</button>.`
+                            }
+                        </div>
+                        `
+                            : ""
+                        }
                         <div class="profiling-buttons">
                             <button class="header-button" id="run-profiling-btn">▶️ Run Profiling</button>
                             <button class="header-button" id="clear-profiling-btn">✕ Clear Results</button>
@@ -1844,9 +1872,6 @@ export function getHtmlForWebview(result, webview, context) {
                 const header = document.createElement('h3');
                 header.style.margin = '0';
                 header.innerHTML = \`📊 \${fieldResult.fieldName}\`;
-                if (fieldResult.truncated) {
-                    header.innerHTML += \` <span style="color: var(--vscode-descriptionForeground); font-size: 0.85em;">(showing top \${fieldResult.truncatedAt} values)</span>\`;
-                }
                 
                 const openButton = document.createElement('div');
                 openButton.className = 'open-in-window-dropdown';
@@ -1898,7 +1923,10 @@ export function getHtmlForWebview(result, webview, context) {
                 statsDiv.className = 'field-stats';
                 statsDiv.innerHTML = \`
                     <div class="field-stat-item">
-                        <span class="field-stat-label">Total Rows</span>
+                        <span class="field-stat-label">
+                            Total Rows
+                            \${createHelpIcon('totalRowsProfiling')}
+                        </span>
                         <span class="field-stat-value">\${fieldResult.totalRows.toLocaleString()}</span>
                     </div>
                     <div class="field-stat-item">
@@ -2045,7 +2073,7 @@ export function getHtmlForWebview(result, webview, context) {
                                 Yearly Distribution
                                 \${createHelpIcon('temporalYearlyDistribution')}
                             </h5>
-                            <div class="stats-container" style="margin-bottom: 15px; max-height: 200px; overflow-y: auto;">
+                            <div class="stats-container" style="margin-bottom: 15px; max-height: 200px; overflow-y: auto; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
                                 \${temporal.distribution.byYear.slice(0, 10).map(item => \`
                                 <div class="stat-item">
                                     <span class="stat-label">\${item.period}</span>
@@ -2426,6 +2454,24 @@ export function getHtmlForWebview(result, webview, context) {
                 // Table
                 const tableContainer = document.createElement('div');
                 tableContainer.className = 'profiling-table-container';
+                
+                // Add table header with title and optional truncation notice
+                const tableHeader = document.createElement('div');
+                tableHeader.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
+                const tableTitle = document.createElement('h4');
+                tableTitle.style.cssText = 'margin: 0; color: var(--vscode-foreground);';
+                tableTitle.textContent = 'Value Distribution';
+                tableHeader.appendChild(tableTitle);
+                
+                if (fieldResult.truncated) {
+                    const truncationNotice = document.createElement('span');
+                    truncationNotice.style.cssText = 'color: var(--vscode-descriptionForeground); font-size: 0.85em;';
+                    truncationNotice.innerHTML = \`Showing top \${fieldResult.truncatedAt} unique values \${createHelpIcon('truncatedDistribution')}\`;
+                    tableHeader.appendChild(truncationNotice);
+                }
+                
+                tableContainer.appendChild(tableHeader);
+                
                 const tableDiv = document.createElement('div');
                 tableDiv.id = \`profiling-table-\${index}\`;
                 tableContainer.appendChild(tableDiv);
@@ -2727,6 +2773,31 @@ export function getHtmlForWebview(result, webview, context) {
                     profilingCharts.push(chart);
                 }
             });
+            
+            // Adjust tooltip positioning to prevent overflow
+            setTimeout(() => {
+                document.querySelectorAll('.quality-metric-help').forEach(helpIcon => {
+                    const tooltip = helpIcon.querySelector('.quality-metric-tooltip');
+                    if (!tooltip) return;
+                    
+                    helpIcon.addEventListener('mouseenter', () => {
+                        const iconRect = helpIcon.getBoundingClientRect();
+                        const tooltipRect = tooltip.getBoundingClientRect();
+                        const windowWidth = window.innerWidth;
+                        
+                        // Check if tooltip would overflow on the right
+                        if (iconRect.right + tooltipRect.width + 40 > windowWidth) {
+                            // Position on the left instead
+                            tooltip.style.left = 'auto';
+                            tooltip.style.right = '20px';
+                        } else {
+                            // Position on the right (default)
+                            tooltip.style.left = '20px';
+                            tooltip.style.right = 'auto';
+                        }
+                    });
+                });
+            }, 100);
             
             showProfilingStatus(\`✅ Profiling complete for \${results.fields.length} field(s)\`, 'info');
             document.getElementById('export-qvs-btn').style.display = 'inline-block';

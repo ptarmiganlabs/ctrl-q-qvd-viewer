@@ -309,6 +309,125 @@ export function setupMessageHandler(
             markdownContent += `- **Unique Values:** ${fieldResult.uniqueValues.toLocaleString()}\n`;
             markdownContent += `- **NULL/Empty:** ${fieldResult.nullCount.toLocaleString()}\n`;
 
+            // Add temporal analysis for date fields
+            if (
+              fieldResult.isDate &&
+              fieldResult.temporalAnalysis &&
+              fieldResult.temporalAnalysis.isDate
+            ) {
+              const temporal = fieldResult.temporalAnalysis;
+
+              markdownContent += `\n## Temporal Analysis\n\n`;
+
+              markdownContent += `### Date Range\n\n`;
+              markdownContent += `| Metric | Value |\n`;
+              markdownContent += `|--------|-------|\n`;
+              markdownContent += `| Earliest | ${
+                temporal.range.earliest
+                  ? new Date(temporal.range.earliest)
+                      .toISOString()
+                      .split("T")[0]
+                  : "N/A"
+              } |\n`;
+              markdownContent += `| Latest | ${
+                temporal.range.latest
+                  ? new Date(temporal.range.latest).toISOString().split("T")[0]
+                  : "N/A"
+              } |\n`;
+              markdownContent += `| Time Span | ${temporal.range.spanDescription} |\n`;
+              markdownContent += `| Format | ${temporal.range.format.formatDescription} |\n`;
+
+              // Yearly distribution
+              if (
+                temporal.distribution &&
+                temporal.distribution.byYear &&
+                temporal.distribution.byYear.length > 0
+              ) {
+                markdownContent += `\n### Yearly Distribution\n\n`;
+                markdownContent += `| Year | Count |\n`;
+                markdownContent += `|------|-------|\n`;
+                temporal.distribution.byYear.slice(0, 10).forEach((item) => {
+                  markdownContent += `| ${
+                    item.period
+                  } | ${item.count.toLocaleString()} |\n`;
+                });
+              }
+
+              // Monthly distribution
+              if (
+                temporal.distribution &&
+                temporal.distribution.byMonth &&
+                temporal.distribution.byMonth.length > 0
+              ) {
+                markdownContent += `\n### Monthly Distribution\n\n`;
+                markdownContent += `| Month | Count |\n`;
+                markdownContent += `|-------|-------|\n`;
+                temporal.distribution.byMonth.forEach((item) => {
+                  markdownContent += `| ${
+                    item.period
+                  } | ${item.count.toLocaleString()} |\n`;
+                });
+              }
+
+              // Day of week distribution
+              if (
+                temporal.distribution &&
+                temporal.distribution.byDayOfWeek &&
+                temporal.distribution.byDayOfWeek.length > 0
+              ) {
+                markdownContent += `\n### Day of Week Distribution\n\n`;
+                markdownContent += `| Day | Count |\n`;
+                markdownContent += `|-----|-------|\n`;
+                temporal.distribution.byDayOfWeek.forEach((item) => {
+                  markdownContent += `| ${
+                    item.period
+                  } | ${item.count.toLocaleString()} |\n`;
+                });
+              }
+
+              // Gap analysis
+              if (temporal.gaps) {
+                markdownContent += `\n### Gap Analysis\n\n`;
+                markdownContent += `| Metric | Value |\n`;
+                markdownContent += `|--------|-------|\n`;
+                markdownContent += `| Has Gaps | ${
+                  temporal.gaps.hasGaps ? "Yes" : "No"
+                } |\n`;
+                markdownContent += `| Gap Count | ${temporal.gaps.gapCount} |\n`;
+                markdownContent += `| Coverage | ${temporal.gaps.coverage.toFixed(
+                  1
+                )}% |\n`;
+                if (temporal.gaps.largestGap) {
+                  markdownContent += `| Largest Gap | ${temporal.gaps.largestGap.days} days |\n`;
+                }
+              }
+
+              // Trend analysis
+              if (temporal.trends) {
+                markdownContent += `\n### Trend Analysis\n\n`;
+                markdownContent += `| Metric | Value |\n`;
+                markdownContent += `|--------|-------|\n`;
+                markdownContent += `| Trend Type | ${temporal.trends.trendType.replace(
+                  /_/g,
+                  " "
+                )} |\n`;
+                markdownContent += `| Description | ${temporal.trends.description} |\n`;
+              }
+
+              // Data quality
+              if (temporal.quality) {
+                markdownContent += `\n### Data Quality\n\n`;
+                markdownContent += `| Metric | Value |\n`;
+                markdownContent += `|--------|-------|\n`;
+                markdownContent += `| Valid Dates | ${temporal.quality.validDateCount.toLocaleString()} |\n`;
+                markdownContent += `| Invalid Dates | ${temporal.quality.invalidDateCount.toLocaleString()} |\n`;
+                markdownContent += `| Null Count | ${temporal.quality.nullCount.toLocaleString()} |\n`;
+                markdownContent += `| Valid % | ${temporal.quality.validPercentage.toFixed(
+                  1
+                )}% |\n`;
+              }
+            }
+
             // Add statistical analysis for numeric fields
             if (
               fieldResult.isNumeric &&
@@ -376,7 +495,7 @@ export function setupMessageHandler(
             }
 
             if (fieldResult.truncated) {
-              markdownContent += `\n> **Note:** Distribution truncated to top ${fieldResult.truncatedAt} values\n`;
+              markdownContent += `\n> **Note:** Distribution truncated to top ${fieldResult.truncatedAt} unique values\n`;
             }
 
             markdownContent += `\n## Value Distribution\n\n`;

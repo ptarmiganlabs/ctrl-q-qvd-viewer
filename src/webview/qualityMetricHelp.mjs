@@ -52,7 +52,15 @@ export const metricHelpContent = {
     text: "Shannon entropy measures information diversity. Higher values indicate more diverse value distributions.",
     link: "https://en.wikipedia.org/wiki/Entropy_(information_theory)",
   },
-  
+  totalRowsProfiling: {
+    text: "Total number of rows used for this profiling analysis. This reflects the data loaded into memory from the QVD file.\n\nFor performance, only the first 100,000 rows are loaded by default. This limit is configurable in VS Code settings (search for 'QVD Viewer: Max Preview Rows').\n\nTo profile all rows in a QVD file for maximum accuracy, you can temporarily increase this setting or use the 'Load All Data' option before running profiling.",
+    link: "https://en.wikipedia.org/wiki/Data_profiling",
+  },
+  truncatedDistribution: {
+    text: "All loaded rows are analyzed, but the distribution display is limited to the most frequent unique values for performance. For example, if you have 98,543 rows with 5,234 unique values, all 98,543 rows are analyzed, but only the top 1,000 most frequent unique values are displayed in the distribution table.",
+    link: "https://en.wikipedia.org/wiki/Data_profiling",
+  },
+
   // Temporal Analysis Metrics
   temporalEarliest: {
     text: "The oldest date found in the field. Helps identify the beginning of your time series data.",

@@ -402,7 +402,10 @@ export function getVisualAnalysisHtml(
     
     <div class="stats-container">
         <div class="stat-item">
-            <span class="stat-label">Total Rows</span>
+            <span class="stat-label">
+                Total Rows
+                ${createHelpIconHtml("totalRowsProfiling")}
+            </span>
             <span class="stat-value">${fieldResult.totalRows.toLocaleString()}</span>
         </div>
         <div class="stat-item">
@@ -414,16 +417,6 @@ export function getVisualAnalysisHtml(
             <span class="stat-value">${fieldResult.nullCount.toLocaleString()}</span>
         </div>
     </div>
-    
-    ${
-      fieldResult.truncated
-        ? `
-    <div style="padding: 10px; background-color: var(--vscode-inputValidation-warningBackground); border-left: 4px solid var(--vscode-inputValidation-warningBorder); margin-bottom: 20px; border-radius: 2px;">
-        ⚠️ Distribution truncated to top ${fieldResult.truncatedAt} values
-    </div>
-    `
-        : ""
-    }
     
     ${
       fieldResult.isNumeric &&
@@ -592,7 +585,7 @@ export function getVisualAnalysisHtml(
             Yearly Distribution
             ${createHelpIconHtml("temporalYearlyDistribution")}
         </h3>
-        <div class="stats-container" style="margin-bottom: 15px; max-height: 200px; overflow-y: auto;">
+        <div class="stats-container" style="margin-bottom: 15px; max-height: 200px; overflow-y: auto; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
             ${fieldResult.temporalAnalysis.distribution.byYear
               .slice(0, 10)
               .map(
@@ -1021,7 +1014,18 @@ export function getVisualAnalysisHtml(
     </div>
     
     <div class="table-container">
-        <div class="table-title">Value Distribution</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div class="table-title">Value Distribution</div>
+            ${
+              fieldResult.truncated
+                ? `<span style="color: var(--vscode-descriptionForeground); font-size: 0.85em;">Showing top ${
+                    fieldResult.truncatedAt
+                  } unique values ${createHelpIconHtml(
+                    "truncatedDistribution"
+                  )}</span>`
+                : ""
+            }
+        </div>
         <div id="profiling-table"></div>
     </div>
     
