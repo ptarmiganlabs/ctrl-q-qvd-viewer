@@ -9,6 +9,7 @@ Data profiling analyzes value distributions in QVD fields, providing:
 - **Visual analysis** with interactive bar charts showing top values
 - **Detailed tables** with complete frequency distributions
 - **Statistical summaries** including total rows, unique values, and NULL counts
+- **Data quality assessment** with color-coded indicators and actionable recommendations
 - **Export capabilities** to generate Qlik .qvs scripts for further analysis
 
 ## Accessing the Profiling Feature
@@ -90,6 +91,82 @@ Using the 1.5 × IQR method:
 - **Outlier Percentage**: Proportion of outliers in the dataset
 - **Lower/Upper Bounds**: Boundaries for outlier detection
 - **Sample Outliers**: List of the first 10 outlier values (if any)
+
+### Data Quality Assessment
+
+Every profiled field includes a comprehensive data quality assessment with actionable insights:
+
+#### Quality Score
+- **Overall Score**: 0-100 quality score with color-coded indicator
+  - 🟢 **Green (80-100)**: Good quality data
+  - 🟡 **Yellow (50-79)**: Fair quality with warnings
+  - 🔴 **Red (0-49)**: Poor quality requiring attention
+- **Quality Level**: Good, Fair, or Poor classification
+- **Issues & Warnings**: Specific problems and recommendations
+
+#### Completeness Metrics
+- **Non-Null Percentage**: Percentage of values that are not null or undefined
+- **Fill Rate**: Percentage of values that are populated (excluding empty strings)
+- **Missing Values**: Count and percentage of null/undefined values
+- **Empty Strings**: Count and percentage of empty string values (if present)
+
+**Example:**
+- Non-Null %: 95.2% (19,040 out of 20,000 values)
+- Fill Rate: 92.8% (some non-null values are empty strings)
+- Missing Values: 960 (4.8%)
+
+#### Cardinality Analysis
+- **Cardinality Ratio**: Unique values / Total rows
+- **Classification** with automatic categorization:
+  - **High Cardinality (>80%)**: Potential identifier or key field
+    - *Recommendation*: Consider using as primary key or unique identifier
+  - **Medium Cardinality (5-80%)**: Good for filtering and grouping
+    - *Recommendation*: Balanced selectivity for analysis operations
+  - **Low Cardinality (<5%)**: Dimension candidate
+    - *Recommendation*: Suitable for filtering, grouping, and categorical analysis
+
+**Example:**
+- Cardinality Ratio: 87.3% (17,460 unique values out of 20,000 rows)
+- Classification: High Cardinality
+- Recommendation: Potential identifier/key field. Consider using as a primary key.
+
+#### Uniqueness Score
+- **Unique Percentage**: Percentage of values that appear only once
+- **Duplicate Count**: Total number of duplicate value occurrences
+- **Duplicated Distinct Values**: Number of unique values that have duplicates
+- **Top Duplicated Values**: List of most frequently duplicated values with counts
+
+**Example:**
+- Unique Values: 65.2% (13,040 unique out of 20,000)
+- Duplicate Count: 6,960 (34.8% are duplicates)
+- Duplicated Distinct Values: 420
+- Top Duplicates: "Unknown" appears 1,200 times (6.0%)
+
+#### Distribution Quality
+- **Evenness Score**: 0-100% measure using Pielou's evenness index
+  - Higher scores indicate more even distribution across values
+  - Lower scores indicate skewed/concentrated distributions
+- **Shannon Entropy**: Information entropy measure (higher = more diverse)
+- **Distribution Type**: Classification of distribution pattern
+  - Very Even (≥80%)
+  - Moderately Even (60-79%)
+  - Slightly Skewed (40-59%)
+  - Moderately Skewed (20-39%)
+  - Highly Skewed (<20%)
+
+**Example:**
+- Evenness Score: 42.3%
+- Distribution Type: Slightly Skewed
+- Shannon Entropy: 4.126 (indicates moderate diversity)
+
+#### Actionable Recommendations
+
+The quality assessment provides context-specific recommendations based on the field's characteristics:
+
+- **High Cardinality Fields**: Suggests using as identifiers or keys
+- **Low Cardinality Fields**: Recommends as dimensions for filtering
+- **Poor Completeness**: Highlights data quality issues requiring attention
+- **Highly Skewed Distributions**: Identifies concentrated value patterns
 
 ### Visualizations
 
@@ -257,6 +334,12 @@ Profile dimension fields to understand their distribution:
 
 **Example:** Profile a `customer_type` field to discover 70% are "Retail" customers and 30% are "Wholesale".
 
+**Quality Insights:**
+- Cardinality: 2 unique values (0.002%) - Low Cardinality
+- Recommendation: Perfect dimension candidate for filtering
+- Distribution: Moderately Skewed (70/30 split)
+- Completeness: 100% (no missing values)
+
 ### 2. Data Quality Checks
 
 Identify data issues through profiling:
@@ -268,10 +351,19 @@ Identify data issues through profiling:
 
 **Example:** Discover that a `country` field has 15 variations of "United States" due to inconsistent data entry.
 
+**Quality Insights:**
+- Quality Score: 65/100 (Fair)
+- Warning: 12% of values are null
+- Cardinality: Medium (127 unique values for 195 countries)
+- Top Duplicates: Multiple variants of same country names
+- Recommendation: Standardize country names to improve quality
+
 **Numeric Field Example:** Profile a `temperature` field and find:
 - Mean: 22.5°C, Median: 21.8°C (slightly right-skewed)
 - 15 outliers (0.3%) detected above 45°C
 - Standard deviation: 8.2°C indicates moderate variability
+- Quality Score: 88/100 (Good)
+- Completeness: 97.5% (2.5% missing)
 
 ### 3. Performance Optimization
 
@@ -283,6 +375,12 @@ Understand field characteristics for optimization:
 - Distribution patterns
 
 **Example:** Identify that an `order_id` field has 1 million unique values (100% cardinality) while `order_status` has only 5 unique values.
+
+**Quality Insights:**
+- `order_id`: High Cardinality (99.8%) - Excellent primary key candidate
+- `order_status`: Low Cardinality (0.025%) - Perfect dimension for filtering
+- Distribution Quality: `order_status` is highly skewed (80% "completed")
+- Both fields have 100% completeness
 
 ### 4. Quantitative Analysis
 
@@ -342,6 +440,69 @@ The profiling feature provides similar insights to Qlik Sense's field profiling,
 - All data must fit in memory
 - No associative model or filtering capabilities
 
+## Interpreting Data Quality Metrics
+
+### Understanding Quality Scores
+
+The quality score (0-100) is calculated based on multiple factors:
+
+**High Quality (80-100)** 🟢
+- ≥90% completeness (non-null values)
+- ≥80% fill rate (populated values)
+- Reasonably even distribution
+- No critical data issues
+
+**Fair Quality (50-79)** 🟡
+- 70-90% completeness
+- Some missing or empty values
+- May have distribution concerns
+- Requires monitoring
+
+**Poor Quality (0-49)** 🔴
+- <70% completeness
+- Significant missing data
+- Critical data issues
+- Immediate attention needed
+
+### Cardinality Classification Guide
+
+**High Cardinality (>80% unique)**
+- Each row has a mostly unique value
+- Examples: IDs, timestamps, transaction numbers
+- **Use for**: Primary keys, unique identifiers
+- **Avoid for**: Grouping operations (too many groups)
+
+**Medium Cardinality (5-80% unique)**
+- Balanced between uniqueness and repetition
+- Examples: customer names, product SKUs, zip codes
+- **Use for**: Filtering, joins, moderate grouping
+- **Ideal for**: Most analytical operations
+
+**Low Cardinality (<5% unique)**
+- Few distinct values with high repetition
+- Examples: status codes, categories, yes/no flags
+- **Use for**: Dimensions, filters, grouping
+- **Ideal for**: Aggregation and segmentation
+
+### Distribution Quality Interpretation
+
+**Very Even Distribution (≥80%)**
+- Values are distributed uniformly
+- Each value appears with similar frequency
+- Indicates well-balanced data
+
+**Moderately Even (60-79%)**
+- Mostly balanced with some variation
+- Acceptable for most use cases
+
+**Skewed (<60%)**
+- Some values dominate the distribution
+- Common in real-world data
+- Consider implications for analysis:
+  - May need stratified sampling
+  - Dominant values will drive aggregates
+  - Consider filtering out extremes for certain analyses
+
 ## Tips and Tricks
 
 1. **Compare Field Distributions**: Select 2-3 related fields to compare their distributions visually
@@ -350,11 +511,23 @@ The profiling feature provides similar insights to Qlik Sense's field profiling,
 
 3. **Find Data Quality Issues**: Look for unexpected values, NULL counts, or unusual distributions
 
-4. **Export for Documentation**: Use the Markdown option to create data dictionaries
+4. **Use Quality Scores for Prioritization**: Focus on fields with lower quality scores for data cleansing efforts
 
-5. **Build Analysis Apps**: Export to QVS and load into Qlik Sense for deeper analysis
+5. **Leverage Cardinality Recommendations**: Follow the cardinality-based recommendations for optimal field usage
 
-6. **Check Before Loading**: Profile QVDs before deciding whether to load them into Qlik apps
+6. **Monitor Distribution Skewness**: Highly skewed distributions may require special handling in analysis
+
+7. **Track Completeness Over Time**: Compare completeness metrics across different data loads to identify data quality trends
+
+8. **Export for Documentation**: Use the Markdown option to create data dictionaries with quality metrics
+
+9. **Build Analysis Apps**: Export to QVS and load into Qlik Sense for deeper analysis
+
+10. **Check Before Loading**: Profile QVDs before deciding whether to load them into Qlik apps
+
+11. **Identify Duplicate Patterns**: Review top duplicated values to understand data repetition patterns
+
+12. **Use Evenness Score**: Low evenness scores indicate opportunities for data normalization or segmentation
 
 ## Troubleshooting
 

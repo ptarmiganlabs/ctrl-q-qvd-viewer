@@ -7,6 +7,7 @@ import {
 } from "../assetLoader.mjs";
 import { escapeHtml } from "./errorTemplate.mjs";
 import DataExporter from "../../exporters/index.mjs";
+import { metricHelpContent } from "../qualityMetricHelp.mjs";
 
 /**
  * Generate HTML for webview with tabbed interface and Tabulator
@@ -759,6 +760,209 @@ export function getHtmlForWebview(result, webview, context) {
         
         .statistics-section:last-child {
             margin-bottom: 0;
+        }
+        
+        .quality-card {
+            background-color: var(--vscode-textBlockQuote-background);
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .quality-card.quality-good {
+            border-left: 4px solid #10b981;
+        }
+        
+        .quality-card.quality-warning {
+            border-left: 4px solid #f59e0b;
+        }
+        
+        .quality-card.quality-error {
+            border-left: 4px solid #ef4444;
+        }
+        
+        .quality-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .quality-score {
+            font-size: 1.2em;
+            font-weight: 700;
+            padding: 4px 12px;
+            border-radius: 4px;
+            background-color: var(--vscode-badge-background);
+            color: var(--vscode-badge-foreground);
+        }
+        
+        .quality-score.good {
+            background-color: #10b981;
+            color: #fff;
+        }
+        
+        .quality-score.warning {
+            background-color: #f59e0b;
+            color: #000;
+        }
+        
+        .quality-score.error {
+            background-color: #ef4444;
+            color: #fff;
+        }
+        
+        .quality-section {
+            margin-bottom: 12px;
+        }
+        
+        .quality-section:last-child {
+            margin-bottom: 0;
+        }
+        
+        .quality-metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-top: 8px;
+        }
+        
+        .quality-metric-item {
+            background-color: var(--vscode-input-background);
+            padding: 8px 12px;
+            border-radius: 3px;
+            border: 1px solid var(--vscode-input-border);
+        }
+        
+        .quality-metric-label {
+            color: var(--vscode-descriptionForeground);
+            font-size: 0.85em;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .quality-metric-help {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background-color: var(--vscode-badge-background);
+            color: var(--vscode-badge-foreground);
+            font-size: 10px;
+            font-weight: bold;
+            cursor: help;
+            position: relative;
+            flex-shrink: 0;
+        }
+        
+        .quality-metric-help:hover {
+            background-color: var(--vscode-button-hoverBackground);
+        }
+        
+        .quality-metric-tooltip {
+            visibility: hidden;
+            position: absolute;
+            z-index: 10000;
+            background-color: var(--vscode-editorHoverWidget-background);
+            border: 1px solid var(--vscode-editorHoverWidget-border);
+            color: var(--vscode-editorHoverWidget-foreground);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            line-height: 1.4;
+            max-width: 300px;
+            width: max-content;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            white-space: pre-line;
+            pointer-events: none;
+        }
+        
+        /* Invisible bridge to keep tooltip open when moving mouse */
+        .quality-metric-tooltip::before {
+            content: '';
+            position: absolute;
+            right: 100%;
+            top: 0;
+            bottom: 0;
+            width: 20px;
+        }
+        
+        .quality-metric-help:hover .quality-metric-tooltip,
+        .quality-metric-tooltip:hover {
+            visibility: visible;
+            pointer-events: auto;
+        }
+        
+        .quality-metric-tooltip a {
+            color: var(--vscode-textLink-foreground);
+            text-decoration: none;
+        }
+        
+        .quality-metric-tooltip a:hover {
+            text-decoration: underline;
+        }
+        
+        .quality-metric-value {
+            font-weight: 600;
+            color: var(--vscode-foreground);
+            font-size: 1em;
+        }
+        
+        .quality-recommendation {
+            margin-top: 12px;
+            padding: 10px;
+            background-color: var(--vscode-input-background);
+            border-left: 3px solid var(--vscode-focusBorder);
+            border-radius: 2px;
+            font-size: 0.9em;
+            color: var(--vscode-foreground);
+        }
+        
+        .quality-issues {
+            margin-top: 12px;
+        }
+        
+        .quality-issue-item {
+            padding: 6px 10px;
+            margin-bottom: 6px;
+            border-radius: 3px;
+            font-size: 0.9em;
+        }
+        
+        .quality-issue-item.error {
+            background-color: rgba(239, 68, 68, 0.1);
+            border-left: 3px solid #ef4444;
+        }
+        
+        .quality-issue-item.warning {
+            background-color: rgba(245, 158, 11, 0.1);
+            border-left: 3px solid #f59e0b;
+        }
+        
+        .quality-duplicates-list {
+            margin-top: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .quality-duplicate-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 8px;
+            font-size: 0.85em;
+            border-bottom: 1px solid var(--vscode-panel-border);
+        }
+        
+        .quality-duplicate-item:last-child {
+            border-bottom: none;
         }
         
         .profiling-chart-container {
@@ -1559,6 +1763,31 @@ export function getHtmlForWebview(result, webview, context) {
                     return;
                 }
                 
+                
+                // Helper function to create help icon with tooltip
+                function createHelpIcon(metricKey) {
+                    const help = ${JSON.stringify(
+                      metricHelpContent
+                    )}[metricKey];
+                    if (!help) return '';
+                    
+                    // Escape HTML special characters in the text
+                    const escapedText = help.text
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
+                    
+                    return \`<span class="quality-metric-help">?
+                        <span class="quality-metric-tooltip">
+                            \${escapedText}
+                            <br/><br/>
+                            <a href="\${help.link}" target="_blank" rel="noopener noreferrer">Learn more →</a>
+                        </span>
+                    </span>\`;
+                }
+                
                 currentProfilingResults = results;
                 const resultsDiv = document.getElementById('profiling-results');
                 resultsDiv.innerHTML = '';
@@ -1735,6 +1964,200 @@ export function getHtmlForWebview(result, webview, context) {
                         </div>
                     \`;
                     card.appendChild(statisticsCard);
+                }
+                
+                // Add data quality metrics card
+                if (fieldResult.qualityMetrics && !fieldResult.qualityMetrics.error) {
+                    const quality = fieldResult.qualityMetrics;
+                    const assessment = quality.assessment;
+                    
+                    const qualityCard = document.createElement('div');
+                    qualityCard.className = \`quality-card quality-\${assessment.color === 'green' ? 'good' : assessment.color === 'yellow' ? 'warning' : 'error'}\`;
+                    
+                    let qualityHtml = \`
+                        <div class="quality-header">
+                            <h4 style="margin: 0; color: var(--vscode-foreground);">🎯 Data Quality Assessment</h4>
+                            <span class="quality-score \${assessment.color === 'green' ? 'good' : assessment.color === 'yellow' ? 'warning' : 'error'}">
+                                \${assessment.qualityScore}/100 - \${assessment.qualityLevel}
+                            </span>
+                        </div>
+                    \`;
+                    
+                    // Show issues if any
+                    if (assessment.issues.length > 0) {
+                        qualityHtml += '<div class="quality-issues">';
+                        assessment.issues.forEach(issue => {
+                            qualityHtml += \`<div class="quality-issue-item error">❌ \${issue}</div>\`;
+                        });
+                        qualityHtml += '</div>';
+                    }
+                    
+                    // Show warnings if any
+                    if (assessment.warnings.length > 0) {
+                        qualityHtml += '<div class="quality-issues">';
+                        assessment.warnings.forEach(warning => {
+                            qualityHtml += \`<div class="quality-issue-item warning">⚠️ \${warning}</div>\`;
+                        });
+                        qualityHtml += '</div>';
+                    }
+                    
+                    // Completeness section
+                    qualityHtml += \`
+                        <div class="quality-section">
+                            <h5 style="margin: 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">📋 Completeness</h5>
+                            <div class="quality-metric-grid">
+                                <div class="quality-metric-item">
+                                    <div class="quality-metric-label">
+                                        <span>Non-Null %</span>
+                                        \${createHelpIcon('nonNullPercentage')}
+                                    </div>
+                                    <div class="quality-metric-value">\${quality.completeness.nonNullPercentage.toFixed(1)}%</div>
+                                </div>
+                                <div class="quality-metric-item">
+                                    <div class="quality-metric-label">
+                                        <span>Fill Rate</span>
+                                        \${createHelpIcon('fillRate')}
+                                    </div>
+                                    <div class="quality-metric-value">\${quality.completeness.fillRate.toFixed(1)}%</div>
+                                </div>
+                                <div class="quality-metric-item">
+                                    <div class="quality-metric-label">
+                                        <span>Missing Values</span>
+                                        \${createHelpIcon('missingValues')}
+                                    </div>
+                                    <div class="quality-metric-value">\${quality.completeness.missingCount.toLocaleString()} (\${quality.completeness.missingPercentage.toFixed(1)}%)</div>
+                                </div>
+                    \`;
+                    
+                    if (quality.completeness.emptyStringCount > 0) {
+                        qualityHtml += \`
+                                <div class="quality-metric-item">
+                                    <div class="quality-metric-label">
+                                        <span>Empty Strings</span>
+                                        \${createHelpIcon('emptyStrings')}
+                                    </div>
+                                    <div class="quality-metric-value">\${quality.completeness.emptyStringCount.toLocaleString()} (\${quality.completeness.emptyStringPercentage.toFixed(1)}%)</div>
+                                </div>
+                        \`;
+                    }
+                    
+                    qualityHtml += '</div></div>';
+                    
+                    // Cardinality section
+                    qualityHtml += \`
+                        <div class="quality-section">
+                            <h5 style="margin: 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">🔢 Cardinality</h5>
+                            <div class="quality-metric-grid">
+                                <div class="quality-metric-item">
+                                    <div class="quality-metric-label">
+                                        <span>Cardinality Ratio</span>
+                                        \${createHelpIcon('cardinalityRatio')}
+                                    </div>
+                                    <div class="quality-metric-value">\${(quality.cardinality.ratio * 100).toFixed(2)}%</div>
+                                </div>
+                                <div class="quality-metric-item">
+                                    <div class="quality-metric-label">
+                                        <span>Classification</span>
+                                        \${createHelpIcon('classification')}
+                                    </div>
+                                    <div class="quality-metric-value">\${quality.cardinality.level}</div>
+                                </div>
+                            </div>
+                            <div class="quality-recommendation">
+                                💡 <strong>Recommendation:</strong> \${quality.cardinality.recommendation}
+                            </div>
+                        </div>
+                    \`;
+                    
+                    // Uniqueness section
+                    qualityHtml += \`
+                        <div class="quality-section">
+                            <h5 style="margin: 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">🔍 Uniqueness</h5>
+                            <div class="quality-metric-grid">
+                                <div class="quality-metric-item">
+                                    <div class="quality-metric-label">
+                                        <span>Unique Values</span>
+                                        \${createHelpIcon('uniqueValues')}
+                                    </div>
+                                    <div class="quality-metric-value">\${quality.uniqueness.uniquePercentage.toFixed(1)}%</div>
+                                </div>
+                                <div class="quality-metric-item">
+                                    <div class="quality-metric-label">
+                                        <span>Duplicate Count</span>
+                                        \${createHelpIcon('duplicateCount')}
+                                    </div>
+                                    <div class="quality-metric-value">\${quality.uniqueness.duplicateCount.toLocaleString()} (\${quality.uniqueness.duplicatePercentage.toFixed(1)}%)</div>
+                                </div>
+                    \`;
+                    
+                    if (quality.uniqueness.duplicatedDistinctValues > 0) {
+                        qualityHtml += \`
+                                <div class="quality-metric-item">
+                                    <div class="quality-metric-label">
+                                        <span>Duplicated Distinct Values</span>
+                                        \${createHelpIcon('duplicatedDistinctValues')}
+                                    </div>
+                                    <div class="quality-metric-value">\${quality.uniqueness.duplicatedDistinctValues.toLocaleString()}</div>
+                                </div>
+                        \`;
+                    }
+                    
+                    qualityHtml += '</div>';
+                    
+                    // Show top duplicates if any
+                    if (quality.uniqueness.topDuplicates && quality.uniqueness.topDuplicates.length > 0) {
+                        qualityHtml += \`
+                            <div style="margin-top: 10px;">
+                                <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 6px;">Top Duplicated Values:</div>
+                                <div class="quality-duplicates-list">
+                        \`;
+                        
+                        quality.uniqueness.topDuplicates.forEach(dup => {
+                            qualityHtml += \`
+                                <div class="quality-duplicate-item">
+                                    <span>\${dup.value}</span>
+                                    <span>\${dup.count.toLocaleString()} (\${dup.percentage}%)</span>
+                                </div>
+                            \`;
+                        });
+                        
+                        qualityHtml += '</div></div>';
+                    }
+                    
+                    qualityHtml += '</div>';
+                    
+                    // Distribution quality section
+                    qualityHtml += \`
+                        <div class="quality-section">
+                            <h5 style="margin: 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">📊 Distribution Quality</h5>
+                            <div class="quality-metric-grid">
+                                <div class="quality-metric-item">
+                                    <div class="quality-metric-label">
+                                        <span>Evenness Score</span>
+                                        \${createHelpIcon('evennessScore')}
+                                    </div>
+                                    <div class="quality-metric-value">\${(quality.distribution.evennessScore * 100).toFixed(1)}%</div>
+                                </div>
+                                <div class="quality-metric-item">
+                                    <div class="quality-metric-label">
+                                        <span>Distribution Type</span>
+                                        \${createHelpIcon('distributionType')}
+                                    </div>
+                                    <div class="quality-metric-value">\${quality.distribution.skewness}</div>
+                                </div>
+                                <div class="quality-metric-item">
+                                    <div class="quality-metric-label">
+                                        <span>Shannon Entropy</span>
+                                        \${createHelpIcon('shannonEntropy')}
+                                    </div>
+                                    <div class="quality-metric-value">\${quality.distribution.shannonEntropy.toFixed(3)}</div>
+                                </div>
+                            </div>
+                        </div>
+                    \`;
+                    
+                    qualityCard.innerHTML = qualityHtml;
+                    card.appendChild(qualityCard);
                 }
                 
                 // Add chart toggle buttons for numeric fields
