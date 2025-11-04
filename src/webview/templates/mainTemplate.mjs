@@ -1978,19 +1978,31 @@ export function getHtmlForWebview(result, webview, context) {
                             <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Date Range</h5>
                             <div class="field-stats-grid">
                                 <div class="field-stat-item">
-                                    <span class="field-stat-label">Earliest</span>
+                                    <span class="field-stat-label">
+                                        Earliest
+                                        \${createHelpIcon('temporalEarliest')}
+                                    </span>
                                     <span class="field-stat-value">\${temporal.range.earliest ? new Date(temporal.range.earliest).toISOString().split('T')[0] : 'N/A'}</span>
                                 </div>
                                 <div class="field-stat-item">
-                                    <span class="field-stat-label">Latest</span>
+                                    <span class="field-stat-label">
+                                        Latest
+                                        \${createHelpIcon('temporalLatest')}
+                                    </span>
                                     <span class="field-stat-value">\${temporal.range.latest ? new Date(temporal.range.latest).toISOString().split('T')[0] : 'N/A'}</span>
                                 </div>
                                 <div class="field-stat-item">
-                                    <span class="field-stat-label">Time Span</span>
+                                    <span class="field-stat-label">
+                                        Time Span
+                                        \${createHelpIcon('temporalTimeSpan')}
+                                    </span>
                                     <span class="field-stat-value">\${temporal.range.spanDescription}</span>
                                 </div>
                                 <div class="field-stat-item">
-                                    <span class="field-stat-label">Format</span>
+                                    <span class="field-stat-label">
+                                        Format
+                                        \${createHelpIcon('temporalFormat')}
+                                    </span>
                                     <span class="field-stat-value">\${temporal.range.format.formatDescription}</span>
                                 </div>
                             </div>
@@ -2001,20 +2013,32 @@ export function getHtmlForWebview(result, webview, context) {
                             <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Gap Analysis</h5>
                             <div class="field-stats-grid">
                                 <div class="field-stat-item">
-                                    <span class="field-stat-label">Has Gaps</span>
+                                    <span class="field-stat-label">
+                                        Has Gaps
+                                        \${createHelpIcon('temporalHasGaps')}
+                                    </span>
                                     <span class="field-stat-value">\${temporal.gaps.hasGaps ? 'Yes' : 'No'}</span>
                                 </div>
                                 <div class="field-stat-item">
-                                    <span class="field-stat-label">Gap Count</span>
+                                    <span class="field-stat-label">
+                                        Gap Count
+                                        \${createHelpIcon('temporalGapCount')}
+                                    </span>
                                     <span class="field-stat-value">\${temporal.gaps.gapCount}</span>
                                 </div>
                                 <div class="field-stat-item">
-                                    <span class="field-stat-label">Coverage</span>
+                                    <span class="field-stat-label">
+                                        Coverage
+                                        \${createHelpIcon('temporalCoverage')}
+                                    </span>
                                     <span class="field-stat-value">\${temporal.gaps.coverage.toFixed(1)}%</span>
                                 </div>
                                 \${temporal.gaps.largestGap ? \`
                                 <div class="field-stat-item">
-                                    <span class="field-stat-label">Largest Gap</span>
+                                    <span class="field-stat-label">
+                                        Largest Gap
+                                        \${createHelpIcon('temporalLargestGap')}
+                                    </span>
                                     <span class="field-stat-value">\${temporal.gaps.largestGap.days} days</span>
                                 </div>
                                 \` : ''}
@@ -2027,11 +2051,17 @@ export function getHtmlForWebview(result, webview, context) {
                             <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Trend Analysis</h5>
                             <div class="field-stats-grid">
                                 <div class="field-stat-item">
-                                    <span class="field-stat-label">Trend Type</span>
+                                    <span class="field-stat-label">
+                                        Trend Type
+                                        \${createHelpIcon('temporalTrendType')}
+                                    </span>
                                     <span class="field-stat-value">\${temporal.trends.trendType.replace(/_/g, ' ')}</span>
                                 </div>
                                 <div class="field-stat-item" style="grid-column: span 2;">
-                                    <span class="field-stat-label">Description</span>
+                                    <span class="field-stat-label">
+                                        Description
+                                        \${createHelpIcon('temporalTrendDescription')}
+                                    </span>
                                     <span class="field-stat-value">\${temporal.trends.description}</span>
                                 </div>
                             </div>

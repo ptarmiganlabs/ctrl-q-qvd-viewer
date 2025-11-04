@@ -535,25 +535,40 @@ export function getVisualAnalysisHtml(
         <h3 style="margin: 0 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Date Range</h3>
         <div class="stats-container" style="margin-bottom: 15px;">
             <div class="stat-item">
-                <span class="stat-label">Earliest</span>
+                <span class="stat-label">
+                    Earliest
+                    ${createHelpIconHtml("temporalEarliest")}
+                </span>
                 <span class="stat-value">${fieldResult.temporalAnalysis.range.earliest ? new Date(fieldResult.temporalAnalysis.range.earliest).toISOString().split('T')[0] : 'N/A'}</span>
             </div>
             <div class="stat-item">
-                <span class="stat-label">Latest</span>
+                <span class="stat-label">
+                    Latest
+                    ${createHelpIconHtml("temporalLatest")}
+                </span>
                 <span class="stat-value">${fieldResult.temporalAnalysis.range.latest ? new Date(fieldResult.temporalAnalysis.range.latest).toISOString().split('T')[0] : 'N/A'}</span>
             </div>
             <div class="stat-item">
-                <span class="stat-label">Time Span</span>
+                <span class="stat-label">
+                    Time Span
+                    ${createHelpIconHtml("temporalTimeSpan")}
+                </span>
                 <span class="stat-value">${fieldResult.temporalAnalysis.range.spanDescription}</span>
             </div>
             <div class="stat-item">
-                <span class="stat-label">Format</span>
+                <span class="stat-label">
+                    Format
+                    ${createHelpIconHtml("temporalFormat")}
+                </span>
                 <span class="stat-value">${fieldResult.temporalAnalysis.range.format.formatDescription}</span>
             </div>
         </div>
         
         ${fieldResult.temporalAnalysis.distribution.byYear.length > 0 ? `
-        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Yearly Distribution</h3>
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">
+            Yearly Distribution
+            ${createHelpIconHtml("temporalYearlyDistribution")}
+        </h3>
         <div class="stats-container" style="margin-bottom: 15px; max-height: 200px; overflow-y: auto;">
             ${fieldResult.temporalAnalysis.distribution.byYear.slice(0, 10).map(item => `
             <div class="stat-item">
@@ -565,7 +580,10 @@ export function getVisualAnalysisHtml(
         ` : ''}
         
         ${fieldResult.temporalAnalysis.distribution.byMonth.length > 0 ? `
-        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Monthly Distribution</h3>
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">
+            Monthly Distribution
+            ${createHelpIconHtml("temporalMonthlyDistribution")}
+        </h3>
         <div class="stats-container" style="margin-bottom: 15px;">
             ${fieldResult.temporalAnalysis.distribution.byMonth.map(item => `
             <div class="stat-item">
@@ -577,7 +595,10 @@ export function getVisualAnalysisHtml(
         ` : ''}
         
         ${fieldResult.temporalAnalysis.distribution.byDayOfWeek.length > 0 ? `
-        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Day of Week Distribution</h3>
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">
+            Day of Week Distribution
+            ${createHelpIconHtml("temporalDayOfWeekDistribution")}
+        </h3>
         <div class="stats-container" style="margin-bottom: 15px;">
             ${fieldResult.temporalAnalysis.distribution.byDayOfWeek.map(item => `
             <div class="stat-item">
@@ -592,20 +613,32 @@ export function getVisualAnalysisHtml(
         <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Gap Analysis</h3>
         <div class="stats-container" style="margin-bottom: 15px;">
             <div class="stat-item">
-                <span class="stat-label">Has Gaps</span>
+                <span class="stat-label">
+                    Has Gaps
+                    ${createHelpIconHtml("temporalHasGaps")}
+                </span>
                 <span class="stat-value">${fieldResult.temporalAnalysis.gaps.hasGaps ? 'Yes' : 'No'}</span>
             </div>
             <div class="stat-item">
-                <span class="stat-label">Gap Count</span>
+                <span class="stat-label">
+                    Gap Count
+                    ${createHelpIconHtml("temporalGapCount")}
+                </span>
                 <span class="stat-value">${fieldResult.temporalAnalysis.gaps.gapCount}</span>
             </div>
             <div class="stat-item">
-                <span class="stat-label">Coverage</span>
+                <span class="stat-label">
+                    Coverage
+                    ${createHelpIconHtml("temporalCoverage")}
+                </span>
                 <span class="stat-value">${fieldResult.temporalAnalysis.gaps.coverage.toFixed(1)}%</span>
             </div>
             ${fieldResult.temporalAnalysis.gaps.largestGap ? `
             <div class="stat-item">
-                <span class="stat-label">Largest Gap</span>
+                <span class="stat-label">
+                    Largest Gap
+                    ${createHelpIconHtml("temporalLargestGap")}
+                </span>
                 <span class="stat-value">${fieldResult.temporalAnalysis.gaps.largestGap.days} days</span>
             </div>
             ` : ''}
@@ -616,11 +649,17 @@ export function getVisualAnalysisHtml(
         <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Trend Analysis</h3>
         <div class="stats-container" style="margin-bottom: 15px;">
             <div class="stat-item">
-                <span class="stat-label">Trend Type</span>
+                <span class="stat-label">
+                    Trend Type
+                    ${createHelpIconHtml("temporalTrendType")}
+                </span>
                 <span class="stat-value">${fieldResult.temporalAnalysis.trends.trendType.replace(/_/g, ' ')}</span>
             </div>
             <div class="stat-item" style="grid-column: span 2;">
-                <span class="stat-label">Description</span>
+                <span class="stat-label">
+                    Description
+                    ${createHelpIconHtml("temporalTrendDescription")}
+                </span>
                 <span class="stat-value">${fieldResult.temporalAnalysis.trends.description}</span>
             </div>
         </div>
@@ -629,11 +668,17 @@ export function getVisualAnalysisHtml(
         <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Data Quality</h3>
         <div class="stats-container">
             <div class="stat-item">
-                <span class="stat-label">Valid Dates</span>
+                <span class="stat-label">
+                    Valid Dates
+                    ${createHelpIconHtml("temporalValidDates")}
+                </span>
                 <span class="stat-value">${fieldResult.temporalAnalysis.quality.validDateCount.toLocaleString()}</span>
             </div>
             <div class="stat-item">
-                <span class="stat-label">Invalid Dates</span>
+                <span class="stat-label">
+                    Invalid Dates
+                    ${createHelpIconHtml("temporalInvalidDates")}
+                </span>
                 <span class="stat-value">${fieldResult.temporalAnalysis.quality.invalidDateCount.toLocaleString()}</span>
             </div>
             <div class="stat-item">
@@ -641,7 +686,10 @@ export function getVisualAnalysisHtml(
                 <span class="stat-value">${fieldResult.temporalAnalysis.quality.nullCount.toLocaleString()}</span>
             </div>
             <div class="stat-item">
-                <span class="stat-label">Valid %</span>
+                <span class="stat-label">
+                    Valid %
+                    ${createHelpIconHtml("temporalValidPercentage")}
+                </span>
                 <span class="stat-value">${fieldResult.temporalAnalysis.quality.validPercentage.toFixed(1)}%</span>
             </div>
         </div>
