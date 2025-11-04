@@ -746,6 +746,37 @@ export function getHtmlForWebview(result, webview, context) {
             color: var(--vscode-foreground);
         }
         
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+        
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            background-color: var(--vscode-input-background);
+            padding: 8px 12px;
+            border-radius: 3px;
+            border: 1px solid var(--vscode-input-border);
+        }
+        
+        .stat-label {
+            color: var(--vscode-descriptionForeground);
+            font-size: 0.85em;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .stat-value {
+            font-weight: 600;
+            font-size: 1.1em;
+            color: var(--vscode-foreground);
+        }
+        
         .statistics-card {
             background-color: var(--vscode-textBlockQuote-background);
             border: 1px solid var(--vscode-panel-border);
@@ -1976,70 +2007,121 @@ export function getHtmlForWebview(result, webview, context) {
                         
                         <div class="statistics-section">
                             <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Date Range</h5>
-                            <div class="field-stats-grid">
-                                <div class="field-stat-item">
-                                    <span class="field-stat-label">
+                            <div class="stats-container" style="margin-bottom: 15px;">
+                                <div class="stat-item">
+                                    <span class="stat-label">
                                         Earliest
                                         \${createHelpIcon('temporalEarliest')}
                                     </span>
-                                    <span class="field-stat-value">\${temporal.range.earliest ? new Date(temporal.range.earliest).toISOString().split('T')[0] : 'N/A'}</span>
+                                    <span class="stat-value">\${temporal.range.earliest ? new Date(temporal.range.earliest).toISOString().split('T')[0] : 'N/A'}</span>
                                 </div>
-                                <div class="field-stat-item">
-                                    <span class="field-stat-label">
+                                <div class="stat-item">
+                                    <span class="stat-label">
                                         Latest
                                         \${createHelpIcon('temporalLatest')}
                                     </span>
-                                    <span class="field-stat-value">\${temporal.range.latest ? new Date(temporal.range.latest).toISOString().split('T')[0] : 'N/A'}</span>
+                                    <span class="stat-value">\${temporal.range.latest ? new Date(temporal.range.latest).toISOString().split('T')[0] : 'N/A'}</span>
                                 </div>
-                                <div class="field-stat-item">
-                                    <span class="field-stat-label">
+                                <div class="stat-item">
+                                    <span class="stat-label">
                                         Time Span
                                         \${createHelpIcon('temporalTimeSpan')}
                                     </span>
-                                    <span class="field-stat-value">\${temporal.range.spanDescription}</span>
+                                    <span class="stat-value">\${temporal.range.spanDescription}</span>
                                 </div>
-                                <div class="field-stat-item">
-                                    <span class="field-stat-label">
+                                <div class="stat-item">
+                                    <span class="stat-label">
                                         Format
                                         \${createHelpIcon('temporalFormat')}
                                     </span>
-                                    <span class="field-stat-value">\${temporal.range.format.formatDescription}</span>
+                                    <span class="stat-value">\${temporal.range.format.formatDescription}</span>
                                 </div>
                             </div>
                         </div>
                         
+                        \${temporal.distribution && temporal.distribution.byYear && temporal.distribution.byYear.length > 0 ? \`
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">
+                                Yearly Distribution
+                                \${createHelpIcon('temporalYearlyDistribution')}
+                            </h5>
+                            <div class="stats-container" style="margin-bottom: 15px; max-height: 200px; overflow-y: auto;">
+                                \${temporal.distribution.byYear.slice(0, 10).map(item => \`
+                                <div class="stat-item">
+                                    <span class="stat-label">\${item.period}</span>
+                                    <span class="stat-value">\${item.count.toLocaleString()}</span>
+                                </div>
+                                \`).join('')}
+                            </div>
+                        </div>
+                        \` : ''}
+                        
+                        \${temporal.distribution && temporal.distribution.byMonth && temporal.distribution.byMonth.length > 0 ? \`
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">
+                                Monthly Distribution
+                                \${createHelpIcon('temporalMonthlyDistribution')}
+                            </h5>
+                            <div class="stats-container" style="margin-bottom: 15px;">
+                                \${temporal.distribution.byMonth.map(item => \`
+                                <div class="stat-item">
+                                    <span class="stat-label">\${item.period}</span>
+                                    <span class="stat-value">\${item.count.toLocaleString()}</span>
+                                </div>
+                                \`).join('')}
+                            </div>
+                        </div>
+                        \` : ''}
+                        
+                        \${temporal.distribution && temporal.distribution.byDayOfWeek && temporal.distribution.byDayOfWeek.length > 0 ? \`
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">
+                                Day of Week Distribution
+                                \${createHelpIcon('temporalDayOfWeekDistribution')}
+                            </h5>
+                            <div class="stats-container" style="margin-bottom: 15px;">
+                                \${temporal.distribution.byDayOfWeek.map(item => \`
+                                <div class="stat-item">
+                                    <span class="stat-label">\${item.period}</span>
+                                    <span class="stat-value">\${item.count.toLocaleString()}</span>
+                                </div>
+                                \`).join('')}
+                            </div>
+                        </div>
+                        \` : ''}
+                        
                         \${temporal.gaps ? \`
                         <div class="statistics-section" style="margin-top: 15px;">
                             <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Gap Analysis</h5>
-                            <div class="field-stats-grid">
-                                <div class="field-stat-item">
-                                    <span class="field-stat-label">
+                            <div class="stats-container" style="margin-bottom: 15px;">
+                                <div class="stat-item">
+                                    <span class="stat-label">
                                         Has Gaps
                                         \${createHelpIcon('temporalHasGaps')}
                                     </span>
-                                    <span class="field-stat-value">\${temporal.gaps.hasGaps ? 'Yes' : 'No'}</span>
+                                    <span class="stat-value">\${temporal.gaps.hasGaps ? 'Yes' : 'No'}</span>
                                 </div>
-                                <div class="field-stat-item">
-                                    <span class="field-stat-label">
+                                <div class="stat-item">
+                                    <span class="stat-label">
                                         Gap Count
                                         \${createHelpIcon('temporalGapCount')}
                                     </span>
-                                    <span class="field-stat-value">\${temporal.gaps.gapCount}</span>
+                                    <span class="stat-value">\${temporal.gaps.gapCount}</span>
                                 </div>
-                                <div class="field-stat-item">
-                                    <span class="field-stat-label">
+                                <div class="stat-item">
+                                    <span class="stat-label">
                                         Coverage
                                         \${createHelpIcon('temporalCoverage')}
                                     </span>
-                                    <span class="field-stat-value">\${temporal.gaps.coverage.toFixed(1)}%</span>
+                                    <span class="stat-value">\${temporal.gaps.coverage.toFixed(1)}%</span>
                                 </div>
                                 \${temporal.gaps.largestGap ? \`
-                                <div class="field-stat-item">
-                                    <span class="field-stat-label">
+                                <div class="stat-item">
+                                    <span class="stat-label">
                                         Largest Gap
                                         \${createHelpIcon('temporalLargestGap')}
                                     </span>
-                                    <span class="field-stat-value">\${temporal.gaps.largestGap.days} days</span>
+                                    <span class="stat-value">\${temporal.gaps.largestGap.days} days</span>
                                 </div>
                                 \` : ''}
                             </div>
@@ -2049,20 +2131,53 @@ export function getHtmlForWebview(result, webview, context) {
                         \${temporal.trends ? \`
                         <div class="statistics-section" style="margin-top: 15px;">
                             <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Trend Analysis</h5>
-                            <div class="field-stats-grid">
-                                <div class="field-stat-item">
-                                    <span class="field-stat-label">
+                            <div class="stats-container" style="margin-bottom: 15px;">
+                                <div class="stat-item">
+                                    <span class="stat-label">
                                         Trend Type
                                         \${createHelpIcon('temporalTrendType')}
                                     </span>
-                                    <span class="field-stat-value">\${temporal.trends.trendType.replace(/_/g, ' ')}</span>
+                                    <span class="stat-value">\${temporal.trends.trendType.replace(/_/g, ' ')}</span>
                                 </div>
-                                <div class="field-stat-item" style="grid-column: span 2;">
-                                    <span class="field-stat-label">
+                                <div class="stat-item" style="grid-column: span 2;">
+                                    <span class="stat-label">
                                         Description
                                         \${createHelpIcon('temporalTrendDescription')}
                                     </span>
-                                    <span class="field-stat-value">\${temporal.trends.description}</span>
+                                    <span class="stat-value">\${temporal.trends.description}</span>
+                                </div>
+                            </div>
+                        </div>
+                        \` : ''}
+                        
+                        \${temporal.quality ? \`
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Data Quality</h5>
+                            <div class="stats-container">
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Valid Dates
+                                        \${createHelpIcon('temporalValidDates')}
+                                    </span>
+                                    <span class="stat-value">\${temporal.quality.validDateCount.toLocaleString()}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Invalid Dates
+                                        \${createHelpIcon('temporalInvalidDates')}
+                                    </span>
+                                    <span class="stat-value">\${temporal.quality.invalidDateCount.toLocaleString()}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Null Count</span>
+                                    <span class="stat-value">\${temporal.quality.nullCount.toLocaleString()}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Valid %
+                                        \${createHelpIcon('temporalValidPercentage')}
+                                    </span>
+                                    <span class="stat-value">\${temporal.quality.validPercentage.toFixed(1)}%</span>
                                 </div>
                             </div>
                         </div>
