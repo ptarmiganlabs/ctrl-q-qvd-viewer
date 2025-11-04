@@ -787,6 +787,110 @@ export function getVisualAnalysisHtml(
     }
     
     ${
+      fieldResult.isString &&
+      fieldResult.stringAnalysis &&
+      fieldResult.stringAnalysis.isString
+        ? `
+    <div style="background-color: var(--vscode-textBlockQuote-background); border: 1px solid var(--vscode-panel-border); border-radius: 4px; padding: 15px; margin-bottom: 20px;">
+        <h2 style="margin: 0 0 15px 0; font-size: 1.2em;">📝 String Analysis</h2>
+        
+        <h3 style="margin: 0 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Length Statistics</h3>
+        <div class="stats-container" style="margin-bottom: 15px;">
+            <div class="stat-item">
+                <span class="stat-label">Min Length</span>
+                <span class="stat-value">${fieldResult.stringAnalysis.lengthStats.min.toLocaleString()}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Max Length</span>
+                <span class="stat-value">${fieldResult.stringAnalysis.lengthStats.max.toLocaleString()}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Avg Length</span>
+                <span class="stat-value">${fieldResult.stringAnalysis.lengthStats.average.toLocaleString()}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Most Common Length</span>
+                <span class="stat-value">${
+                  fieldResult.stringAnalysis.lengthStats.mostCommon
+                } (${
+      fieldResult.stringAnalysis.lengthStats.mostCommonCount
+    }x)</span>
+            </div>
+        </div>
+        
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Character Composition</h3>
+        <div class="stats-container" style="margin-bottom: 15px;">
+            <div class="stat-item">
+                <span class="stat-label">Alphanumeric</span>
+                <span class="stat-value">${
+                  fieldResult.stringAnalysis.characterComposition
+                    .alphanumericPercentage
+                }%</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Alphabetic</span>
+                <span class="stat-value">${
+                  fieldResult.stringAnalysis.characterComposition
+                    .alphabeticPercentage
+                }%</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Special Chars</span>
+                <span class="stat-value">${
+                  fieldResult.stringAnalysis.characterComposition
+                    .specialCharPercentage
+                }%</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Leading Whitespace</span>
+                <span class="stat-value">${
+                  fieldResult.stringAnalysis.characterComposition
+                    .leadingWhitespaceCount
+                }</span>
+            </div>
+        </div>
+        
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Case Analysis</h3>
+        <div class="stats-container" style="margin-bottom: 15px;">
+            <div class="stat-item">
+                <span class="stat-label">Uppercase</span>
+                <span class="stat-value">${
+                  fieldResult.stringAnalysis.caseAnalysis.uppercaseCount
+                } (${
+      fieldResult.stringAnalysis.caseAnalysis.uppercasePercentage
+    }%)</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Lowercase</span>
+                <span class="stat-value">${
+                  fieldResult.stringAnalysis.caseAnalysis.lowercaseCount
+                } (${
+      fieldResult.stringAnalysis.caseAnalysis.lowercasePercentage
+    }%)</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Mixed Case</span>
+                <span class="stat-value">${
+                  fieldResult.stringAnalysis.caseAnalysis.mixedCaseCount
+                } (${
+      fieldResult.stringAnalysis.caseAnalysis.mixedCasePercentage
+    }%)</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Title Case</span>
+                <span class="stat-value">${
+                  fieldResult.stringAnalysis.caseAnalysis.titleCaseCount
+                } (${
+      fieldResult.stringAnalysis.caseAnalysis.titleCasePercentage
+    }%)</span>
+            </div>
+        </div>
+    </div>
+    `
+        : ""
+    }
+    
+    ${
       fieldResult.qualityMetrics && !fieldResult.qualityMetrics.error
         ? `
     <div class="quality-card quality-${

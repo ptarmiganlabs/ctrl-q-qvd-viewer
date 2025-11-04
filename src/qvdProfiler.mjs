@@ -6,6 +6,7 @@
 import { isNumericField, calculateStatistics } from './qvdStatistics.mjs';
 import { calculateDataQualityMetrics } from './qvdDataQuality.mjs';
 import { isDateField, calculateTemporalAnalysis } from './qvdTemporalAnalysis.mjs';
+import { isStringField, calculateStringAnalysis } from './qvdStringAnalysis.mjs';
 
 /**
  * Compute value frequency distribution for specified fields
@@ -90,6 +91,14 @@ export function profileFields(data, fieldNames, maxUniqueValues = 1000) {
       temporalAnalysis = calculateTemporalAnalysis(data, fieldName);
     }
 
+    // Calculate string analysis if field is string (non-numeric, non-date)
+    const isString = !isNumeric && !isDate && isStringField(data, fieldName);
+    let stringAnalysis = null;
+    
+    if (isString) {
+      stringAnalysis = calculateStringAnalysis(data, fieldName);
+    }
+
     // Calculate data quality metrics
     const qualityMetrics = calculateDataQualityMetrics(
       data,
@@ -111,6 +120,8 @@ export function profileFields(data, fieldNames, maxUniqueValues = 1000) {
       statistics,
       isDate,
       temporalAnalysis,
+      isString,
+      stringAnalysis,
       qualityMetrics,
     });
   }
