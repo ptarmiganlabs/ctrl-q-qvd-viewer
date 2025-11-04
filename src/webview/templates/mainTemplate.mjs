@@ -2112,7 +2112,7 @@ export function getHtmlForWebview(result, webview, context) {
                                 Monthly Distribution
                                 \${createHelpIcon('temporalMonthlyDistribution')}
                             </h5>
-                            <div class="stats-container" style="margin-bottom: 15px;">
+                            <div class="stats-container" style="margin-bottom: 15px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
                                 \${temporal.distribution.byMonth.map(item => \`
                                 <div class="stat-item">
                                     <span class="stat-label">\${item.period}</span>
@@ -2129,7 +2129,7 @@ export function getHtmlForWebview(result, webview, context) {
                                 Day of Week Distribution
                                 \${createHelpIcon('temporalDayOfWeekDistribution')}
                             </h5>
-                            <div class="stats-container" style="margin-bottom: 15px;">
+                            <div class="stats-container" style="margin-bottom: 15px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
                                 \${temporal.distribution.byDayOfWeek.map(item => \`
                                 <div class="stat-item">
                                     <span class="stat-label">\${item.period}</span>

@@ -631,7 +631,7 @@ export function getVisualAnalysisHtml(
             Monthly Distribution
             ${createHelpIconHtml("temporalMonthlyDistribution")}
         </h3>
-        <div class="stats-container" style="margin-bottom: 15px;">
+        <div class="stats-container" style="margin-bottom: 15px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
             ${fieldResult.temporalAnalysis.distribution.byMonth
               .map(
                 (item) => `
@@ -654,7 +654,7 @@ export function getVisualAnalysisHtml(
             Day of Week Distribution
             ${createHelpIconHtml("temporalDayOfWeekDistribution")}
         </h3>
-        <div class="stats-container" style="margin-bottom: 15px;">
+        <div class="stats-container" style="margin-bottom: 15px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
             ${fieldResult.temporalAnalysis.distribution.byDayOfWeek
               .map(
                 (item) => `
