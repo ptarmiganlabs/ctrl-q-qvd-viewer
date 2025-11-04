@@ -238,14 +238,19 @@ function calculateDateRange(dates, rawValues) {
   const spanDays = Math.floor(spanMs / (1000 * 60 * 60 * 24));
 
   // Generate span description
+  // Note: Uses approximations (7 days/week, 30 days/month, 365 days/year) for readability
   let spanDescription;
   if (spanDays === 0) {
     spanDescription = 'Single day';
   } else if (spanDays < 7) {
-    spanDescription = `${spanDays} days`;
+    spanDescription = `${spanDays} day${spanDays > 1 ? 's' : ''}`;
   } else if (spanDays < 31) {
     const weeks = Math.floor(spanDays / 7);
+    const remainingDays = spanDays % 7;
     spanDescription = `${weeks} week${weeks > 1 ? 's' : ''}`;
+    if (remainingDays > 0) {
+      spanDescription += `, ${remainingDays} day${remainingDays > 1 ? 's' : ''}`;
+    }
   } else if (spanDays < 365) {
     const months = Math.floor(spanDays / 30);
     spanDescription = `${months} month${months > 1 ? 's' : ''}`;
@@ -361,6 +366,7 @@ function detectDateGaps(dates, expectedGapDays = 1) {
     const gapDays = gapMs / (24 * 60 * 60 * 1000);
 
     // Consider it a gap if it's significantly larger than expected
+    // Using 1.5x multiplier to allow for minor variations (e.g., weekends in daily data)
     if (gapMs > expectedGapMs * 1.5) {
       const gap = {
         from: sortedDates[i - 1],
@@ -375,11 +381,13 @@ function detectDateGaps(dates, expectedGapDays = 1) {
     }
   }
 
-  // Calculate coverage (actual dates vs. expected dates in range)
+  // Calculate coverage (actual unique dates vs. expected dates in range)
+  // Note: Uses unique date count to handle duplicates correctly
+  const uniqueDates = new Set(sortedDates.map(d => d.getTime()));
   const totalSpanDays = Math.floor((sortedDates[sortedDates.length - 1] - sortedDates[0]) / (24 * 60 * 60 * 1000));
   const expectedDates = Math.floor(totalSpanDays / expectedGapDays) + 1;
-  const actualDates = dates.length;
-  const coverage = expectedDates > 0 ? (actualDates / expectedDates) * 100 : 100;
+  const actualUniqueDates = uniqueDates.size;
+  const coverage = expectedDates > 0 ? (actualUniqueDates / expectedDates) * 100 : 100;
 
   return {
     hasGaps: gaps.length > 0,
@@ -388,7 +396,7 @@ function detectDateGaps(dates, expectedGapDays = 1) {
     gaps: gaps.slice(0, 10), // Return top 10 gaps
     coverage: Math.min(100, coverage),
     expectedDates,
-    actualDates,
+    actualDates: actualUniqueDates,
   };
 }
 
