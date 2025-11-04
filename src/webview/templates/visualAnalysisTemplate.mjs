@@ -25,6 +25,71 @@ export function getVisualAnalysisHtml(
   const tabulatorCss = getTabulatorCss(extensionPath);
   const chartJs = getChartJs(extensionPath);
 
+  // Helper function to create help icon with tooltip
+  const metricHelp = {
+    'nonNullPercentage': {
+      text: 'Percentage of values that are not null or undefined. High percentages indicate better data completeness.',
+      link: 'https://en.wikipedia.org/wiki/Data_quality#Completeness'
+    },
+    'fillRate': {
+      text: 'Percentage of values that are populated (excluding empty strings). Differs from non-null % as it counts empty strings as missing.',
+      link: 'https://en.wikipedia.org/wiki/Data_quality#Completeness'
+    },
+    'missingValues': {
+      text: 'Count and percentage of null or undefined values in the field.',
+      link: 'https://en.wikipedia.org/wiki/Missing_data'
+    },
+    'emptyStrings': {
+      text: 'Count and percentage of empty string values. These are non-null but contain no data.',
+      link: 'https://en.wikipedia.org/wiki/Empty_string'
+    },
+    'cardinalityRatio': {
+      text: 'Ratio of unique values to total rows. Indicates how selective the field is for indexing and querying.',
+      link: 'https://en.wikipedia.org/wiki/Cardinality_(data_modeling)'
+    },
+    'classification': {
+      text: 'Automatic classification based on cardinality ratio: High (>80%) for identifiers, Medium (5-80%) for filters, Low (<5%) for dimensions.',
+      link: 'https://en.wikipedia.org/wiki/Cardinality_(data_modeling)'
+    },
+    'uniqueValues': {
+      text: 'Percentage of values that appear only once in the field. High uniqueness indicates potential key fields.',
+      link: 'https://en.wikipedia.org/wiki/Unique_key'
+    },
+    'duplicateCount': {
+      text: 'Total number of duplicate value occurrences in the field. Helps identify data redundancy.',
+      link: 'https://en.wikipedia.org/wiki/Data_redundancy'
+    },
+    'duplicatedDistinctValues': {
+      text: 'Number of distinct values that appear more than once. Indicates variety in duplicated data.',
+      link: 'https://en.wikipedia.org/wiki/Data_redundancy'
+    },
+    'evennessScore': {
+      text: 'Measure of distribution evenness using Pielou\'s evenness index (0-100%). Higher scores indicate more uniform distribution.',
+      link: 'https://en.wikipedia.org/wiki/Species_evenness'
+    },
+    'distributionType': {
+      text: 'Classification of distribution pattern from Very Even to Highly Skewed based on evenness score.',
+      link: 'https://en.wikipedia.org/wiki/Skewness'
+    },
+    'shannonEntropy': {
+      text: 'Shannon entropy measures information diversity. Higher values indicate more diverse value distributions.',
+      link: 'https://en.wikipedia.org/wiki/Entropy_(information_theory)'
+    }
+  };
+  
+  function createHelpIcon(metricKey) {
+    const help = metricHelp[metricKey];
+    if (!help) return '';
+    
+    return `<span class="quality-metric-help">?
+        <span class="quality-metric-tooltip">
+            ${help.text}
+            <br/><br/>
+            <a href="${help.link}" target="_blank" rel="noopener noreferrer">Learn more →</a>
+        </span>
+    </span>`;
+  }
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -282,6 +347,62 @@ export function getVisualAnalysisHtml(
             color: var(--vscode-descriptionForeground);
             font-size: 0.85em;
             margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .quality-metric-help {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background-color: var(--vscode-badge-background);
+            color: var(--vscode-badge-foreground);
+            font-size: 10px;
+            font-weight: bold;
+            cursor: help;
+            position: relative;
+            flex-shrink: 0;
+        }
+        
+        .quality-metric-help:hover {
+            background-color: var(--vscode-button-hoverBackground);
+        }
+        
+        .quality-metric-tooltip {
+            visibility: hidden;
+            position: absolute;
+            z-index: 10000;
+            background-color: var(--vscode-editorHoverWidget-background);
+            border: 1px solid var(--vscode-editorHoverWidget-border);
+            color: var(--vscode-editorHoverWidget-foreground);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            line-height: 1.4;
+            max-width: 300px;
+            width: max-content;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            white-space: normal;
+        }
+        
+        .quality-metric-help:hover .quality-metric-tooltip {
+            visibility: visible;
+        }
+        
+        .quality-metric-tooltip a {
+            color: var(--vscode-textLink-foreground);
+            text-decoration: none;
+        }
+        
+        .quality-metric-tooltip a:hover {
+            text-decoration: underline;
         }
         
         .quality-metric-value {
@@ -507,19 +628,28 @@ export function getVisualAnalysisHtml(
             <h3 style="margin: 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">📋 Completeness</h3>
             <div class="quality-metric-grid">
                 <div class="quality-metric-item">
-                    <div class="quality-metric-label">Non-Null %</div>
+                    <div class="quality-metric-label">
+                        <span>Non-Null %</span>
+                        ${createHelpIcon('nonNullPercentage')}
+                    </div>
                     <div class="quality-metric-value">${fieldResult.qualityMetrics.completeness.nonNullPercentage.toFixed(
                       1
                     )}%</div>
                 </div>
                 <div class="quality-metric-item">
-                    <div class="quality-metric-label">Fill Rate</div>
+                    <div class="quality-metric-label">
+                        <span>Fill Rate</span>
+                        ${createHelpIcon('fillRate')}
+                    </div>
                     <div class="quality-metric-value">${fieldResult.qualityMetrics.completeness.fillRate.toFixed(
                       1
                     )}%</div>
                 </div>
                 <div class="quality-metric-item">
-                    <div class="quality-metric-label">Missing Values</div>
+                    <div class="quality-metric-label">
+                        <span>Missing Values</span>
+                        ${createHelpIcon('missingValues')}
+                    </div>
                     <div class="quality-metric-value">${fieldResult.qualityMetrics.completeness.missingCount.toLocaleString()} (${fieldResult.qualityMetrics.completeness.missingPercentage.toFixed(
           1
         )}%)</div>
@@ -528,7 +658,10 @@ export function getVisualAnalysisHtml(
                   fieldResult.qualityMetrics.completeness.emptyStringCount > 0
                     ? `
                 <div class="quality-metric-item">
-                    <div class="quality-metric-label">Empty Strings</div>
+                    <div class="quality-metric-label">
+                        <span>Empty Strings</span>
+                        ${createHelpIcon('emptyStrings')}
+                    </div>
                     <div class="quality-metric-value">${fieldResult.qualityMetrics.completeness.emptyStringCount.toLocaleString()} (${fieldResult.qualityMetrics.completeness.emptyStringPercentage.toFixed(
                       1
                     )}%)</div>
@@ -543,13 +676,19 @@ export function getVisualAnalysisHtml(
             <h3 style="margin: 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">🔢 Cardinality</h3>
             <div class="quality-metric-grid">
                 <div class="quality-metric-item">
-                    <div class="quality-metric-label">Cardinality Ratio</div>
+                    <div class="quality-metric-label">
+                        <span>Cardinality Ratio</span>
+                        ${createHelpIcon('cardinalityRatio')}
+                    </div>
                     <div class="quality-metric-value">${(
                       fieldResult.qualityMetrics.cardinality.ratio * 100
                     ).toFixed(2)}%</div>
                 </div>
                 <div class="quality-metric-item">
-                    <div class="quality-metric-label">Classification</div>
+                    <div class="quality-metric-label">
+                        <span>Classification</span>
+                        ${createHelpIcon('classification')}
+                    </div>
                     <div class="quality-metric-value">${
                       fieldResult.qualityMetrics.cardinality.level
                     }</div>
@@ -566,13 +705,19 @@ export function getVisualAnalysisHtml(
             <h3 style="margin: 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">🔍 Uniqueness</h3>
             <div class="quality-metric-grid">
                 <div class="quality-metric-item">
-                    <div class="quality-metric-label">Unique Values</div>
+                    <div class="quality-metric-label">
+                        <span>Unique Values</span>
+                        ${createHelpIcon('uniqueValues')}
+                    </div>
                     <div class="quality-metric-value">${fieldResult.qualityMetrics.uniqueness.uniquePercentage.toFixed(
                       1
                     )}%</div>
                 </div>
                 <div class="quality-metric-item">
-                    <div class="quality-metric-label">Duplicate Count</div>
+                    <div class="quality-metric-label">
+                        <span>Duplicate Count</span>
+                        ${createHelpIcon('duplicateCount')}
+                    </div>
                     <div class="quality-metric-value">${fieldResult.qualityMetrics.uniqueness.duplicateCount.toLocaleString()} (${fieldResult.qualityMetrics.uniqueness.duplicatePercentage.toFixed(
           1
         )}%)</div>
@@ -581,7 +726,10 @@ export function getVisualAnalysisHtml(
                   fieldResult.qualityMetrics.uniqueness.duplicatedDistinctValues > 0
                     ? `
                 <div class="quality-metric-item">
-                    <div class="quality-metric-label">Duplicated Distinct Values</div>
+                    <div class="quality-metric-label">
+                        <span>Duplicated Distinct Values</span>
+                        ${createHelpIcon('duplicatedDistinctValues')}
+                    </div>
                     <div class="quality-metric-value">${fieldResult.qualityMetrics.uniqueness.duplicatedDistinctValues.toLocaleString()}</div>
                 </div>
                 `
@@ -616,19 +764,28 @@ export function getVisualAnalysisHtml(
             <h3 style="margin: 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">📊 Distribution Quality</h3>
             <div class="quality-metric-grid">
                 <div class="quality-metric-item">
-                    <div class="quality-metric-label">Evenness Score</div>
+                    <div class="quality-metric-label">
+                        <span>Evenness Score</span>
+                        ${createHelpIcon('evennessScore')}
+                    </div>
                     <div class="quality-metric-value">${(
                       fieldResult.qualityMetrics.distribution.evennessScore * 100
                     ).toFixed(1)}%</div>
                 </div>
                 <div class="quality-metric-item">
-                    <div class="quality-metric-label">Distribution Type</div>
+                    <div class="quality-metric-label">
+                        <span>Distribution Type</span>
+                        ${createHelpIcon('distributionType')}
+                    </div>
                     <div class="quality-metric-value">${
                       fieldResult.qualityMetrics.distribution.skewness
                     }</div>
                 </div>
                 <div class="quality-metric-item">
-                    <div class="quality-metric-label">Shannon Entropy</div>
+                    <div class="quality-metric-label">
+                        <span>Shannon Entropy</span>
+                        ${createHelpIcon('shannonEntropy')}
+                    </div>
                     <div class="quality-metric-value">${fieldResult.qualityMetrics.distribution.shannonEntropy.toFixed(
                       3
                     )}</div>
@@ -671,6 +828,58 @@ export function getVisualAnalysisHtml(
     </script>
     
     <script nonce="${nonce}">
+        // Define help content for quality metrics
+        const metricHelp = {
+            'nonNullPercentage': {
+                text: 'Percentage of values that are not null or undefined. High percentages indicate better data completeness.',
+                link: 'https://en.wikipedia.org/wiki/Data_quality#Completeness'
+            },
+            'fillRate': {
+                text: 'Percentage of values that are populated (excluding empty strings). Differs from non-null % as it counts empty strings as missing.',
+                link: 'https://en.wikipedia.org/wiki/Data_quality#Completeness'
+            },
+            'missingValues': {
+                text: 'Count and percentage of null or undefined values in the field.',
+                link: 'https://en.wikipedia.org/wiki/Missing_data'
+            },
+            'emptyStrings': {
+                text: 'Count and percentage of empty string values. These are non-null but contain no data.',
+                link: 'https://en.wikipedia.org/wiki/Empty_string'
+            },
+            'cardinalityRatio': {
+                text: 'Ratio of unique values to total rows. Indicates how selective the field is for indexing and querying.',
+                link: 'https://en.wikipedia.org/wiki/Cardinality_(data_modeling)'
+            },
+            'classification': {
+                text: 'Automatic classification based on cardinality ratio: High (>80%) for identifiers, Medium (5-80%) for filters, Low (<5%) for dimensions.',
+                link: 'https://en.wikipedia.org/wiki/Cardinality_(data_modeling)'
+            },
+            'uniqueValues': {
+                text: 'Percentage of values that appear only once in the field. High uniqueness indicates potential key fields.',
+                link: 'https://en.wikipedia.org/wiki/Unique_key'
+            },
+            'duplicateCount': {
+                text: 'Total number of duplicate value occurrences in the field. Helps identify data redundancy.',
+                link: 'https://en.wikipedia.org/wiki/Data_redundancy'
+            },
+            'duplicatedDistinctValues': {
+                text: 'Number of distinct values that appear more than once. Indicates variety in duplicated data.',
+                link: 'https://en.wikipedia.org/wiki/Data_redundancy'
+            },
+            'evennessScore': {
+                text: 'Measure of distribution evenness using Pielou\\'s evenness index (0-100%). Higher scores indicate more uniform distribution.',
+                link: 'https://en.wikipedia.org/wiki/Species_evenness'
+            },
+            'distributionType': {
+                text: 'Classification of distribution pattern from Very Even to Highly Skewed based on evenness score.',
+                link: 'https://en.wikipedia.org/wiki/Skewness'
+            },
+            'shannonEntropy': {
+                text: 'Shannon entropy measures information diversity. Higher values indicate more diverse value distributions.',
+                link: 'https://en.wikipedia.org/wiki/Entropy_(information_theory)'
+            }
+        };
+        
         const fieldResult = ${JSON.stringify(fieldResult)};
         
         // Create chart
