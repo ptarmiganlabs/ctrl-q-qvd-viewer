@@ -42,6 +42,87 @@ jobs:
           npm install -g @vscode/vsce
           vsce package
 
+      - name: Security scan - Check for sensitive files in package
+        run: |
+          echo "🔍 Scanning extension package for sensitive files..."
+
+          # Get list of files that will be included in the package
+          FILES=$(vsce ls 2>/dev/null)
+
+          # Define patterns for sensitive files
+          SENSITIVE_PATTERNS=(
+            "\.env$"
+            "\.env\."
+            "\.envrc$"
+            "\.pem$"
+            "\.key$"
+            "\.p12$"
+            "\.pfx$"
+            "\.cer$"
+            "\.crt$"
+            "\.der$"
+            "id_rsa"
+            "id_dsa"
+            "id_ecdsa"
+            "id_ed25519"
+            "credentials\.json$"
+            "service-account.*\.json$"
+            "gcloud\.json$"
+            "aws-credentials"
+            "\.npmrc$"
+            "\.pypirc$"
+            "\.dockercfg$"
+            "privatekey"
+            "private\.key"
+            "password"
+            "secrets\."
+            "auth\.json$"
+            "\.db$"
+            "\.sqlite$"
+            "\.sqlite3$"
+            "token"
+            "\.bak$"
+            "\.backup$"
+          )
+
+          FOUND_SENSITIVE=0
+          SENSITIVE_FILES=()
+
+          # Check each file against sensitive patterns
+          while IFS= read -r file; do
+            for pattern in "${SENSITIVE_PATTERNS[@]}"; do
+              if echo "$file" | grep -iE "$pattern" > /dev/null; then
+                SENSITIVE_FILES+=("$file")
+                FOUND_SENSITIVE=1
+                break
+              fi
+            done
+          done <<< "$FILES"
+
+          # Report results
+          if [ $FOUND_SENSITIVE -eq 1 ]; then
+            echo "❌ ERROR: Sensitive files detected in extension package!"
+            echo ""
+            echo "The following sensitive files would be included in the published extension:"
+            printf '  - %s\n' "${SENSITIVE_FILES[@]}"
+            echo ""
+            echo "These files may contain:"
+            echo "  • API keys, tokens, or credentials"
+            echo "  • Private certificates or SSH keys"
+            echo "  • Environment configuration"
+            echo "  • Database files with sensitive data"
+            echo ""
+            echo "Action required:"
+            echo "  1. Add these files to .vscodeignore"
+            echo "  2. Verify no sensitive data is committed to the repository"
+            echo "  3. Rotate any exposed credentials"
+            echo ""
+            exit 1
+          else
+            echo "✅ No sensitive files detected in package"
+            echo "📦 Package contains $(echo "$FILES" | wc -l | tr -d ' ') files"
+          fi
+
       - name: Check for breaking changes
         run: |
           echo "Checking for breaking changes..."
