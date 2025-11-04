@@ -820,6 +820,26 @@ export function getHtmlForWebview(result, webview, context) {
             margin-bottom: 15px;
         }
         
+        .quality-score-container {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .beta-badge {
+            position: absolute;
+            top: -6px;
+            right: -8px;
+            font-size: 0.55em;
+            font-weight: 700;
+            padding: 2px 5px;
+            border-radius: 3px;
+            background-color: var(--vscode-statusBarItem-warningBackground);
+            color: var(--vscode-statusBarItem-warningForeground);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        }
+        
         .quality-score {
             font-size: 1.2em;
             font-weight: 700;
@@ -897,6 +917,7 @@ export function getHtmlForWebview(result, webview, context) {
         
         .quality-metric-tooltip {
             visibility: hidden;
+            opacity: 0;
             position: absolute;
             z-index: 10000;
             background-color: var(--vscode-editorHoverWidget-background);
@@ -909,41 +930,42 @@ export function getHtmlForWebview(result, webview, context) {
             max-width: 300px;
             width: max-content;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-            left: 20px;
+            left: 25px;
             top: 50%;
             transform: translateY(-50%);
             white-space: pre-line;
-            pointer-events: none;
+            transition: opacity 0.15s ease-in-out, visibility 0s linear 0.2s;
         }
         
         /* When tooltip would overflow on the right, position it on the left */
         .quality-metric-help:last-child .quality-metric-tooltip,
         [style*="justify-content: space-between"] .quality-metric-help:last-of-type .quality-metric-tooltip {
             left: auto;
-            right: 20px;
+            right: 25px;
         }
         
-        /* Invisible bridge to keep tooltip open when moving mouse */
+        /* Invisible bridge to keep tooltip open when moving mouse - extends from icon to tooltip */
         .quality-metric-tooltip::before {
             content: '';
             position: absolute;
-            right: 100%;
-            top: 0;
-            bottom: 0;
-            width: 20px;
+            left: -25px;
+            top: -10px;
+            bottom: -10px;
+            width: 30px;
         }
         
-        /* Bridge on the other side when tooltip is on the left */
+        /* Bridge on the right side when tooltip is on the left of the icon */
         .quality-metric-help:last-child .quality-metric-tooltip::before,
         [style*="justify-content: space-between"] .quality-metric-help:last-of-type .quality-metric-tooltip::before {
-            right: auto;
-            left: 100%;
+            left: auto;
+            right: -25px;
         }
         
         .quality-metric-help:hover .quality-metric-tooltip,
         .quality-metric-tooltip:hover {
             visibility: visible;
-            pointer-events: auto;
+            opacity: 1;
+            transition-delay: 0s;
         }
         
         .quality-metric-tooltip a {
@@ -2224,10 +2246,16 @@ export function getHtmlForWebview(result, webview, context) {
                     
                     let qualityHtml = \`
                         <div class="quality-header">
-                            <h4 style="margin: 0; color: var(--vscode-foreground);">🎯 Data Quality Assessment</h4>
-                            <span class="quality-score \${assessment.color === 'green' ? 'good' : assessment.color === 'yellow' ? 'warning' : 'error'}">
-                                \${assessment.qualityScore}/100 - \${assessment.qualityLevel}
-                            </span>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <h4 style="margin: 0; color: var(--vscode-foreground);">🎯 Data Quality Assessment</h4>
+                                \${createHelpIcon('dataQualityAssessment')}
+                            </div>
+                            <div class="quality-score-container">
+                                <span class="quality-score \${assessment.color === 'green' ? 'good' : assessment.color === 'yellow' ? 'warning' : 'error'}">
+                                    \${assessment.qualityScore}/100 - \${assessment.qualityLevel}
+                                </span>
+                                <span class="beta-badge">Beta</span>
+                            </div>
                         </div>
                     \`;
                     

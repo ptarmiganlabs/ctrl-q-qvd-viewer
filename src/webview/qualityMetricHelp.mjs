@@ -60,6 +60,10 @@ export const metricHelpContent = {
     text: "All loaded rows are analyzed, but the distribution display is limited to the most frequent unique values for performance. For example, if you have 98,543 rows with 5,234 unique values, all 98,543 rows are analyzed, but only the top 1,000 most frequent unique values are displayed in the distribution table.",
     link: "https://en.wikipedia.org/wiki/Data_profiling",
   },
+  dataQualityAssessment: {
+    text: "The Data Quality Assessment provides an overall score (0-100) calculated from multiple metrics:\n\n• Completeness: Percentage of non-null, non-empty values\n• Cardinality: Distribution of unique values (too few or too many can indicate issues)\n• Uniqueness: Ratio of unique values to total values\n• Distribution Quality: Evenness of value distribution (Shannon entropy)\n\nScore Interpretation:\n• 0-60 (Poor): Significant data quality issues detected - review warnings\n• 61-80 (Fair): Some quality concerns - check issues list\n• 81-100 (Good): High quality data with minimal issues\n\nThe Issues and Warnings sections provide specific actionable insights for improving data quality.",
+    link: "https://en.wikipedia.org/wiki/Data_quality",
+  },
 
   // Temporal Analysis Metrics
   temporalEarliest: {
