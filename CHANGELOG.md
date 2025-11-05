@@ -4,6 +4,35 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [1.3.0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.2.0...v1.3.0) (2025-11-05)
+
+
+### Features
+
+* **profiling:** Add string analysis metrics ([734af51](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/734af514e04800a06c1529f3e842cc4aec02453b))
+* **profiling:** Add temporal analysis ([bc75c16](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/bc75c16efcfd258493523e63145850816b59b342))
+* **profiling:** Add tooltips and reference links to metrics in the Data Quality Assessment panel ([fb721b1](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/fb721b1becd0705f3c9918851bb6b17b92cc4b32))
+
+
+### Bug Fixes
+
+* **profiling:** Enhance cardinality classification logic ([32b1c01](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/32b1c01b5f9a480b82e7043dab20bb989c7922b6))
+
+
+### Documentation
+
+* **profiling:** Update README file with info on the new temporal and string profiling features ([b63f6e2](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/b63f6e20bf3c38e07664b98de75c892ad74dd633))
+
+
+### Miscellaneous
+
+* Add NYC taxi rides test dataset (QVD and Parquet) ([7e19913](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/7e19913cccd8ccd8444a5b84d81acda4694a1dca))
+
+
+### Code Refactoring
+
+* Improve code formatting and readability in temporal analysis and date detection modules ([436b80b](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/436b80b3ebe5f00fdca4b3de805fd135fe9d4afa))
+
 ## [1.2.0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.1.0...v1.2.0) (2025-11-04)
 
 
