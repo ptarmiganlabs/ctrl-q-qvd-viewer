@@ -374,10 +374,11 @@ function detectFormats(stringValues) {
 
     // Date patterns
     dateString: {
-      'ISO 8601': /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})?)?$/,
-      'US format': /^\d{1,2}\/\d{1,2}\/\d{2,4}$/,
-      'EU format': /^\d{1,2}\.\d{1,2}\.\d{2,4}$/,
-      'Long format': /^\w{3,9}\s+\d{1,2},?\s+\d{4}$/,
+      "ISO 8601":
+        /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})?)?$/,
+      "US format": /^\d{1,2}\/\d{1,2}\/\d{2,4}$/,
+      "EU format": /^\d{1,2}\.\d{1,2}\.\d{2,4}$/,
+      "Long format": /^\w{3,9}\s+\d{1,2},?\s+\d{4}$/,
     },
   };
 
