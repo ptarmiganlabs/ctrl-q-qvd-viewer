@@ -2248,19 +2248,31 @@ export function getHtmlForWebview(result, webview, context) {
                             <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Length Statistics</h5>
                             <div class="stats-container" style="margin-bottom: 15px;">
                                 <div class="stat-item">
-                                    <span class="stat-label">Min Length</span>
+                                    <span class="stat-label">
+                                        Min Length
+                                        \${createHelpIcon('stringMinLength')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.lengthStats.min.toLocaleString()}</span>
                                 </div>
                                 <div class="stat-item">
-                                    <span class="stat-label">Max Length</span>
+                                    <span class="stat-label">
+                                        Max Length
+                                        \${createHelpIcon('stringMaxLength')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.lengthStats.max.toLocaleString()}</span>
                                 </div>
                                 <div class="stat-item">
-                                    <span class="stat-label">Avg Length</span>
+                                    <span class="stat-label">
+                                        Avg Length
+                                        \${createHelpIcon('stringAvgLength')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.lengthStats.average.toLocaleString()}</span>
                                 </div>
                                 <div class="stat-item">
-                                    <span class="stat-label">Most Common Length</span>
+                                    <span class="stat-label">
+                                        Most Common Length
+                                        \${createHelpIcon('stringMostCommonLength')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.lengthStats.mostCommon} (\${strAnalysis.lengthStats.mostCommonCount}x)</span>
                                 </div>
                             </div>
@@ -2271,7 +2283,10 @@ export function getHtmlForWebview(result, webview, context) {
                             <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Pattern Detection</h5>
                             \${strAnalysis.patterns.prefixes.length > 0 ? \`
                             <div style="margin-bottom: 10px;">
-                                <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px;">Common Prefixes:</div>
+                                <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px; display: flex; align-items: center; gap: 4px;">
+                                    Common Prefixes:
+                                    \${createHelpIcon('stringCommonPrefixes')}
+                                </div>
                                 <div style="display: flex; flex-wrap: wrap; gap: 8px;">
                                     \${strAnalysis.patterns.prefixes.slice(0, 5).map(p => \`
                                         <span style="background-color: var(--vscode-badge-background); color: var(--vscode-badge-foreground); padding: 4px 8px; border-radius: 3px; font-size: 0.85em;">
@@ -2283,7 +2298,10 @@ export function getHtmlForWebview(result, webview, context) {
                             \` : ''}
                             \${strAnalysis.patterns.suffixes.length > 0 ? \`
                             <div>
-                                <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px;">Common Suffixes:</div>
+                                <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px; display: flex; align-items: center; gap: 4px;">
+                                    Common Suffixes:
+                                    \${createHelpIcon('stringCommonSuffixes')}
+                                </div>
                                 <div style="display: flex; flex-wrap: wrap; gap: 8px;">
                                     \${strAnalysis.patterns.suffixes.slice(0, 5).map(s => \`
                                         <span style="background-color: var(--vscode-badge-background); color: var(--vscode-badge-foreground); padding: 4px 8px; border-radius: 3px; font-size: 0.85em;">
@@ -2300,35 +2318,59 @@ export function getHtmlForWebview(result, webview, context) {
                             <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Character Composition</h5>
                             <div class="stats-container" style="margin-bottom: 15px;">
                                 <div class="stat-item">
-                                    <span class="stat-label">Alphanumeric</span>
+                                    <span class="stat-label">
+                                        Alphanumeric
+                                        \${createHelpIcon('stringAlphanumeric')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.characterComposition.alphanumericPercentage}%</span>
                                 </div>
                                 <div class="stat-item">
-                                    <span class="stat-label">Alphabetic</span>
+                                    <span class="stat-label">
+                                        Alphabetic
+                                        \${createHelpIcon('stringAlphabetic')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.characterComposition.alphabeticPercentage}%</span>
                                 </div>
                                 <div class="stat-item">
-                                    <span class="stat-label">Numeric</span>
+                                    <span class="stat-label">
+                                        Numeric
+                                        \${createHelpIcon('stringNumeric')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.characterComposition.numericPercentage}%</span>
                                 </div>
                                 <div class="stat-item">
-                                    <span class="stat-label">Special Chars</span>
+                                    <span class="stat-label">
+                                        Special Chars
+                                        \${createHelpIcon('stringSpecialChars')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.characterComposition.specialCharPercentage}%</span>
                                 </div>
                                 <div class="stat-item">
-                                    <span class="stat-label">Whitespace</span>
+                                    <span class="stat-label">
+                                        Whitespace
+                                        \${createHelpIcon('stringWhitespace')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.characterComposition.whitespacePercentage}%</span>
                                 </div>
                                 <div class="stat-item">
-                                    <span class="stat-label">Non-ASCII</span>
+                                    <span class="stat-label">
+                                        Non-ASCII
+                                        \${createHelpIcon('stringNonAscii')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.characterComposition.nonAsciiPercentage}%</span>
                                 </div>
                                 <div class="stat-item">
-                                    <span class="stat-label">Leading Whitespace</span>
+                                    <span class="stat-label">
+                                        Leading Whitespace
+                                        \${createHelpIcon('stringLeadingWhitespace')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.characterComposition.leadingWhitespaceCount}</span>
                                 </div>
                                 <div class="stat-item">
-                                    <span class="stat-label">Trailing Whitespace</span>
+                                    <span class="stat-label">
+                                        Trailing Whitespace
+                                        \${createHelpIcon('stringTrailingWhitespace')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.characterComposition.trailingWhitespaceCount}</span>
                                 </div>
                             </div>
@@ -2338,19 +2380,31 @@ export function getHtmlForWebview(result, webview, context) {
                             <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Case Analysis</h5>
                             <div class="stats-container" style="margin-bottom: 15px;">
                                 <div class="stat-item">
-                                    <span class="stat-label">Uppercase</span>
+                                    <span class="stat-label">
+                                        Uppercase
+                                        \${createHelpIcon('stringUppercase')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.caseAnalysis.uppercaseCount} (\${strAnalysis.caseAnalysis.uppercasePercentage}%)</span>
                                 </div>
                                 <div class="stat-item">
-                                    <span class="stat-label">Lowercase</span>
+                                    <span class="stat-label">
+                                        Lowercase
+                                        \${createHelpIcon('stringLowercase')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.caseAnalysis.lowercaseCount} (\${strAnalysis.caseAnalysis.lowercasePercentage}%)</span>
                                 </div>
                                 <div class="stat-item">
-                                    <span class="stat-label">Mixed Case</span>
+                                    <span class="stat-label">
+                                        Mixed Case
+                                        \${createHelpIcon('stringMixedCase')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.caseAnalysis.mixedCaseCount} (\${strAnalysis.caseAnalysis.mixedCasePercentage}%)</span>
                                 </div>
                                 <div class="stat-item">
-                                    <span class="stat-label">Title Case</span>
+                                    <span class="stat-label">
+                                        Title Case
+                                        \${createHelpIcon('stringTitleCase')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.caseAnalysis.titleCaseCount} (\${strAnalysis.caseAnalysis.titleCasePercentage}%)</span>
                                 </div>
                             </div>
@@ -2368,31 +2422,46 @@ export function getHtmlForWebview(result, webview, context) {
                             <div class="stats-container" style="margin-bottom: 15px;">
                                 \${strAnalysis.formatDetection.email.count > 0 ? \`
                                 <div class="stat-item">
-                                    <span class="stat-label">Email Addresses</span>
+                                    <span class="stat-label">
+                                        Email Addresses
+                                        \${createHelpIcon('stringEmailFormat')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.formatDetection.email.count} (\${strAnalysis.formatDetection.email.percentage}%)</span>
                                 </div>
                                 \` : ''}
                                 \${strAnalysis.formatDetection.phone.count > 0 ? \`
                                 <div class="stat-item">
-                                    <span class="stat-label">Phone Numbers</span>
+                                    <span class="stat-label">
+                                        Phone Numbers
+                                        \${createHelpIcon('stringPhoneFormat')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.formatDetection.phone.count} (\${strAnalysis.formatDetection.phone.percentage}%)</span>
                                 </div>
                                 \` : ''}
                                 \${strAnalysis.formatDetection.ssn.count > 0 ? \`
                                 <div class="stat-item">
-                                    <span class="stat-label">SSN/ID Numbers</span>
+                                    <span class="stat-label">
+                                        SSN/ID Numbers
+                                        \${createHelpIcon('stringSsnFormat')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.formatDetection.ssn.count} (\${strAnalysis.formatDetection.ssn.percentage}%)</span>
                                 </div>
                                 \` : ''}
                                 \${strAnalysis.formatDetection.url.count > 0 ? \`
                                 <div class="stat-item">
-                                    <span class="stat-label">URLs</span>
+                                    <span class="stat-label">
+                                        URLs
+                                        \${createHelpIcon('stringUrlFormat')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.formatDetection.url.count} (\${strAnalysis.formatDetection.url.percentage}%)</span>
                                 </div>
                                 \` : ''}
                                 \${strAnalysis.formatDetection.dateString.count > 0 ? \`
                                 <div class="stat-item">
-                                    <span class="stat-label">Date Strings</span>
+                                    <span class="stat-label">
+                                        Date Strings
+                                        \${createHelpIcon('stringDateFormat')}
+                                    </span>
                                     <span class="stat-value">\${strAnalysis.formatDetection.dateString.count} (\${strAnalysis.formatDetection.dateString.percentage}%)</span>
                                 </div>
                                 \` : ''}
@@ -2439,13 +2508,15 @@ export function getHtmlForWebview(result, webview, context) {
                         <div class="quality-header">
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <h4 style="margin: 0; color: var(--vscode-foreground);">🎯 Data Quality Assessment</h4>
-                                \${createHelpIcon('dataQualityAssessment')}
                             </div>
-                            <div class="quality-score-container">
-                                <span class="quality-score \${assessment.color === 'green' ? 'good' : assessment.color === 'yellow' ? 'warning' : 'error'}">
-                                    \${assessment.qualityScore}/100 - \${assessment.qualityLevel}
-                                </span>
-                                <span class="beta-badge">Beta</span>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <div class="quality-score-container">
+                                    <span class="quality-score \${assessment.color === 'green' ? 'good' : assessment.color === 'yellow' ? 'warning' : 'error'}">
+                                        \${assessment.qualityScore}/100 - \${assessment.qualityLevel}
+                                    </span>
+                                    <span class="beta-badge">Beta</span>
+                                </div>
+                                \${createHelpIcon('dataQualityAssessment')}
                             </div>
                         </div>
                     \`;

@@ -797,55 +797,181 @@ export function getVisualAnalysisHtml(
         <h3 style="margin: 0 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Length Statistics</h3>
         <div class="stats-container" style="margin-bottom: 15px;">
             <div class="stat-item">
-                <span class="stat-label">Min Length</span>
+                <span class="stat-label">
+                    Min Length
+                    ${createHelpIconHtml("stringMinLength")}
+                </span>
                 <span class="stat-value">${fieldResult.stringAnalysis.lengthStats.min.toLocaleString()}</span>
             </div>
             <div class="stat-item">
-                <span class="stat-label">Max Length</span>
+                <span class="stat-label">
+                    Max Length
+                    ${createHelpIconHtml("stringMaxLength")}
+                </span>
                 <span class="stat-value">${fieldResult.stringAnalysis.lengthStats.max.toLocaleString()}</span>
             </div>
             <div class="stat-item">
-                <span class="stat-label">Avg Length</span>
+                <span class="stat-label">
+                    Avg Length
+                    ${createHelpIconHtml("stringAvgLength")}
+                </span>
                 <span class="stat-value">${fieldResult.stringAnalysis.lengthStats.average.toLocaleString()}</span>
             </div>
             <div class="stat-item">
-                <span class="stat-label">Most Common Length</span>
+                <span class="stat-label">
+                    Most Common Length
+                    ${createHelpIconHtml("stringMostCommonLength")}
+                </span>
                 <span class="stat-value">${
                   fieldResult.stringAnalysis.lengthStats.mostCommon
                 } (${
-      fieldResult.stringAnalysis.lengthStats.mostCommonCount
-    }x)</span>
+            fieldResult.stringAnalysis.lengthStats.mostCommonCount
+          }x)</span>
             </div>
         </div>
+        
+        ${
+          fieldResult.stringAnalysis.patterns &&
+          (fieldResult.stringAnalysis.patterns.prefixes.length > 0 ||
+            fieldResult.stringAnalysis.patterns.suffixes.length > 0)
+            ? `
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Pattern Detection</h3>
+        ${
+          fieldResult.stringAnalysis.patterns.prefixes.length > 0
+            ? `
+        <div style="margin-bottom: 10px;">
+            <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px; display: flex; align-items: center; gap: 4px;">
+                Common Prefixes:
+                ${createHelpIconHtml("stringCommonPrefixes")}
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                ${fieldResult.stringAnalysis.patterns.prefixes
+                  .slice(0, 5)
+                  .map(
+                    (p) => `
+                    <span style="background-color: var(--vscode-badge-background); color: var(--vscode-badge-foreground); padding: 4px 8px; border-radius: 3px; font-size: 0.85em;">
+                        "${escapeHtml(p.prefix)}" (${p.count}x, ${
+                      p.percentage
+                    }%)
+                    </span>
+                `
+                  )
+                  .join("")}
+            </div>
+        </div>
+        `
+            : ""
+        }
+        ${
+          fieldResult.stringAnalysis.patterns.suffixes.length > 0
+            ? `
+        <div style="margin-bottom: 15px;">
+            <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px; display: flex; align-items: center; gap: 4px;">
+                Common Suffixes:
+                ${createHelpIconHtml("stringCommonSuffixes")}
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                ${fieldResult.stringAnalysis.patterns.suffixes
+                  .slice(0, 5)
+                  .map(
+                    (s) => `
+                    <span style="background-color: var(--vscode-badge-background); color: var(--vscode-badge-foreground); padding: 4px 8px; border-radius: 3px; font-size: 0.85em;">
+                        "${escapeHtml(s.suffix)}" (${s.count}x, ${
+                      s.percentage
+                    }%)
+                    </span>
+                `
+                  )
+                  .join("")}
+            </div>
+        </div>
+        `
+            : ""
+        }
+        `
+            : ""
+        }
         
         <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Character Composition</h3>
         <div class="stats-container" style="margin-bottom: 15px;">
             <div class="stat-item">
-                <span class="stat-label">Alphanumeric</span>
+                <span class="stat-label">
+                    Alphanumeric
+                    ${createHelpIconHtml("stringAlphanumeric")}
+                </span>
                 <span class="stat-value">${
                   fieldResult.stringAnalysis.characterComposition
                     .alphanumericPercentage
                 }%</span>
             </div>
             <div class="stat-item">
-                <span class="stat-label">Alphabetic</span>
+                <span class="stat-label">
+                    Alphabetic
+                    ${createHelpIconHtml("stringAlphabetic")}
+                </span>
                 <span class="stat-value">${
                   fieldResult.stringAnalysis.characterComposition
                     .alphabeticPercentage
                 }%</span>
             </div>
             <div class="stat-item">
-                <span class="stat-label">Special Chars</span>
+                <span class="stat-label">
+                    Numeric
+                    ${createHelpIconHtml("stringNumeric")}
+                </span>
+                <span class="stat-value">${
+                  fieldResult.stringAnalysis.characterComposition
+                    .numericPercentage
+                }%</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">
+                    Special Chars
+                    ${createHelpIconHtml("stringSpecialChars")}
+                </span>
                 <span class="stat-value">${
                   fieldResult.stringAnalysis.characterComposition
                     .specialCharPercentage
                 }%</span>
             </div>
             <div class="stat-item">
-                <span class="stat-label">Leading Whitespace</span>
+                <span class="stat-label">
+                    Whitespace
+                    ${createHelpIconHtml("stringWhitespace")}
+                </span>
+                <span class="stat-value">${
+                  fieldResult.stringAnalysis.characterComposition
+                    .whitespacePercentage
+                }%</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">
+                    Non-ASCII
+                    ${createHelpIconHtml("stringNonAscii")}
+                </span>
+                <span class="stat-value">${
+                  fieldResult.stringAnalysis.characterComposition
+                    .nonAsciiPercentage
+                }%</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">
+                    Leading Whitespace
+                    ${createHelpIconHtml("stringLeadingWhitespace")}
+                </span>
                 <span class="stat-value">${
                   fieldResult.stringAnalysis.characterComposition
                     .leadingWhitespaceCount
+                }</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">
+                    Trailing Whitespace
+                    ${createHelpIconHtml("stringTrailingWhitespace")}
+                </span>
+                <span class="stat-value">${
+                  fieldResult.stringAnalysis.characterComposition
+                    .trailingWhitespaceCount
                 }</span>
             </div>
         </div>
@@ -853,38 +979,202 @@ export function getVisualAnalysisHtml(
         <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Case Analysis</h3>
         <div class="stats-container" style="margin-bottom: 15px;">
             <div class="stat-item">
-                <span class="stat-label">Uppercase</span>
+                <span class="stat-label">
+                    Uppercase
+                    ${createHelpIconHtml("stringUppercase")}
+                </span>
                 <span class="stat-value">${
                   fieldResult.stringAnalysis.caseAnalysis.uppercaseCount
                 } (${
-      fieldResult.stringAnalysis.caseAnalysis.uppercasePercentage
-    }%)</span>
+            fieldResult.stringAnalysis.caseAnalysis.uppercasePercentage
+          }%)</span>
             </div>
             <div class="stat-item">
-                <span class="stat-label">Lowercase</span>
+                <span class="stat-label">
+                    Lowercase
+                    ${createHelpIconHtml("stringLowercase")}
+                </span>
                 <span class="stat-value">${
                   fieldResult.stringAnalysis.caseAnalysis.lowercaseCount
                 } (${
-      fieldResult.stringAnalysis.caseAnalysis.lowercasePercentage
-    }%)</span>
+            fieldResult.stringAnalysis.caseAnalysis.lowercasePercentage
+          }%)</span>
             </div>
             <div class="stat-item">
-                <span class="stat-label">Mixed Case</span>
+                <span class="stat-label">
+                    Mixed Case
+                    ${createHelpIconHtml("stringMixedCase")}
+                </span>
                 <span class="stat-value">${
                   fieldResult.stringAnalysis.caseAnalysis.mixedCaseCount
                 } (${
-      fieldResult.stringAnalysis.caseAnalysis.mixedCasePercentage
-    }%)</span>
+            fieldResult.stringAnalysis.caseAnalysis.mixedCasePercentage
+          }%)</span>
             </div>
             <div class="stat-item">
-                <span class="stat-label">Title Case</span>
+                <span class="stat-label">
+                    Title Case
+                    ${createHelpIconHtml("stringTitleCase")}
+                </span>
                 <span class="stat-value">${
                   fieldResult.stringAnalysis.caseAnalysis.titleCaseCount
                 } (${
-      fieldResult.stringAnalysis.caseAnalysis.titleCasePercentage
-    }%)</span>
+            fieldResult.stringAnalysis.caseAnalysis.titleCasePercentage
+          }%)</span>
             </div>
         </div>
+        
+        ${
+          fieldResult.stringAnalysis.formatDetection &&
+          (fieldResult.stringAnalysis.formatDetection.email.count > 0 ||
+            fieldResult.stringAnalysis.formatDetection.phone.count > 0 ||
+            fieldResult.stringAnalysis.formatDetection.ssn.count > 0 ||
+            fieldResult.stringAnalysis.formatDetection.url.count > 0 ||
+            fieldResult.stringAnalysis.formatDetection.dateString.count > 0)
+            ? `
+        <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Format Detection</h3>
+        <div class="stats-container" style="margin-bottom: 15px;">
+            ${
+              fieldResult.stringAnalysis.formatDetection.email.count > 0
+                ? `
+            <div class="stat-item">
+                <span class="stat-label">
+                    Email Addresses
+                    ${createHelpIconHtml("stringEmailFormat")}
+                </span>
+                <span class="stat-value">${
+                  fieldResult.stringAnalysis.formatDetection.email.count
+                } (${
+                    fieldResult.stringAnalysis.formatDetection.email.percentage
+                  }%)</span>
+            </div>
+            `
+                : ""
+            }
+            ${
+              fieldResult.stringAnalysis.formatDetection.phone.count > 0
+                ? `
+            <div class="stat-item">
+                <span class="stat-label">
+                    Phone Numbers
+                    ${createHelpIconHtml("stringPhoneFormat")}
+                </span>
+                <span class="stat-value">${
+                  fieldResult.stringAnalysis.formatDetection.phone.count
+                } (${
+                    fieldResult.stringAnalysis.formatDetection.phone.percentage
+                  }%)</span>
+            </div>
+            `
+                : ""
+            }
+            ${
+              fieldResult.stringAnalysis.formatDetection.ssn.count > 0
+                ? `
+            <div class="stat-item">
+                <span class="stat-label">
+                    SSN/ID Numbers
+                    ${createHelpIconHtml("stringSsnFormat")}
+                </span>
+                <span class="stat-value">${
+                  fieldResult.stringAnalysis.formatDetection.ssn.count
+                } (${
+                    fieldResult.stringAnalysis.formatDetection.ssn.percentage
+                  }%)</span>
+            </div>
+            `
+                : ""
+            }
+            ${
+              fieldResult.stringAnalysis.formatDetection.url.count > 0
+                ? `
+            <div class="stat-item">
+                <span class="stat-label">
+                    URLs
+                    ${createHelpIconHtml("stringUrlFormat")}
+                </span>
+                <span class="stat-value">${
+                  fieldResult.stringAnalysis.formatDetection.url.count
+                } (${
+                    fieldResult.stringAnalysis.formatDetection.url.percentage
+                  }%)</span>
+            </div>
+            `
+                : ""
+            }
+            ${
+              fieldResult.stringAnalysis.formatDetection.dateString.count > 0
+                ? `
+            <div class="stat-item">
+                <span class="stat-label">
+                    Date Strings
+                    ${createHelpIconHtml("stringDateFormat")}
+                </span>
+                <span class="stat-value">${
+                  fieldResult.stringAnalysis.formatDetection.dateString.count
+                } (${
+                    fieldResult.stringAnalysis.formatDetection.dateString
+                      .percentage
+                  }%)</span>
+            </div>
+            `
+                : ""
+            }
+        </div>
+        ${
+          fieldResult.stringAnalysis.formatDetection.email.samples.length > 0
+            ? `
+        <div style="margin-top: 10px;">
+            <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px;">Sample Email Addresses:</div>
+            <div style="font-family: var(--vscode-editor-font-family); font-size: 0.85em; color: var(--vscode-foreground);">
+                ${fieldResult.stringAnalysis.formatDetection.email.samples
+                  .slice(0, 3)
+                  .map(
+                    (s) => `<div style="padding: 2px 0;">${escapeHtml(s)}</div>`
+                  )
+                  .join("")}
+            </div>
+        </div>
+        `
+            : ""
+        }
+        ${
+          fieldResult.stringAnalysis.formatDetection.phone.samples.length > 0
+            ? `
+        <div style="margin-top: 10px;">
+            <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px;">Sample Phone Numbers:</div>
+            <div style="font-family: var(--vscode-editor-font-family); font-size: 0.85em; color: var(--vscode-foreground);">
+                ${fieldResult.stringAnalysis.formatDetection.phone.samples
+                  .slice(0, 3)
+                  .map(
+                    (s) => `<div style="padding: 2px 0;">${escapeHtml(s)}</div>`
+                  )
+                  .join("")}
+            </div>
+        </div>
+        `
+            : ""
+        }
+        ${
+          fieldResult.stringAnalysis.formatDetection.url.samples.length > 0
+            ? `
+        <div style="margin-top: 10px;">
+            <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px;">Sample URLs:</div>
+            <div style="font-family: var(--vscode-editor-font-family); font-size: 0.85em; color: var(--vscode-foreground);">
+                ${fieldResult.stringAnalysis.formatDetection.url.samples
+                  .slice(0, 3)
+                  .map(
+                    (s) => `<div style="padding: 2px 0;">${escapeHtml(s)}</div>`
+                  )
+                  .join("")}
+            </div>
+        </div>
+        `
+            : ""
+        }
+        `
+            : ""
+        }
     </div>
     `
         : ""
@@ -904,21 +1194,25 @@ export function getVisualAnalysisHtml(
             <div style="display: flex; align-items: center; gap: 8px;">
                 <h2 style="margin: 0; font-size: 1.2em;">🎯 Data Quality Assessment</h2>
             </div>
-            <div class="quality-score-container">
-                <span class="quality-score ${
-                  fieldResult.qualityMetrics.assessment.color === "green"
-                    ? "good"
-                    : fieldResult.qualityMetrics.assessment.color === "yellow"
-                    ? "warning"
-                    : "error"
-                }">
-                    ${
-                      fieldResult.qualityMetrics.assessment.qualityScore
-                    }/100 - ${
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <div class="quality-score-container">
+                    <span class="quality-score ${
+                      fieldResult.qualityMetrics.assessment.color === "green"
+                        ? "good"
+                        : fieldResult.qualityMetrics.assessment.color ===
+                          "yellow"
+                        ? "warning"
+                        : "error"
+                    }">
+                        ${
+                          fieldResult.qualityMetrics.assessment.qualityScore
+                        }/100 - ${
             fieldResult.qualityMetrics.assessment.qualityLevel
           }
-                </span>
-                <span class="beta-badge">Beta</span>
+                    </span>
+                    <span class="beta-badge">Beta</span>
+                </div>
+                ${createHelpIconHtml("dataQualityAssessment")}
             </div>
         </div>
         

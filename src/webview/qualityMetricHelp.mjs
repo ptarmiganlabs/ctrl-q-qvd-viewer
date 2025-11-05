@@ -134,6 +134,100 @@ export const metricHelpContent = {
     text: "Percentage of total values that are valid dates. Higher percentages indicate better data quality. Values below 80% may need investigation.",
     link: "https://en.wikipedia.org/wiki/Data_quality",
   },
+
+  // String Analysis Metrics
+  stringMinLength: {
+    text: "The shortest string length found in the field. Useful for validating minimum data requirements or detecting empty values that weren't caught as nulls.",
+    link: "https://en.wikipedia.org/wiki/String_(computer_science)",
+  },
+  stringMaxLength: {
+    text: "The longest string length found in the field. Important for database schema design and identifying potential truncation issues or outliers.",
+    link: "https://en.wikipedia.org/wiki/String_(computer_science)",
+  },
+  stringAvgLength: {
+    text: "The average (mean) length of all strings in the field. Helps understand typical string size and detect unusual patterns.",
+    link: "https://en.wikipedia.org/wiki/Average",
+  },
+  stringMostCommonLength: {
+    text: "The string length that appears most frequently, with its occurrence count. Indicates the most typical string size in your data.",
+    link: "https://en.wikipedia.org/wiki/Mode_(statistics)",
+  },
+  stringCommonPrefixes: {
+    text: "The most frequently occurring starting character sequences. Useful for identifying naming conventions, categories, or data patterns.\n\nExample: 'PROD-' prefix might indicate production items.",
+    link: "https://en.wikipedia.org/wiki/Substring",
+  },
+  stringCommonSuffixes: {
+    text: "The most frequently occurring ending character sequences. Helpful for identifying file extensions, units, or classification patterns.\n\nExample: '.com' suffix indicates website domains.",
+    link: "https://en.wikipedia.org/wiki/Substring",
+  },
+  stringAlphanumeric: {
+    text: "Percentage of strings containing only letters and numbers (A-Z, a-z, 0-9). High percentages indicate clean, standardized data without special characters.",
+    link: "https://en.wikipedia.org/wiki/Alphanumeric",
+  },
+  stringAlphabetic: {
+    text: "Percentage of strings containing only letters (A-Z, a-z). Useful for validating name fields or text-only data.",
+    link: "https://en.wikipedia.org/wiki/Alphabetic",
+  },
+  stringNumeric: {
+    text: "Percentage of strings containing only numeric digits (0-9). May indicate numeric data stored as text, which could be converted for better analysis.",
+    link: "https://en.wikipedia.org/wiki/Numerical_digit",
+  },
+  stringSpecialChars: {
+    text: "Percentage of strings containing special characters (!@#$%^&*()_+-=[]{}|;:',.<>?/\\). High values may indicate formatting codes, HTML, or data quality issues.",
+    link: "https://en.wikipedia.org/wiki/Special_characters",
+  },
+  stringWhitespace: {
+    text: "Percentage of strings containing whitespace characters (spaces, tabs, newlines). Helps identify multi-word fields or potential formatting issues.",
+    link: "https://en.wikipedia.org/wiki/Whitespace_character",
+  },
+  stringNonAscii: {
+    text: "Percentage of strings containing non-ASCII characters (accented letters, emoji, international characters). Important for internationalization and encoding considerations.",
+    link: "https://en.wikipedia.org/wiki/ASCII",
+  },
+  stringLeadingWhitespace: {
+    text: "Count of strings that start with whitespace. Often indicates data quality issues or inconsistent data entry that may affect sorting and matching.",
+    link: "https://en.wikipedia.org/wiki/Whitespace_character",
+  },
+  stringTrailingWhitespace: {
+    text: "Count of strings that end with whitespace. Can cause issues with string comparisons and indicates potential data cleaning needs.",
+    link: "https://en.wikipedia.org/wiki/Whitespace_character",
+  },
+  stringUppercase: {
+    text: "Count and percentage of strings in all uppercase letters. Helps identify data entry conventions or potential standardization opportunities.",
+    link: "https://en.wikipedia.org/wiki/Letter_case",
+  },
+  stringLowercase: {
+    text: "Count and percentage of strings in all lowercase letters. Can indicate data entry style or suggest need for title case conversion.",
+    link: "https://en.wikipedia.org/wiki/Letter_case",
+  },
+  stringMixedCase: {
+    text: "Count and percentage of strings with mixed uppercase and lowercase letters. Most natural for names and descriptive text.",
+    link: "https://en.wikipedia.org/wiki/Letter_case",
+  },
+  stringTitleCase: {
+    text: "Count and percentage of strings in title case (first letter of each word capitalized). Common for proper names, titles, and formatted text.",
+    link: "https://en.wikipedia.org/wiki/Title_case",
+  },
+  stringEmailFormat: {
+    text: "Count and percentage of strings matching email address patterns. Helps validate email fields and identify potential PII (Personally Identifiable Information).",
+    link: "https://en.wikipedia.org/wiki/Email_address",
+  },
+  stringPhoneFormat: {
+    text: "Count and percentage of strings matching phone number patterns (various formats). Important for contact data validation and PII identification.",
+    link: "https://en.wikipedia.org/wiki/Telephone_number",
+  },
+  stringSsnFormat: {
+    text: "Count and percentage of strings matching Social Security Number or similar ID patterns. Critical for identifying sensitive PII that may need protection.",
+    link: "https://en.wikipedia.org/wiki/Social_Security_number",
+  },
+  stringUrlFormat: {
+    text: "Count and percentage of strings matching URL patterns (http://, https://, www.). Useful for identifying web links and validating URL fields.",
+    link: "https://en.wikipedia.org/wiki/URL",
+  },
+  stringDateFormat: {
+    text: "Count and percentage of strings that appear to contain dates in text format. May indicate dates stored as strings that could be converted to proper date types.",
+    link: "https://en.wikipedia.org/wiki/ISO_8601",
+  },
 };
 
 /**
