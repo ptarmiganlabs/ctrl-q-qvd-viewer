@@ -4,6 +4,14 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [1.3.2](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.3.1...v1.3.2) (2025-11-05)
+
+
+### Bug Fixes
+
+* **export:** Fix incorrect placement of BETA tag in Export dropdown menu ([636096b](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/636096bf2eb5d716a7b9cf725383af5e74cec2b1))
+* **export:** Fix incorrect placement of BETA tag in Export dropdown menu ([9f05567](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/9f0556705e9461a87546a1cdcbec30e581e9ec7f))
+
 ## [1.3.1](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.3.0...v1.3.1) (2025-11-05)
 
 
