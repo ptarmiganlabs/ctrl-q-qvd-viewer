@@ -231,8 +231,8 @@ jobs:
 
       - name: Generate SBOM
         run: |
-          curl -Lo $RUNNER_TEMP/sbom-tool \
-            https://github.com/microsoft/sbom-tool/releases/latest/download/sbom-tool-linux-x64
+          curl -L -o $RUNNER_TEMP/sbom-tool \
+            https://github.com/microsoft/sbom-tool/releases/download/v2.2.8/sbom-tool-linux-x64
           chmod +x $RUNNER_TEMP/sbom-tool
 
           mkdir -p ./build
