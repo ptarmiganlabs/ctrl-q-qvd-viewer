@@ -4,6 +4,14 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [1.3.1](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.3.0...v1.3.1) (2025-11-05)
+
+
+### Bug Fixes
+
+* **ci:** update SBOM tool to latest version ([7fc4e83](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/7fc4e83b4f0e09f3f9219dedf1ce45a86c608655))
+* **profiling:** refine date pattern formats in string analysis ([d6cc153](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/d6cc15379eb174a9d70421229e0dde044e57eb4c))
+
 ## [1.3.0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.2.0...v1.3.0) (2025-11-05)
 
 
