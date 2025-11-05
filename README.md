@@ -29,16 +29,29 @@ Open source with a permissive MIT license.<br>
 - **Data Profiling**: Analyze value distributions in your QVD fields ([detailed documentation](docs/PROFILING.md))
   - Select 1-3 fields for comparison
   - View frequency distributions in interactive bar charts
-  - **Statistical Analysis for Numeric Fields**:
+  - **Statistical Analysis for Numeric Fields** (Beta):
     - Descriptive statistics (min, max, mean, median, mode, sum, count)
     - Spread measures (standard deviation, variance, range, IQR)
     - Distribution metrics (quartiles, percentiles, skewness, kurtosis)
     - Outlier detection using 1.5 × IQR method
     - Histogram visualization for numeric distributions
+  - **Temporal Analysis for Date/Time Fields** (Beta):
+    - Automatic detection of date, timestamp, and time fields
+    - Time range analysis (earliest, latest, span, missing values)
+    - Temporal pattern detection (daily, weekly, monthly, quarterly, yearly)
+    - Distribution visualizations across different time granularities
+    - Gap detection and time series continuity analysis
+  - **String Analysis for Text Fields** (Beta):
+    - String length analysis (min, max, average, distribution)
+    - Pattern detection (email, phone, URL, numeric patterns)
+    - Character composition analysis (letters, digits, special characters)
+    - Whitespace and formatting detection (leading/trailing, multiple spaces)
+    - Empty string and null value analysis
   - See detailed value counts and percentages in sortable tables
   - Export profiling results as Qlik .qvs scripts for further analysis
   - Automatic warning for large files before loading all data
   - Open results as Markdown or Visual Analysis in separate windows
+  - **Note**: All analysis features (statistical, temporal, string) are in beta and subject to refinement
 - **Export Data**: Export QVD data to multiple formats:
   - **Apache Arrow** - High-performance columnar format for analytics (Beta)
   - **Avro** - Compact binary format with schema evolution support (Beta)
@@ -205,18 +218,25 @@ Analyze value distributions for selected fields to understand data patterns and 
 2. Select 1-3 fields from the field selector (use Ctrl/Cmd+Click for multiple selections)
 3. Click **"▶️ Run Profiling"** to analyze the data
 4. View results for each field including:
-   - **Statistics**: Total rows, unique values, NULL/empty count
+   - **Basic Statistics**: Total rows, unique values, NULL/empty count, frequency distribution
+   - **Statistical Analysis** (for numeric fields, Beta): Descriptive statistics, spread measures, distribution metrics, outlier detection, and histogram visualization
+   - **Temporal Analysis** (for date/time fields, Beta): Time range analysis, temporal patterns, distribution across time granularities, and gap detection
+   - **String Analysis** (for text fields, Beta): Length analysis, pattern detection (email, phone, URL), character composition, and whitespace/formatting detection
    - **Interactive Chart**: Bar chart showing top 20 most frequent values
    - **Detailed Table**: Complete distribution with values, counts, and percentages
 
 **Features:**
 
 - **Field Comparison**: Compare value distributions across up to 3 fields simultaneously
+- **Automatic Analysis Type Detection**: The extension automatically applies the appropriate analysis based on field content (numeric, temporal, or string)
 - **Visual Analysis**: Interactive charts powered by Chart.js for clear data visualization
 - **Export to QVS**: Generate Qlik .qvs scripts containing frequency data tables that can be loaded into Qlik Sense for further analysis
 - **Large File Warning**: Automatic warning when profiling files with more than 100,000 rows, as all data must be loaded into memory
 
-**Note:** Profiling loads the entire QVD file into memory. For very large files (>100,000 rows), you'll receive a warning before proceeding.
+**Note:**
+
+- Profiling loads the entire QVD file into memory. For very large files (>100,000 rows), you'll receive a warning before proceeding.
+- All analysis features (statistical, temporal, string) are in beta and subject to change and refinement based on user feedback.
 
 ### Exporting Data
 
