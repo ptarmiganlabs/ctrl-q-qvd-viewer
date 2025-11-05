@@ -1,6 +1,6 @@
 # QVD Comparison Feature - Implementation Guide
 
-> **Note:** This document has been updated to reflect the latest codebase structure (v1.0.2+), which uses ES modules (`.mjs` files) instead of CommonJS. All code examples use `import/export` syntax consistent with the current extension architecture.
+> **Note:** This document has been updated to reflect the latest codebase structure (v1.2.0+), which uses ES modules (`.mjs` files) instead of CommonJS. All code examples use `import/export` syntax consistent with the current extension architecture.
 
 ## Overview
 
@@ -101,15 +101,48 @@ export function activate(context) {
 
 ## Current Codebase Context
 
-The Ctrl-Q QVD Viewer extension (v1.0.2+) has the following structure:
+The Ctrl-Q QVD Viewer extension (v1.2.0+) has the following structure:
 
+### Core Architecture
 - **ES Module Architecture**: Uses `.mjs` files with `import/export` syntax
 - **Main Entry Point**: `src/extension.mjs` (compiled to `dist/extension.js` via esbuild)
-- **QVD Reader**: `src/qvdReader.mjs` - handles QVD file parsing
-- **Editor Provider**: `src/qvdEditorProvider.mjs` - manages custom QVD editor
-- **Export Functionality**: `src/exporters/` - directory with multiple export formats (CSV, JSON, Excel, Parquet, Avro, Arrow, SQLite, PostgreSQL, XML, YAML, Qlik inline script)
+- **Build System**: Uses esbuild for bundling and compilation
 
-The export functionality provides a good reference for how to structure additional features and handle data transformations.
+### Key Modules
+- **QVD Reader**: `src/qvdReader.mjs` - handles QVD file parsing using the `qvdjs` library
+- **Editor Provider**: `src/qvdEditorProvider.mjs` - manages custom QVD editor
+- **Logger**: `src/logger.mjs` - centralized logging system for debugging and error tracking
+- **Profiler**: `src/qvdProfiler.mjs` - data profiling functionality
+- **Statistics**: `src/qvdStatistics.mjs` - statistical analysis for numeric fields
+
+### Feature Modules
+- **Export Functionality**: `src/exporters/` - directory with multiple export formats:
+  - CSV, JSON, Excel, Parquet, Avro, Apache Arrow
+  - SQLite, PostgreSQL, XML, YAML
+  - Qlik Sense inline script
+- **Web Views**: `src/webview/` - refactored templates for UI rendering:
+  - `templates/mainTemplate.mjs` - main QVD viewer template
+  - `templates/visualAnalysisTemplate.mjs` - profiling and statistics view
+  - `templates/errorTemplate.mjs` - error display
+  - `assetLoader.mjs` - handles loading of CSS/JS assets
+  - `messageHandler.mjs` - manages webview-extension communication
+
+### Additional Features
+- **Statistical Analysis**: Provides comprehensive statistics for numeric fields including mean, median, quartiles, standard deviation, variance, histograms, and more
+- **Data Profiling**: Analyzes data quality, cardinality, null counts, and value distributions
+- **Visual Analysis**: Opens profiling results in new window with charts and visualizations
+
+### Documentation
+Key documentation files that may inform the comparison feature implementation:
+- `docs/PROFILING.md` - profiling feature documentation
+- `docs/SECURITY_SCANNING.md` - security scanning setup
+- `docs/TESTING.md` - testing strategies and guidelines
+
+The export and profiling functionalities provide excellent reference patterns for:
+- Structuring new features as modular components
+- Handling data transformations
+- Managing webview templates
+- Implementing user-facing commands
 
 ## Recommended Implementation Approach
 
@@ -214,6 +247,7 @@ Create a new file `src/qvdCompareProvider.mjs`:
 ```javascript
 import * as vscode from 'vscode';
 import QvdReader from './qvdReader.mjs';
+import { logger } from './logger.mjs';
 
 class QvdCompareProvider {
     constructor() {
@@ -223,17 +257,24 @@ class QvdCompareProvider {
     }
 
     async provideTextDocumentContent(uri) {
-        const params = new URLSearchParams(uri.query);
-        const filePath = params.get('file');
-        const compareType = params.get('type'); // 'metadata' or 'data'
+        try {
+            const params = new URLSearchParams(uri.query);
+            const filePath = params.get('file');
+            const compareType = params.get('type'); // 'metadata' or 'data'
 
-        if (compareType === 'metadata') {
-            return await this.formatMetadata(filePath);
-        } else if (compareType === 'data') {
-            return await this.formatData(filePath);
+            logger.info(`Providing content for comparison: ${compareType} of ${filePath}`);
+
+            if (compareType === 'metadata') {
+                return await this.formatMetadata(filePath);
+            } else if (compareType === 'data') {
+                return await this.formatData(filePath);
+            }
+
+            return 'Unknown comparison type';
+        } catch (error) {
+            logger.error('Error providing text document content', error);
+            throw error;
         }
-
-        return 'Unknown comparison type';
     }
 
     async formatMetadata(filePath) {
@@ -419,6 +460,80 @@ async function compareData(file1Uri, file2Uri) {
 }
 ```
 
+## Leveraging Existing Features
+
+### Integration with Statistics and Profiling
+
+The extension now includes comprehensive profiling and statistics features (v1.1.0+) that can enhance QVD comparison:
+
+#### Statistical Comparison
+
+You can leverage `src/qvdStatistics.mjs` to compare numeric field statistics between two QVD files:
+
+```javascript
+import { calculateStatistics } from './qvdStatistics.mjs';
+
+async function compareStatistics(file1Data, file2Data, fieldName) {
+    const stats1 = calculateStatistics(file1Data, fieldName);
+    const stats2 = calculateStatistics(file2Data, fieldName);
+    
+    const lines = [];
+    lines.push(`=== STATISTICAL COMPARISON: ${fieldName} ===`);
+    lines.push('');
+    lines.push('Metric                  | File 1        | File 2        | Difference');
+    lines.push('------------------------|---------------|---------------|-------------');
+    lines.push(`Count                   | ${stats1.count}     | ${stats2.count}     | ${stats2.count - stats1.count}`);
+    lines.push(`Mean                    | ${stats1.mean.toFixed(2)}   | ${stats2.mean.toFixed(2)}   | ${(stats2.mean - stats1.mean).toFixed(2)}`);
+    lines.push(`Median                  | ${stats1.median.toFixed(2)} | ${stats2.median.toFixed(2)} | ${(stats2.median - stats1.median).toFixed(2)}`);
+    lines.push(`Std Deviation           | ${stats1.stdDev.toFixed(2)} | ${stats2.stdDev.toFixed(2)} | ${(stats2.stdDev - stats1.stdDev).toFixed(2)}`);
+    lines.push(`Min                     | ${stats1.min}       | ${stats2.min}       | ${stats2.min - stats1.min}`);
+    lines.push(`Max                     | ${stats1.max}       | ${stats2.max}       | ${stats2.max - stats1.max}`);
+    
+    return lines.join('\n');
+}
+```
+
+#### Profiling Comparison
+
+Use `src/qvdProfiler.mjs` to compare data quality and distributions:
+
+```javascript
+import QvdProfiler from './qvdProfiler.mjs';
+
+async function compareProfiles(file1Path, file2Path) {
+    const profiler = new QvdProfiler();
+    
+    const profile1 = await profiler.profileQvd(file1Path);
+    const profile2 = await profiler.profileQvd(file2Path);
+    
+    const lines = [];
+    lines.push('=== PROFILE COMPARISON ===');
+    lines.push('');
+    
+    // Compare cardinality
+    profile1.fields.forEach((field1, idx) => {
+        const field2 = profile2.fields[idx];
+        if (field1.name === field2.name) {
+            lines.push(`Field: ${field1.name}`);
+            lines.push(`  Distinct Values: ${field1.distinctCount} → ${field2.distinctCount}`);
+            lines.push(`  Null Count: ${field1.nullCount} → ${field2.nullCount}`);
+            lines.push(`  Null %: ${field1.nullPercentage}% → ${field2.nullPercentage}%`);
+            lines.push('');
+        }
+    });
+    
+    return lines.join('\n');
+}
+```
+
+### Using Webview Templates
+
+The comparison feature can leverage the refactored webview templates in `src/webview/templates/`:
+
+- **Pattern Reference**: See how `visualAnalysisTemplate.mjs` creates interactive displays
+- **Asset Loading**: Use `assetLoader.mjs` to include Chart.js for visualizing differences
+- **Message Handling**: Leverage `messageHandler.mjs` pattern for webview communication
+
 ## Handling Large Files and Differences
 
 When comparing QVD files, there may be many differences, especially in data rows. Here are strategies to handle this:
@@ -527,23 +642,93 @@ Combine both approaches:
 
 This provides the best of both worlds.
 
+### 3. Enhanced Statistical Comparison (Recommended for v1.2.0+)
+
+Leverage the new profiling and statistics features to provide intelligent comparison:
+
+**Benefits:**
+- Automatically detect and highlight statistically significant differences
+- Compare data distributions using histograms and quartiles
+- Show data quality metrics side by side
+- Identify schema evolution and field changes
+- Visual charts for numeric field comparisons
+
+**Implementation approach:**
+```javascript
+import { logger } from './logger.mjs';
+import QvdProfiler from './qvdProfiler.mjs';
+import { calculateStatistics } from './qvdStatistics.mjs';
+
+class EnhancedQvdComparer {
+    async compareFiles(file1Path, file2Path) {
+        logger.info(`Comparing QVD files: ${file1Path} vs ${file2Path}`);
+        
+        const profiler = new QvdProfiler();
+        const profile1 = await profiler.profileQvd(file1Path);
+        const profile2 = await profiler.profileQvd(file2Path);
+        
+        const comparison = {
+            schemaChanges: this.compareSchemas(profile1, profile2),
+            dataQuality: this.compareDataQuality(profile1, profile2),
+            statistics: this.compareStatistics(profile1, profile2),
+        };
+        
+        return comparison;
+    }
+    
+    compareSchemas(profile1, profile2) {
+        // Compare field names, types, and order
+        const added = profile2.fields.filter(f => 
+            !profile1.fields.find(f1 => f1.name === f.name)
+        );
+        const removed = profile1.fields.filter(f => 
+            !profile2.fields.find(f2 => f2.name === f.name)
+        );
+        const modified = profile1.fields.filter(f1 => {
+            const f2 = profile2.fields.find(f => f.name === f1.name);
+            return f2 && f1.type !== f2.type;
+        });
+        
+        return { added, removed, modified };
+    }
+}
+```
+
+This approach creates a new document (`docs/COMPARISON.md`) similar to `docs/PROFILING.md` with interactive visualizations.
+
 ## Implementation Checklist
 
 To implement the QVD comparison feature:
 
+### Core Implementation
 - [ ] Create `src/qvdCompareProvider.mjs` with `TextDocumentContentProvider` implementation
 - [ ] Register the provider in `src/extension.mjs` with scheme `qvd-compare`
 - [ ] Add `compareQvd` command to `package.json`
 - [ ] Implement command handler in `src/extension.mjs` to prompt for two QVD files
-- [ ] Implement comparison menu with metadata/data/both options
+- [ ] Implement comparison menu with metadata/data/both/statistics options
 - [ ] Create `compareMetadata()` and `compareData()` functions
+
+### Integration with Existing Features
 - [ ] Leverage existing `QvdReader` from `src/qvdReader.mjs` for data extraction
-- [ ] Consider following the pattern used in `src/exporters/` for modular code organization
+- [ ] Integrate with `logger.mjs` for debugging and error tracking
+- [ ] Consider using `qvdStatistics.mjs` for numeric field comparison
+- [ ] Consider using `qvdProfiler.mjs` for data quality comparison
+- [ ] Follow patterns from `src/exporters/` for modular code organization
+- [ ] Reference `src/webview/templates/` for any custom comparison views
+
+### Configuration and Testing
 - [ ] Add configuration settings for max comparison rows in `package.json`
+- [ ] Add VS Code engine version check (requires ^1.100.0)
 - [ ] Test with various QVD files (e.g., files in `test-data/lego/`)
 - [ ] Add error handling for invalid files or comparison failures
+- [ ] Write unit tests following patterns in existing test files
 - [ ] Update build configuration in `esbuild.js` if needed for bundling
+
+### Documentation
 - [ ] Document the feature in README.md
+- [ ] Add comparison feature documentation to `docs/` directory
+- [ ] Update CHANGELOG.md with new feature
+- [ ] Consider adding screenshots/examples of the comparison view
 
 ## References
 
