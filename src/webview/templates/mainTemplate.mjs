@@ -825,7 +825,7 @@ export function getHtmlForWebview(result, webview, context) {
             display: inline-block;
         }
         
-        .beta-badge {
+        .beta-badge-profiling {
             position: absolute;
             top: -6px;
             right: -8px;
@@ -2514,7 +2514,7 @@ export function getHtmlForWebview(result, webview, context) {
                                     <span class="quality-score \${assessment.color === 'green' ? 'good' : assessment.color === 'yellow' ? 'warning' : 'error'}">
                                         \${assessment.qualityScore}/100 - \${assessment.qualityLevel}
                                     </span>
-                                    <span class="beta-badge">Beta</span>
+                                    <span class="beta-badge-profiling">Beta</span>
                                 </div>
                                 \${createHelpIcon('dataQualityAssessment')}
                             </div>
