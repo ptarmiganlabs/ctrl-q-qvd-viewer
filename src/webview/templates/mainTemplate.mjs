@@ -2236,6 +2236,266 @@ export function getHtmlForWebview(result, webview, context) {
                     card.appendChild(temporalCard);
                 }
                 
+                // Add string analysis card for string fields
+                if (fieldResult.isString && fieldResult.stringAnalysis && fieldResult.stringAnalysis.isString) {
+                    const strAnalysis = fieldResult.stringAnalysis;
+                    const stringCard = document.createElement('div');
+                    stringCard.className = 'statistics-card';
+                    stringCard.innerHTML = \`
+                        <h4 style="margin: 0 0 15px 0; color: var(--vscode-foreground); font-size: 1.1em;">📝 String Analysis</h4>
+                        
+                        <div class="statistics-section">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Length Statistics</h5>
+                            <div class="stats-container" style="margin-bottom: 15px;">
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Min Length
+                                        \${createHelpIcon('stringMinLength')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.lengthStats.min.toLocaleString()}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Max Length
+                                        \${createHelpIcon('stringMaxLength')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.lengthStats.max.toLocaleString()}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Avg Length
+                                        \${createHelpIcon('stringAvgLength')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.lengthStats.average.toLocaleString()}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Most Common Length
+                                        \${createHelpIcon('stringMostCommonLength')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.lengthStats.mostCommon} (\${strAnalysis.lengthStats.mostCommonCount}x)</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        \${strAnalysis.patterns && (strAnalysis.patterns.prefixes.length > 0 || strAnalysis.patterns.suffixes.length > 0) ? \`
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Pattern Detection</h5>
+                            \${strAnalysis.patterns.prefixes.length > 0 ? \`
+                            <div style="margin-bottom: 10px;">
+                                <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px; display: flex; align-items: center; gap: 4px;">
+                                    Common Prefixes:
+                                    \${createHelpIcon('stringCommonPrefixes')}
+                                </div>
+                                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                    \${strAnalysis.patterns.prefixes.slice(0, 5).map(p => \`
+                                        <span style="background-color: var(--vscode-badge-background); color: var(--vscode-badge-foreground); padding: 4px 8px; border-radius: 3px; font-size: 0.85em;">
+                                            "\${p.prefix}" (\${p.count}x, \${p.percentage}%)
+                                        </span>
+                                    \`).join('')}
+                                </div>
+                            </div>
+                            \` : ''}
+                            \${strAnalysis.patterns.suffixes.length > 0 ? \`
+                            <div>
+                                <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px; display: flex; align-items: center; gap: 4px;">
+                                    Common Suffixes:
+                                    \${createHelpIcon('stringCommonSuffixes')}
+                                </div>
+                                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                    \${strAnalysis.patterns.suffixes.slice(0, 5).map(s => \`
+                                        <span style="background-color: var(--vscode-badge-background); color: var(--vscode-badge-foreground); padding: 4px 8px; border-radius: 3px; font-size: 0.85em;">
+                                            "\${s.suffix}" (\${s.count}x, \${s.percentage}%)
+                                        </span>
+                                    \`).join('')}
+                                </div>
+                            </div>
+                            \` : ''}
+                        </div>
+                        \` : ''}
+                        
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Character Composition</h5>
+                            <div class="stats-container" style="margin-bottom: 15px;">
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Alphanumeric
+                                        \${createHelpIcon('stringAlphanumeric')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.characterComposition.alphanumericPercentage}%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Alphabetic
+                                        \${createHelpIcon('stringAlphabetic')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.characterComposition.alphabeticPercentage}%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Numeric
+                                        \${createHelpIcon('stringNumeric')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.characterComposition.numericPercentage}%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Special Chars
+                                        \${createHelpIcon('stringSpecialChars')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.characterComposition.specialCharPercentage}%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Whitespace
+                                        \${createHelpIcon('stringWhitespace')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.characterComposition.whitespacePercentage}%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Non-ASCII
+                                        \${createHelpIcon('stringNonAscii')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.characterComposition.nonAsciiPercentage}%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Leading Whitespace
+                                        \${createHelpIcon('stringLeadingWhitespace')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.characterComposition.leadingWhitespaceCount}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Trailing Whitespace
+                                        \${createHelpIcon('stringTrailingWhitespace')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.characterComposition.trailingWhitespaceCount}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Case Analysis</h5>
+                            <div class="stats-container" style="margin-bottom: 15px;">
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Uppercase
+                                        \${createHelpIcon('stringUppercase')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.caseAnalysis.uppercaseCount} (\${strAnalysis.caseAnalysis.uppercasePercentage}%)</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Lowercase
+                                        \${createHelpIcon('stringLowercase')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.caseAnalysis.lowercaseCount} (\${strAnalysis.caseAnalysis.lowercasePercentage}%)</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Mixed Case
+                                        \${createHelpIcon('stringMixedCase')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.caseAnalysis.mixedCaseCount} (\${strAnalysis.caseAnalysis.mixedCasePercentage}%)</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Title Case
+                                        \${createHelpIcon('stringTitleCase')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.caseAnalysis.titleCaseCount} (\${strAnalysis.caseAnalysis.titleCasePercentage}%)</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        \${strAnalysis.formatDetection && (
+                            strAnalysis.formatDetection.email.count > 0 ||
+                            strAnalysis.formatDetection.phone.count > 0 ||
+                            strAnalysis.formatDetection.ssn.count > 0 ||
+                            strAnalysis.formatDetection.url.count > 0 ||
+                            strAnalysis.formatDetection.dateString.count > 0
+                        ) ? \`
+                        <div class="statistics-section" style="margin-top: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Format Detection</h5>
+                            <div class="stats-container" style="margin-bottom: 15px;">
+                                \${strAnalysis.formatDetection.email.count > 0 ? \`
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Email Addresses
+                                        \${createHelpIcon('stringEmailFormat')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.formatDetection.email.count} (\${strAnalysis.formatDetection.email.percentage}%)</span>
+                                </div>
+                                \` : ''}
+                                \${strAnalysis.formatDetection.phone.count > 0 ? \`
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Phone Numbers
+                                        \${createHelpIcon('stringPhoneFormat')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.formatDetection.phone.count} (\${strAnalysis.formatDetection.phone.percentage}%)</span>
+                                </div>
+                                \` : ''}
+                                \${strAnalysis.formatDetection.ssn.count > 0 ? \`
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        SSN/ID Numbers
+                                        \${createHelpIcon('stringSsnFormat')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.formatDetection.ssn.count} (\${strAnalysis.formatDetection.ssn.percentage}%)</span>
+                                </div>
+                                \` : ''}
+                                \${strAnalysis.formatDetection.url.count > 0 ? \`
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        URLs
+                                        \${createHelpIcon('stringUrlFormat')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.formatDetection.url.count} (\${strAnalysis.formatDetection.url.percentage}%)</span>
+                                </div>
+                                \` : ''}
+                                \${strAnalysis.formatDetection.dateString.count > 0 ? \`
+                                <div class="stat-item">
+                                    <span class="stat-label">
+                                        Date Strings
+                                        \${createHelpIcon('stringDateFormat')}
+                                    </span>
+                                    <span class="stat-value">\${strAnalysis.formatDetection.dateString.count} (\${strAnalysis.formatDetection.dateString.percentage}%)</span>
+                                </div>
+                                \` : ''}
+                            </div>
+                            \${strAnalysis.formatDetection.email.samples.length > 0 ? \`
+                            <div style="margin-top: 10px;">
+                                <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px;">Sample Email Addresses:</div>
+                                <div style="font-family: var(--vscode-editor-font-family); font-size: 0.85em; color: var(--vscode-foreground);">
+                                    \${strAnalysis.formatDetection.email.samples.slice(0, 3).map(s => \`<div style="padding: 2px 0;">\${s}</div>\`).join('')}
+                                </div>
+                            </div>
+                            \` : ''}
+                            \${strAnalysis.formatDetection.phone.samples.length > 0 ? \`
+                            <div style="margin-top: 10px;">
+                                <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px;">Sample Phone Numbers:</div>
+                                <div style="font-family: var(--vscode-editor-font-family); font-size: 0.85em; color: var(--vscode-foreground);">
+                                    \${strAnalysis.formatDetection.phone.samples.slice(0, 3).map(s => \`<div style="padding: 2px 0;">\${s}</div>\`).join('')}
+                                </div>
+                            </div>
+                            \` : ''}
+                            \${strAnalysis.formatDetection.url.samples.length > 0 ? \`
+                            <div style="margin-top: 10px;">
+                                <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px;">Sample URLs:</div>
+                                <div style="font-family: var(--vscode-editor-font-family); font-size: 0.85em; color: var(--vscode-foreground);">
+                                    \${strAnalysis.formatDetection.url.samples.slice(0, 3).map(s => \`<div style="padding: 2px 0;">\${s}</div>\`).join('')}
+                                </div>
+                            </div>
+                            \` : ''}
+                        </div>
+                        \` : ''}
+                    \`;
+                    card.appendChild(stringCard);
+                }
+                
                 // Add data quality metrics card
                 if (fieldResult.qualityMetrics && !fieldResult.qualityMetrics.error) {
                     const quality = fieldResult.qualityMetrics;
@@ -2248,13 +2508,15 @@ export function getHtmlForWebview(result, webview, context) {
                         <div class="quality-header">
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <h4 style="margin: 0; color: var(--vscode-foreground);">🎯 Data Quality Assessment</h4>
-                                \${createHelpIcon('dataQualityAssessment')}
                             </div>
-                            <div class="quality-score-container">
-                                <span class="quality-score \${assessment.color === 'green' ? 'good' : assessment.color === 'yellow' ? 'warning' : 'error'}">
-                                    \${assessment.qualityScore}/100 - \${assessment.qualityLevel}
-                                </span>
-                                <span class="beta-badge">Beta</span>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <div class="quality-score-container">
+                                    <span class="quality-score \${assessment.color === 'green' ? 'good' : assessment.color === 'yellow' ? 'warning' : 'error'}">
+                                        \${assessment.qualityScore}/100 - \${assessment.qualityLevel}
+                                    </span>
+                                    <span class="beta-badge">Beta</span>
+                                </div>
+                                \${createHelpIcon('dataQualityAssessment')}
                             </div>
                         </div>
                     \`;
