@@ -9,12 +9,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
           node-version: 22
           cache: 'npm'
@@ -22,21 +22,106 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build extension
+        run: npm run compile
+
       - name: Run linter
         run: npm run lint
 
       - name: Setup virtual display for VS Code tests
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb
+          /usr/bin/Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
 
       - name: Run tests
-        run: xvfb-run -a npm test
+        run: npm test
+        env:
+          DISPLAY: ':99.0'
 
       - name: Check package can be built
         run: |
           npm install -g @vscode/vsce
           vsce package
+
+      - name: Security scan - Check for sensitive files in package
+        run: |
+          echo "🔍 Scanning extension package for sensitive files..."
+
+          # Get list of files that will be included in the package
+          FILES=$(vsce ls 2>/dev/null)
+
+          # Define patterns for sensitive files
+          SENSITIVE_PATTERNS=(
+            "\.env$"
+            "\.env\."
+            "\.envrc$"
+            "\.pem$"
+            "\.key$"
+            "\.p12$"
+            "\.pfx$"
+            "\.cer$"
+            "\.crt$"
+            "\.der$"
+            "id_rsa"
+            "id_dsa"
+            "id_ecdsa"
+            "id_ed25519"
+            "credentials\.json$"
+            "service-account.*\.json$"
+            "gcloud\.json$"
+            "aws-credentials"
+            "\.npmrc$"
+            "\.pypirc$"
+            "\.dockercfg$"
+            "privatekey"
+            "private\.key"
+            "password"
+            "secrets\."
+            "auth\.json$"
+            "\.db$"
+            "\.sqlite$"
+            "\.sqlite3$"
+            "token"
+            "\.bak$"
+            "\.backup$"
+          )
+
+          FOUND_SENSITIVE=0
+          SENSITIVE_FILES=()
+
+          # Check each file against sensitive patterns
+          while IFS= read -r file; do
+            for pattern in "${SENSITIVE_PATTERNS[@]}"; do
+              if echo "$file" | grep -iE "$pattern" > /dev/null; then
+                SENSITIVE_FILES+=("$file")
+                FOUND_SENSITIVE=1
+                break
+              fi
+            done
+          done <<< "$FILES"
+
+          # Report results
+          if [ $FOUND_SENSITIVE -eq 1 ]; then
+            echo "❌ ERROR: Sensitive files detected in extension package!"
+            echo ""
+            echo "The following sensitive files would be included in the published extension:"
+            printf '  - %s\n' "${SENSITIVE_FILES[@]}"
+            echo ""
+            echo "These files may contain:"
+            echo "  • API keys, tokens, or credentials"
+            echo "  • Private certificates or SSH keys"
+            echo "  • Environment configuration"
+            echo "  • Database files with sensitive data"
+            echo ""
+            echo "Action required:"
+            echo "  1. Add these files to .vscodeignore"
+            echo "  2. Verify no sensitive data is committed to the repository"
+            echo "  3. Rotate any exposed credentials"
+            echo ""
+            exit 1
+          else
+            echo "✅ No sensitive files detected in package"
+            echo "📦 Package contains $(echo "$FILES" | wc -l | tr -d ' ') files"
+          fi
 
       - name: Check for breaking changes
         run: |
@@ -49,10 +134,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
           node-version: 22
           cache: 'npm'

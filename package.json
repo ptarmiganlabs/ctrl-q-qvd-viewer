@@ -2,12 +2,12 @@
   "name": "ctrl-q-qvd-viewer",
   "displayName": "Ctrl-Q QVD Viewer",
   "description": "View Qlik Sense and QlikView QVD files from within VS Code",
-  "version": "0.0.3",
+  "version": "1.3.2",
   "publisher": "ptarmiganlabs",
   "icon": "media/ctrl-q-logo-no-text.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ptarmiganlabs/qvd4vscode.git"
+    "url": "https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer.git"
   },
   "license": "MIT",
   "keywords": [
@@ -17,11 +17,20 @@
     "qlikview",
     "ctrl-q",
     "butler",
+    "vscode",
+    "extension",
     "data viewer",
-    "file viewer"
+    "file viewer",
+    "parquet",
+    "avro",
+    "arrow",
+    "excel",
+    "csv",
+    "json",
+    "xml"
   ],
   "engines": {
-    "vscode": "^1.105.0"
+    "vscode": "^1.100.0"
   },
   "categories": [
     "Data Science",
@@ -29,7 +38,7 @@
     "Other"
   ],
   "activationEvents": [],
-  "main": "./src/extension.js",
+  "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
@@ -40,6 +49,11 @@
       {
         "command": "ctrl-q-qvd-viewer.about",
         "title": "About",
+        "category": "QVD"
+      },
+      {
+        "command": "ctrl-q-qvd-viewer.showLogs",
+        "title": "Show Extension Logs",
         "category": "QVD"
       }
     ],
@@ -67,26 +81,61 @@
           "description": "Maximum number of rows to load from the QVD file for preview and pagination",
           "minimum": 100,
           "maximum": 100000
+        },
+        "ctrl-q-qvd-viewer.qlikInlineDelimiter": {
+          "type": "string",
+          "default": "tab",
+          "enum": [
+            "tab",
+            "pipe",
+            "comma",
+            "semicolon",
+            "auto-detect"
+          ],
+          "enumDescriptions": [
+            "Tab character (\\t) - Good general purpose delimiter",
+            "Pipe character (|) - Recommended when data contains commas",
+            "Comma (,) - Standard CSV-style, but may conflict with data",
+            "Semicolon (;) - Alternative to comma",
+            "Auto-detect - Automatically choose the best delimiter based on data content"
+          ],
+          "description": "Default delimiter for Qlik Sense inline load script exports. You can override this during each export."
         }
       }
     }
   },
   "scripts": {
-    "lint": "eslint .",
+    "vscode:prepublish": "npm run package",
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "node esbuild.js --production",
+    "compile-tests": "tsc -p . --outDir out",
     "pretest": "npm run lint",
     "test": "vscode-test",
-    "package": "vsce package"
+    "lint": "eslint ."
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/node": "22.x",
-    "@types/vscode": "^1.105.0",
+    "@types/node": "^24.10.0",
+    "@types/vscode": "^1.100.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
-    "eslint": "^9.36.0"
+    "@vscode/vsce": "^3.6.2",
+    "esbuild": "^0.25.12",
+    "eslint": "^9.39.0",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
-    "qvd4js": "^1.0.5",
-    "xml2js": "^0.6.2"
+    "apache-arrow": "^21.1.0",
+    "avsc": "^5.7.9",
+    "chart.js": "^4.5.1",
+    "exceljs": "^4.4.0",
+    "js-yaml": "^4.1.0",
+    "papaparse": "^5.5.3",
+    "parquetjs": "^0.11.2",
+    "qvdjs": "^0.6.2",
+    "sql.js": "^1.13.0",
+    "xml-js": "^1.6.11"
   }
 }

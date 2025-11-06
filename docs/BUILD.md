@@ -23,7 +23,7 @@ Before you begin, ensure you have the following installed:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/ptarmiganlabs/qvd4vscode.git
+git clone https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer.git
 cd ctrl-q-qvd-viewer
 ```
 
@@ -35,8 +35,7 @@ npm install
 
 This will install all required dependencies including:
 
-- `qvd4js` - QVD file reading library
-- `xml2js` - XML parsing library
+- `qvdjs` - QVD file reading library
 - Development dependencies for linting and testing
 
 ## Development Workflow
@@ -93,8 +92,7 @@ ctrl-q-qvd-viewer/
 - **src/qvdReader.js**:
 
   - Reads QVD files
-  - Extracts XML metadata
-  - Attempts to read binary data using qvd4js
+  - Extracts metadata using qvdjs
   - Returns structured metadata and data
 
 - **src/qvdEditorProvider.js**:
@@ -296,8 +294,7 @@ To debug the webview content:
 
 - [VS Code Extension API](https://code.visualstudio.com/api)
 - [VS Code Extension Samples](https://github.com/microsoft/vscode-extension-samples)
-- [qvd4js Documentation](https://github.com/MuellerConstantin/qvd4js)
-- [xml2js Documentation](https://github.com/Leonidas-from-XIV/node-xml2js)
+- [qvdjs Documentation](https://github.com/ptarmiganlabs/qvdjs)
 
 ## Getting Help
 

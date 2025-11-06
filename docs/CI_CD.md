@@ -5,6 +5,7 @@ This document explains the CI/CD setup for the Ctrl-Q QVD Viewer extension.
 ## Overview
 
 The project uses GitHub Actions for:
+
 - ✅ Automated testing and linting
 - ✅ Version management with Release Please
 - ✅ Extension packaging
@@ -16,6 +17,7 @@ The project uses GitHub Actions for:
 ### 1. Main CI/CD Workflow (`.github/workflows/ci.yaml`)
 
 Triggers on:
+
 - Push to `main` branch
 - Pull requests to `main`
 - Manual workflow dispatch
@@ -23,17 +25,20 @@ Triggers on:
 **Jobs:**
 
 1. **test**: Runs on all pushes and PRs
+
    - Installs dependencies
    - Runs ESLint
    - Executes test suite
 
 2. **release-please**: Runs only on main branch pushes after tests pass
+
    - Creates/updates release PR
    - Bumps version based on conventional commits
    - Updates CHANGELOG.md
    - Creates GitHub release when PR is merged
 
 3. **publish**: Runs when a release is created
+
    - Packages the extension (.vsix file)
    - Uploads to GitHub release
    - Publishes to VS Code Marketplace (when configured)
@@ -50,6 +55,7 @@ Triggers on pull request events.
 **Jobs:**
 
 1. **validate**: Full validation of PR
+
    - Linting
    - Tests
    - Build verification
@@ -81,12 +87,14 @@ BREAKING CHANGE: Configuration format changed
 ### Configuration Files
 
 **`release-please-config.json`**: Main configuration
+
 - Release type: node
 - Package name: ctrl-q-qvd-viewer
 - Changelog sections and formatting
 - Version bump rules
 
 **`.release-please-manifest.json`**: Version tracking
+
 - Tracks current version
 - Updated automatically by Release Please
 
@@ -117,16 +125,19 @@ See [PUBLISHING.md](./PUBLISHING.md) for detailed instructions:
 ### Automatic Release Process
 
 1. **Developer makes changes** using conventional commits:
+
    ```bash
    git commit -m "feat: add dark theme support"
    git push origin feature-branch
    ```
 
 2. **Create PR and merge** to main:
+
    - PR validation runs automatically
    - Code is reviewed and merged
 
 3. **Release Please creates release PR**:
+
    - Analyzes commits since last release
    - Determines version bump (patch/minor/major)
    - Updates `package.json` version
@@ -134,6 +145,7 @@ See [PUBLISHING.md](./PUBLISHING.md) for detailed instructions:
    - Creates PR titled "chore: release X.Y.Z"
 
 4. **Review and merge release PR**:
+
    - Review changelog entries
    - Merge the PR
 
@@ -157,6 +169,7 @@ You can manually trigger a release:
 ### GitHub Actions
 
 View workflow runs:
+
 - Repository → Actions tab
 - See status of all workflows
 - View logs for debugging
@@ -164,6 +177,7 @@ View workflow runs:
 ### Release Status
 
 Check release status:
+
 - Repository → Releases
 - See all versions and assets
 - Download VSIX files
@@ -171,6 +185,7 @@ Check release status:
 ### Marketplace Status
 
 After publishing:
+
 - [Your extension page](https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer)
 - Downloads and ratings
 - User reviews and Q&A
@@ -180,8 +195,8 @@ After publishing:
 Add these to your README.md:
 
 ```markdown
-[![CI/CD](https://github.com/ptarmiganlabs/qvd4vscode/actions/workflows/ci.yaml/badge.svg)](https://github.com/ptarmiganlabs/qvd4vscode/actions/workflows/ci.yaml)
-[![PR Validation](https://github.com/ptarmiganlabs/qvd4vscode/actions/workflows/pr-validation.yaml/badge.svg)](https://github.com/ptarmiganlabs/qvd4vscode/actions/workflows/pr-validation.yaml)
+[![CI/CD](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/actions/workflows/ci.yaml/badge.svg)](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/actions/workflows/ci.yaml)
+[![PR Validation](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/actions/workflows/pr-validation.yaml/badge.svg)](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/actions/workflows/pr-validation.yaml)
 ```
 
 ## Troubleshooting
@@ -189,11 +204,13 @@ Add these to your README.md:
 ### Build Failures
 
 **Tests fail on CI but pass locally:**
+
 - Check Node.js version matches (22.x)
 - Ensure all dependencies are in package.json
 - Check for environment-specific issues
 
 **Linting errors:**
+
 - Run `npm run lint` locally first
 - Fix issues before pushing
 - Consider auto-formatting on commit
@@ -201,17 +218,20 @@ Add these to your README.md:
 ### Release Issues
 
 **Release Please not creating PR:**
+
 - Check commit message format
 - Ensure commits follow conventional commits
 - Verify you're on main branch
 - May need at least one feature/fix commit
 
 **Version not bumping correctly:**
+
 - Review commit types (feat vs fix)
 - Check for breaking change markers
 - See release-please-config.json for rules
 
 **Publishing fails:**
+
 - Verify VSCE_PAT secret is set
 - Check PAT hasn't expired
 - Ensure publisher account exists
@@ -220,6 +240,7 @@ Add these to your README.md:
 ### SBOM Generation
 
 **SBOM job fails:**
+
 - Check network connectivity
 - Verify sbom-tool download URL
 - Review dependency installation
@@ -249,7 +270,7 @@ Edit `.github/workflows/ci.yaml`:
 ```yaml
 my-custom-job:
   runs-on: ubuntu-latest
-  needs: test  # Run after tests pass
+  needs: test # Run after tests pass
   steps:
     - uses: actions/checkout@v4
     - name: My custom step
@@ -265,7 +286,7 @@ Edit `release-please-config.json`:
   "packages": {
     ".": {
       "release-type": "node",
-      "bump-minor-pre-major": false,  // Change version bump rules
+      "bump-minor-pre-major": false, // Change version bump rules
       "bump-patch-for-minor-pre-major": false
     }
   }

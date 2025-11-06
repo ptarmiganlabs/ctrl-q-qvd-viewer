@@ -223,7 +223,7 @@ Users can still adjust initial load via settings:
 
 ## Future Enhancement
 
-When qvd4js adds streaming support:
+When qvdjs adds streaming support:
 
 - Remove 100,000 row cap
 - True server-side pagination
