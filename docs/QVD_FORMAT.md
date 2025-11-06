@@ -18,18 +18,68 @@ This document provides a comprehensive specification of the QVD (QlikView Data) 
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [File Structure](#file-structure)
-- [XML Header Section](#xml-header-section)
-- [Symbol Table Section](#symbol-table-section)
-- [Index Table Section](#index-table-section)
-- [Data Type Mappings](#data-type-mappings)
-- [Bit Packing Algorithm](#bit-packing-algorithm)
-- [Empty QVD Files](#empty-qvd-files)
-- [Encoding Details](#encoding-details)
-- [Example Breakdown](#example-breakdown)
-- [Implementation Notes](#implementation-notes)
-- [References](#references)
+- [QVD File Format Specification](#qvd-file-format-specification)
+  - [⚠️ Important Disclaimer](#️-important-disclaimer)
+  - [Table of Contents](#table-of-contents)
+  - [Overview](#overview)
+    - [Key Characteristics](#key-characteristics)
+    - [Design Goals](#design-goals)
+  - [File Structure](#file-structure)
+    - [Visual Data Flow](#visual-data-flow)
+  - [XML Header Section](#xml-header-section)
+    - [Complete Header Structure](#complete-header-structure)
+    - [Header Field Descriptions](#header-field-descriptions)
+      - [Top-Level Elements](#top-level-elements)
+      - [QvdFieldHeader Elements](#qvdfieldheader-elements)
+      - [NumberFormat Structure](#numberformat-structure)
+  - [Symbol Table Section](#symbol-table-section)
+    - [Structure](#structure)
+    - [Symbol Type Encodings](#symbol-type-encodings)
+    - [Detailed Type Specifications](#detailed-type-specifications)
+      - [Type 1: Pure Integer](#type-1-pure-integer)
+      - [Type 2: Pure Double](#type-2-pure-double)
+      - [Type 4: Pure String](#type-4-pure-string)
+      - [Type 5: Dual Integer](#type-5-dual-integer)
+      - [Type 6: Dual Double](#type-6-dual-double)
+    - [Symbol Table Example](#symbol-table-example)
+  - [Index Table Section](#index-table-section)
+    - [Bit Packing Concept](#bit-packing-concept)
+    - [Row Structure](#row-structure)
+      - [Example: 3 Fields](#example-3-fields)
+      - [Example: Bit Widths Don't Align to Bytes](#example-bit-widths-dont-align-to-bytes)
+    - [Index Calculation with Bias](#index-calculation-with-bias)
+    - [Index Table Visual](#index-table-visual)
+  - [Data Type Mappings](#data-type-mappings)
+    - [QVD Types to JavaScript Types](#qvd-types-to-javascript-types)
+    - [Type Selection Strategy](#type-selection-strategy)
+    - [Qlik Number Format Types](#qlik-number-format-types)
+  - [Bit Packing Algorithm](#bit-packing-algorithm)
+    - [Writing Bit-Packed Values](#writing-bit-packed-values)
+    - [Reading Bit-Packed Values](#reading-bit-packed-values)
+  - [Empty QVD Files](#empty-qvd-files)
+    - [Characteristics](#characteristics)
+    - [Empty QVD Header Example](#empty-qvd-header-example)
+    - [Use Cases](#use-cases)
+  - [Encoding Details](#encoding-details)
+    - [Character Encoding](#character-encoding)
+    - [Byte Order](#byte-order)
+    - [String Termination](#string-termination)
+    - [Special Values](#special-values)
+  - [Example Breakdown](#example-breakdown)
+    - [Sample Data](#sample-data)
+    - [Symbol Tables](#symbol-tables)
+    - [Bit Width Calculation](#bit-width-calculation)
+    - [Index Table](#index-table)
+    - [Complete Binary Layout](#complete-binary-layout)
+  - [Implementation Notes](#implementation-notes)
+    - [Performance Considerations](#performance-considerations)
+    - [Possible Pitfalls](#possible-pitfalls)
+    - [Validation Checks](#validation-checks)
+    - [Security Considerations](#security-considerations)
+  - [References](#references)
+    - [Official Documentation](#official-documentation)
+    - [Related Formats](#related-formats)
+    - [Additional Resources](#additional-resources)
 
 ## Overview
 
@@ -55,7 +105,7 @@ QVD (QlikView Data) is a proprietary binary file format developed by Qlik for ef
 
 A QVD file consists of three sequential sections:
 
-````text
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                      XML Header                             │
 │  • Field definitions (names, types, offsets)                │
@@ -75,7 +125,7 @@ A QVD file consists of three sequential sections:
 │  • Fixed byte size per row (RecordByteSize)                 │
 │  • Total rows: NoOfRecords                                  │
 └─────────────────────────────────────────────────────────────┘
-```text
+```
 
 ### Visual Data Flow
 
@@ -114,7 +164,7 @@ graph TD
     style C fill:#F3E5F5
     style D fill:#E8F5E9
     style F fill:#4CAF50
-```text
+```
 
 ## XML Header Section
 
@@ -218,7 +268,7 @@ The XML header contains all metadata about the QVD file. It is encoded in UTF-8 
   </Lineage>
 </QvdTableHeader>
 \r\n\0
-```text
+```
 
 ### Header Field Descriptions
 
@@ -291,7 +341,7 @@ The symbol table stores unique values for each field. It begins immediately afte
 ├─────────────────────────────────────────┤
 │  ...                                    │
 └─────────────────────────────────────────┘
-```text
+```
 
 ### Symbol Type Encodings
 
@@ -318,7 +368,7 @@ Byte Layout:
 
 Example: 42
 Hex: 01 2A 00 00 00
-```text
+```
 
 #### Type 2: Pure Double
 
@@ -331,7 +381,7 @@ Byte Layout:
 
 Example: 3.14159
 Hex: 02 6E 86 1B F0 F9 21 09 40
-```text
+```
 
 #### Type 4: Pure String
 
@@ -344,7 +394,7 @@ Byte Layout:
 
 Example: "Hello"
 Hex: 04 48 65 6C 6C 6F 00
-```text
+```
 
 #### Type 5: Dual Integer
 
@@ -356,7 +406,7 @@ Byte Layout:
 
 Example: 100 + "100"
 Hex: 05 64 00 00 00 31 30 30 00
-```text
+```
 
 #### Type 6: Dual Double
 
@@ -368,7 +418,7 @@ Byte Layout:
 
 Example: 99.50 + "$99.50"
 Hex: 06 00 00 00 00 00 E6 58 40 24 39 39 2E 35 30 00
-```text
+```
 
 ### Symbol Table Example
 
@@ -380,7 +430,7 @@ Symbol table contains unique values only:
 Symbol 0: [0x01][0x2A 0x00 0x00 0x00]       // 42
 Symbol 1: [0x01][0x64 0x00 0x00 0x00]       // 100
 Symbol 2: [0x01][0xC8 0x00 0x00 0x00]       // 200
-```text
+```
 
 Index table contains references:
 
@@ -390,7 +440,7 @@ Row 1: Index 1 → Symbol 1 → 100
 Row 2: Index 0 → Symbol 0 → 42
 Row 3: Index 2 → Symbol 2 → 200
 Row 4: Index 1 → Symbol 1 → 100
-```text
+```
 
 ## Index Table Section
 
@@ -404,7 +454,7 @@ Instead of using full bytes for indices, QVD uses only the minimum number of bit
 For 5 unique symbols: Need ceil(log2(5)) = 3 bits per index
 For 100 unique symbols: Need ceil(log2(100)) = 7 bits per index
 For 1000 unique symbols: Need ceil(log2(1000)) = 10 bits per index
-```text
+```
 
 This significantly reduces file size for columns with many repeated values.
 
@@ -425,7 +475,7 @@ Row bytes:
 ┌──────────────────┬──────────────────┬──────────────────┐
 │ Byte 0: Field 1  │ Byte 1: Field 2  │ Byte 2: Field 3  │
 └──────────────────┴──────────────────┴──────────────────┘
-```text
+```
 
 #### Example: Bit Widths Don't Align to Bytes
 
@@ -450,7 +500,7 @@ Reading Field 2 (bits 5-10):
 1. Read bytes 0-1 as 16-bit value
 2. Shift right by 5 bits
 3. Mask to get 6 bits: & 0x3F
-```text
+```
 
 ### Index Calculation with Bias
 
@@ -458,7 +508,7 @@ The actual index is calculated as:
 
 ```text
 actualIndex = storedValue + Bias
-```text
+```
 
 `Bias` is typically 0 but can be used for optimization in certain scenarios.
 
@@ -484,7 +534,7 @@ graph LR
 
     style A fill:#E8F5E9
     style F fill:#4CAF50
-```text
+```
 
 ## Data Type Mappings
 
@@ -507,18 +557,22 @@ When writing data, qvdjs uses this logic:
 // Note: The actual implementation in QvdFileWriter._convertRawToSymbol may differ
 function determineSymbolType(value) {
   if (value === null || value === undefined) {
-    return createStringSymbol(''); // Empty string
+    return createStringSymbol(""); // Empty string
   }
 
-  if (typeof value === 'number') {
-    if (Number.isInteger(value) && value >= -2147483648 && value <= 2147483647) {
+  if (typeof value === "number") {
+    if (
+      Number.isInteger(value) &&
+      value >= -2147483648 &&
+      value <= 2147483647
+    ) {
       return createIntegerSymbol(value);
     } else {
       return createDoubleSymbol(value);
     }
   }
 
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     // Check if string represents a number
     const num = Number(value);
     if (!isNaN(num)) {
@@ -534,7 +588,7 @@ function determineSymbolType(value) {
   // Fallback: convert to string
   return createStringSymbol(String(value));
 }
-```text
+```
 
 ### Qlik Number Format Types
 
@@ -589,7 +643,7 @@ function writeBitPackedRow(buffer, offset, indices, bitWidths, bitOffsets) {
     }
   }
 }
-```text
+```
 
 ### Reading Bit-Packed Values
 
@@ -627,7 +681,7 @@ function readBitPackedRow(buffer, offset, bitWidths, bitOffsets) {
 
   return indices;
 }
-```text
+```
 
 ## Empty QVD Files
 
@@ -663,7 +717,7 @@ QVD files can have zero data rows while preserving field structure.
   <Offset>0</Offset>
   <Length>0</Length>
 </QvdTableHeader>
-```text
+```
 
 ### Use Cases
 
@@ -720,14 +774,14 @@ Let's walk through a complete minimal QVD file.
 ```text
 Symbol 0: [0x01][0x01 0x00 0x00 0x00]  // 1
 Symbol 1: [0x01][0x02 0x00 0x00 0x00]  // 2
-```text
+```
 
 **Field: Name**
 
 ```text
 Symbol 0: [0x04][0x41 0x6C 0x69 0x63 0x65 0x00]  // "Alice"
 Symbol 1: [0x04][0x42 0x6F 0x62 0x00]            // "Bob"
-```text
+```
 
 ### Bit Width Calculation
 
@@ -742,7 +796,7 @@ Symbol 1: [0x04][0x42 0x6F 0x62 0x00]            // "Bob"
 Row 0: ID=0, Name=0  →  Binary: 00000000 (0x00)
 Row 1: ID=1, Name=1  →  Binary: 00000011 (0x03)
 Row 2: ID=0, Name=0  →  Binary: 00000000 (0x00)
-```text
+```
 
 ### Complete Binary Layout
 
@@ -762,7 +816,7 @@ Row 2: ID=0, Name=0  →  Binary: 00000000 (0x00)
 00                     // Row 0: [0, 0]
 03                     // Row 1: [1, 1]
 00                     // Row 2: [0, 0]
-```text
+```
 
 ## Implementation Notes
 
@@ -773,7 +827,7 @@ Row 2: ID=0, Name=0  →  Binary: 00000000 (0x00)
 3. **Bit Unpacking**: Use bit manipulation, not string operations
 4. **Buffer Pre-allocation**: Allocate buffers with known sizes upfront
 
-### Common Pitfalls
+### Possible Pitfalls
 
 1. **Byte Order**: Always use little-endian (`readInt32LE`, not `readInt32BE`)
 2. **String Termination**: Don't forget null terminator when writing strings
@@ -787,22 +841,25 @@ When parsing QVD files, validate:
 
 ```javascript
 // Header validation
-assert(header.NoOfRecords >= 0, 'Invalid record count');
-assert(header.RecordByteSize > 0 || header.NoOfRecords === 0, 'Invalid byte size');
+assert(header.NoOfRecords >= 0, "Invalid record count");
+assert(
+  header.RecordByteSize > 0 || header.NoOfRecords === 0,
+  "Invalid byte size"
+);
 
 // Field validation
 for (const field of fields) {
-  assert(field.NoOfSymbols >= 0, 'Invalid symbol count');
-  assert(field.BitWidth >= 0, 'Invalid bit width');
-  assert(field.Length >= 0, 'Invalid length');
+  assert(field.NoOfSymbols >= 0, "Invalid symbol count");
+  assert(field.BitWidth >= 0, "Invalid bit width");
+  assert(field.Length >= 0, "Invalid length");
 }
 
 // Buffer bounds
-assert(offset + length <= buffer.length, 'Read beyond buffer');
+assert(offset + length <= buffer.length, "Read beyond buffer");
 
 // Symbol type
-assert([1, 2, 4, 5, 6].includes(typeByte), 'Unknown symbol type');
-```text
+assert([1, 2, 4, 5, 6].includes(typeByte), "Unknown symbol type");
+```
 
 ### Security Considerations
 
@@ -835,12 +892,4 @@ While QVD is proprietary, the format has been documented by the community:
 
 ---
 
-## Related Documentation
-
-- **[DEVELOPMENT.md](./DEVELOPMENT.md)**: Implementation details and patterns
-- **[ARCHITECTURE.md](./ARCHITECTURE.md)**: High-level architecture
-- **[CONTRIBUTING.md](./CONTRIBUTING.md)**: How to contribute
-- **[README.md](./README.md)**: User guide
-
 For questions about the QVD format or implementation, please open a GitHub discussion.
-````
