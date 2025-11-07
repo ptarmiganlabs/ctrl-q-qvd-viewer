@@ -140,3 +140,11 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+.DS_Store
+test-data/fake_data/large_qvd/orders_30m_21col_low_entropy.csv
+test-data/fake_data/large_qvd/orders_20m.csv
+.gitignore
+test-data/fake_data/large_qvd/orders_30m_21col_high_entropy.csv
+.gitignore
+test-data/fake_data/large_qvd/orders_20m.qvd
+test-data/fake_data/large_qvd/orders_30m_21col_low_entropy.qvd

@@ -14,10 +14,13 @@ import { metricHelpContent } from "../qualityMetricHelp.mjs";
  * @param {object} result - The QVD read result
  * @param {object} webview - The webview object
  * @param {object} context - The extension context
+ * @param {object} options - Options for HTML generation
+ * @param {boolean} options.embedData - Whether to embed data in HTML (default: true for backwards compatibility)
  * @returns {string} HTML content for the main webview
  */
-export function getHtmlForWebview(result, webview, context) {
+export function getHtmlForWebview(result, webview, context, options = {}) {
   const { metadata, data, totalRows, dataError } = result;
+  const embedData = options.embedData !== false; // Default to true for backwards compatibility
   const hasMoreRows = data.length < totalRows;
   const nonce = getNonce();
 
@@ -1050,6 +1053,32 @@ export function getHtmlForWebview(result, webview, context) {
     </style>
 </head>
 <body>
+    ${
+      !embedData
+        ? `
+    <!-- Loading indicator for postMessage data -->
+    <div id="loading-indicator" style="
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: var(--vscode-editor-background);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        z-index: 10000;
+    ">
+        <div style="font-size: 48px; margin-bottom: 20px;">⏳</div>
+        <div style="font-size: 18px; color: var(--vscode-foreground);">Loading QVD data...</div>
+        <div style="font-size: 14px; color: var(--vscode-descriptionForeground); margin-top: 10px;">
+            Large file optimization in progress
+        </div>
+    </div>
+    `
+        : ""
+    }
     <div class="container">
         <div class="header-container">
             <h1><img src="${logoUri}" alt="Ctrl-Q Logo" class="logo" />Ctrl-Q QVD File Viewer</h1>
@@ -1276,7 +1305,8 @@ export function getHtmlForWebview(result, webview, context) {
         };
         
         // Data for tables
-        const tableData = ${JSON.stringify(data)};
+        // When embedData is false, data will be sent via postMessage after page load
+        const tableData = ${embedData ? JSON.stringify(data) : "[]"};
         const schemaData = ${JSON.stringify(schemaData)};
         const metadataData = ${JSON.stringify(metadataKV)};
         const lineageData = ${JSON.stringify(lineageData)};
@@ -1291,10 +1321,18 @@ export function getHtmlForWebview(result, webview, context) {
         let profilingCharts = [];
         let currentProfilingResults = null;
         
+        // Flag to track if we're waiting for initial data
+        let waitingForInitialData = ${!embedData};
+        
         // Initialize tables on load
         window.addEventListener('DOMContentLoaded', function() {
-            initializeTables();
+            ${
+              embedData
+                ? "initializeTables();"
+                : "// Tables will be initialized after receiving data via postMessage"
+            }
             setupEventListeners();
+            setupMessageListener();
         });
         
         function setupEventListeners() {
@@ -1475,6 +1513,50 @@ export function getHtmlForWebview(result, webview, context) {
                     });
                 }
             });
+        }
+        
+        function setupMessageListener() {
+            // Listen for messages from the extension
+            window.addEventListener('message', event => {
+                const message = event.data;
+                
+                switch (message.command) {
+                    case 'loadInitialData':
+                        logger.log('Received initial data via postMessage');
+                        logger.log('Data rows:', message.data ? message.data.length : 0);
+                        
+                        // Update global variables with received data
+                        if (message.data) {
+                            // Clear the placeholder and set real data
+                            tableData.length = 0;
+                            tableData.push(...message.data);
+                        }
+                        
+                        // Update hasMoreRows if provided
+                        if (message.hasMoreRows !== undefined) {
+                            window.hasMoreRows = message.hasMoreRows;
+                        }
+                        
+                        // Hide loading indicator
+                        const loadingIndicator = document.getElementById('loading-indicator');
+                        if (loadingIndicator) {
+                            loadingIndicator.style.display = 'none';
+                        }
+                        
+                        // Initialize tables now that we have data
+                        if (waitingForInitialData) {
+                            waitingForInitialData = false;
+                            initializeTables();
+                            logger.log('Tables initialized with postMessage data');
+                        }
+                        break;
+                        
+                    default:
+                        logger.log('Unknown message command:', message.command);
+                }
+            });
+            
+            logger.log('Message listener setup complete. Waiting for data:', waitingForInitialData);
         }
         
         function initializeTables() {
