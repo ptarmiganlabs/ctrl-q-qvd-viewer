@@ -321,6 +321,84 @@ The XML header contains all metadata about the QVD file. It is encoded in UTF-8 
 | `Dec`     | Decimal separator       | `.` or `,`                                                         |
 | `Thou`    | Thousands separator     | `,` or `.` or ` `                                                  |
 
+### Understanding Field and Index Offsets
+
+**CRITICAL: Offsets in QVD files are RELATIVE, not absolute file positions.**
+
+The `Offset` values in field definitions are **relative to the start of the symbol tables section**, not absolute byte positions from the beginning of the file. This design choice optimizes file parsing by allowing symbol tables to be read sequentially without needing to know the exact header size upfront.
+
+#### File Layout with Offsets
+
+```text
+┌─────────────────────────┐  Byte 0 (file start)
+│      XML Header         │
+│                         │
+│    (variable size)      │
+└─────────────────────────┘  ← Symbol tables start here (offset reference point)
+│ Field 1: Offset=0       │  (Field offset RELATIVE to symbol tables start)
+│                         │
+├─────────────────────────┤
+│ Field 2: Offset=N       │  (N = sum of previous field lengths)
+│                         │
+├─────────────────────────┤
+│ Field 3: Offset=M       │  (M = sum of all previous field lengths)
+│                         │
+└─────────────────────────┘  ← Index table starts here
+│     Index Table         │  (indexTableOffset RELATIVE to symbol tables start)
+│                         │
+└─────────────────────────┘  End of file
+```
+
+#### Calculating Header Size
+
+To determine the header size, you need the total file size:
+
+```javascript
+import { statSync } from "fs";
+
+// Get file size from filesystem
+const fileSize = statSync(filePath).size;
+
+// Calculate symbol tables size (sum of all field lengths)
+const symbolTablesSize = metadata.fields.reduce(
+  (sum, field) => sum + field.length,
+  0
+);
+
+// Get index table size from metadata
+const indexTableSize = metadata.length;
+
+// Calculate header size
+const headerSize = fileSize - symbolTablesSize - indexTableSize;
+```
+
+#### Example: colors.qvd
+
+For a QVD file with:
+
+- Total file size: 7,815 bytes
+- 4 fields with lengths: [1143, 1964, 1036, 6] bytes
+- Index table size: 405 bytes
+
+```javascript
+{
+  fields: [
+    { name: "id", offset: 0, length: 1143 },         // Relative offset
+    { name: "name", offset: 1143, length: 1964 },    // Relative offset
+    { name: "rgb", offset: 3107, length: 1036 },     // Relative offset
+    { name: "is_trans", offset: 4143, length: 6 }    // Relative offset
+  ],
+  offset: 4149,  // Index table offset (relative to symbol tables start)
+  length: 405    // Index table size
+}
+
+// Calculations:
+// symbolTablesSize = 1143 + 1964 + 1036 + 6 = 4149 bytes
+// headerSize = 7815 - 4149 - 405 = 3261 bytes ✓
+```
+
+Note that `metadata.offset` (4149) equals `symbolTablesSize` (4149) because the index table immediately follows the symbol tables section.
+
 ## Symbol Table Section
 
 The symbol table stores unique values for each field. It begins immediately after the XML header delimiter (`\r\n\0`).
