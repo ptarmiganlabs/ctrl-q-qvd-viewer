@@ -15,6 +15,8 @@ export async function activate(context) {
   logger.log("Ctrl-Q QVD Viewer extension is now active");
 
   // Register the custom editor provider for QVD files
+  // Using registerCustomEditorProvider (readonly) instead of registerCustomTextEditorProvider
+  // This prevents VS Code from trying to read large QVD files into memory
   const qvdEditorProvider = new QvdEditorProvider(context);
 
   const editorRegistration = vscode.window.registerCustomEditorProvider(
