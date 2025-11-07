@@ -5,6 +5,7 @@ This document outlines the implementation steps for adding QVD metadata comparis
 ## Overview
 
 Users will be able to:
+
 1. Right-click on a QVD file in the VS Code file explorer and select "Select for Compare"
 2. Right-click on a second QVD file and select "Compare with Selected"
 3. View a side-by-side diff of the QVD metadata (file-level and field-level properties)
@@ -23,6 +24,7 @@ Users will be able to:
 **Goal**: Create a content provider that can format QVD metadata as text for VS Code's diff viewer.
 
 **Tasks**:
+
 - Create new file `src/qvdMetadataCompareProvider.mjs`
 - Implement `TextDocumentContentProvider` interface with:
   - `provideTextDocumentContent(uri)` method that extracts and formats metadata
@@ -34,12 +36,15 @@ Users will be able to:
 - Use existing `QvdReader` with `maxRows=0` for fast metadata-only loading
 
 **Files to create**:
+
 - `src/qvdMetadataCompareProvider.mjs`
 
 **Files to modify**:
+
 - None (new feature)
 
 **Acceptance criteria**:
+
 - Provider can extract and format metadata from any valid QVD file
 - Output is structured text suitable for diff comparison
 - Handles errors gracefully with appropriate logging
@@ -52,15 +57,18 @@ Users will be able to:
 **Goal**: Register the metadata provider with VS Code using a custom URI scheme.
 
 **Tasks**:
+
 - Modify `src/extension.mjs` to import and instantiate `QvdMetadataCompareProvider`
 - Register the provider with VS Code using `workspace.registerTextDocumentContentProvider`
 - Use URI scheme `qvd-metadata:` for virtual documents
 - Add provider to extension subscriptions for proper cleanup
 
 **Files to modify**:
+
 - `src/extension.mjs`
 
 **Acceptance criteria**:
+
 - Provider is registered on extension activation
 - Custom URI scheme `qvd-metadata:` is recognized
 - Provider is properly disposed on extension deactivation
@@ -72,6 +80,7 @@ Users will be able to:
 **Goal**: Create a command that opens VS Code's diff viewer for two QVD files.
 
 **Tasks**:
+
 - Add new command `ctrl-q-qvd-viewer.compareQvdMetadata` to `package.json`
 - Implement command handler in `src/extension.mjs` that:
   - Accepts two QVD file URIs as parameters
@@ -81,10 +90,12 @@ Users will be able to:
 - Handle edge cases (invalid files, missing files)
 
 **Files to modify**:
+
 - `package.json` (add command definition)
 - `src/extension.mjs` (add command handler)
 
 **Acceptance criteria**:
+
 - Command opens VS Code's diff viewer with formatted metadata
 - Title clearly identifies both files being compared
 - Errors are handled and reported to user via notifications
@@ -97,6 +108,7 @@ Users will be able to:
 **Goal**: Enable right-click "Select for compare" / "Compare with selected" workflow.
 
 **Tasks**:
+
 - Research VS Code's `CompareProvider` API or file comparison context
 - Implement integration with VS Code's built-in compare selection mechanism
 - Store selected file URI when user chooses "Select for Compare"
@@ -104,10 +116,12 @@ Users will be able to:
 - Add menu contributions to `package.json` for `.qvd` files in explorer context
 
 **Files to modify**:
+
 - `package.json` (add menu contributions)
 - `src/extension.mjs` (implement compare selection logic)
 
 **Acceptance criteria**:
+
 - "Select for Compare" stores the first QVD file URI
 - "Compare with Selected" triggers metadata diff with stored URI
 - Context menu items only appear for `.qvd` files
@@ -121,6 +135,7 @@ Users will be able to:
 **Goal**: Enhance the comparison output with a summary section highlighting key differences.
 
 **Tasks**:
+
 - Modify metadata formatting to include a "QUICK SUMMARY" section at the top
 - Calculate and display:
   - Field count comparison (added/removed fields)
@@ -130,9 +145,11 @@ Users will be able to:
 - Make summary easily scannable in diff viewer
 
 **Files to modify**:
+
 - `src/qvdMetadataCompareProvider.mjs`
 
 **Acceptance criteria**:
+
 - Summary section appears at top of comparison
 - Key differences are clearly highlighted
 - Summary remains concise (< 10 lines)
@@ -145,6 +162,7 @@ Users will be able to:
 **Goal**: Allow users to customize comparison behavior.
 
 **Tasks**:
+
 - Add configuration settings to `package.json`:
   - Option to include/exclude certain metadata sections
   - Option to show/hide storage-related fields (offsets, lengths)
@@ -153,11 +171,13 @@ Users will be able to:
 - Document settings in README.md
 
 **Files to modify**:
+
 - `package.json` (add configuration schema)
 - `src/qvdMetadataCompareProvider.mjs` (read and apply settings)
 - `README.md` (document configuration options)
 
 **Acceptance criteria**:
+
 - Configuration options are available in VS Code settings
 - Settings take effect immediately without reload
 - Default values provide good out-of-box experience
@@ -170,6 +190,7 @@ Users will be able to:
 **Goal**: Ensure feature works correctly and handles edge cases.
 
 **Tasks**:
+
 - Create test QVD files with known metadata differences
 - Write unit tests for `QvdMetadataCompareProvider`:
   - Metadata extraction
@@ -183,14 +204,17 @@ Users will be able to:
 - Ensure >80% code coverage for new code
 
 **Files to create**:
+
 - `test/qvdMetadataCompareProvider.test.js`
 - `test/compareWorkflow.test.js`
 - `test-data/comparison/*.qvd` (test fixtures)
 
 **Files to modify**:
+
 - Existing test configuration files as needed
 
 **Acceptance criteria**:
+
 - All tests pass in CI/CD pipeline
 - Edge cases are covered (empty files, corrupted files, identical files)
 - Test execution is reasonably fast (<5 seconds)
@@ -203,6 +227,7 @@ Users will be able to:
 **Goal**: Provide clear documentation for users and future developers.
 
 **Tasks**:
+
 - Update README.md with:
   - Feature description and screenshots
   - Usage instructions for comparison workflow
@@ -213,12 +238,14 @@ Users will be able to:
 - Create user-facing documentation with examples
 
 **Files to modify**:
+
 - `README.md`
 - `CHANGELOG.md`
 - `docs/QVD_COMPARISON_FEATURE.md`
 - All new source files (add JSDoc comments)
 
 **Acceptance criteria**:
+
 - Documentation is clear and complete
 - Screenshots show the feature in action
 - Configuration options are fully documented
