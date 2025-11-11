@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { statSync } from "fs";
 import QvdReader from "./qvdReader.mjs";
 import { getErrorHtml } from "./webview/templates/errorTemplate.mjs";
 import { getHtmlForWebview } from "./webview/templates/mainTemplate.mjs";
@@ -118,6 +119,9 @@ class QvdEditorProvider {
         fields: result.metadata?.fields?.length,
       });
 
+      // Get file size for QVD structure calculation
+      const fileSize = statSync(filePath).size;
+
       // Generate HTML WITHOUT embedded data (data will be sent via postMessage)
       logger.log(`Generating HTML for webview (embedData: false)...`);
       try {
@@ -126,6 +130,7 @@ class QvdEditorProvider {
         const resultForHtml = {
           ...result,
           data: [], // Empty array for HTML generation
+          fileSize, // Add file size for QVD structure calculation
         };
 
         const htmlStart = performance.now();

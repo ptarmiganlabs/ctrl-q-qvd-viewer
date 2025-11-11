@@ -19,7 +19,7 @@ import { metricHelpContent } from "../qualityMetricHelp.mjs";
  * @returns {string} HTML content for the main webview
  */
 export function getHtmlForWebview(result, webview, context, options = {}) {
-  const { metadata, data, totalRows, dataError } = result;
+  const { metadata, data, totalRows, dataError, fileSize } = result;
   const embedData = options.embedData !== false; // Default to true for backwards compatibility
   const hasMoreRows = data.length < totalRows;
   const nonce = getNonce();
@@ -131,6 +131,49 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
   ]
     .filter(Boolean)
     .join("\n                        ");
+
+  // Calculate QVD structure data for visualization
+  const qvdStructureData =
+    metadata && metadata.fields && metadata.fields.length > 0 && fileSize
+      ? (() => {
+          // Calculate symbol tables total size
+          const symbolTablesSize = metadata.fields.reduce(
+            (sum, field) => sum + (field.length || 0),
+            0
+          );
+          // Index table size
+          const indexTableSize = metadata.length || 0;
+
+          // Correct calculation: header size = total file size - symbol tables - index table
+          // Field offsets are RELATIVE to start of symbol tables section, not absolute
+          const headerSize = fileSize - symbolTablesSize - indexTableSize;
+
+          // Debug logging
+          console.log("QVD Structure Debug:", {
+            fileSize,
+            symbolTablesSize,
+            indexTableSize,
+            calculatedHeaderSize: headerSize,
+            indexTableOffset: metadata.offset,
+            firstFieldOffset: metadata.fields[0]?.offset,
+            verification: {
+              sum: headerSize + symbolTablesSize + indexTableSize,
+              matchesFileSize:
+                headerSize + symbolTablesSize + indexTableSize === fileSize,
+            },
+          });
+
+          return {
+            headerSize: Math.max(0, headerSize),
+            symbolTablesSize,
+            indexTableSize,
+          };
+        })()
+      : {
+          headerSize: 0,
+          symbolTablesSize: 0,
+          indexTableSize: 0,
+        };
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -575,6 +618,85 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             font-size: 1.1em;
             margin: 0;
             color: var(--vscode-foreground);
+        }
+        
+        .qvd-structure-chart {
+            background-color: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .qvd-structure-chart h3 {
+            margin: 0 0 12px 0;
+            font-size: 1.1em;
+            color: var(--vscode-foreground);
+        }
+        
+        .qvd-structure-content {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        
+        .qvd-structure-canvas-container {
+            position: relative;
+            height: 120px;
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .qvd-structure-table {
+            flex-shrink: 0;
+            min-width: 280px;
+        }
+        
+        .qvd-structure-table table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+        
+        .qvd-structure-table th {
+            text-align: left;
+            padding: 8px;
+            background-color: var(--vscode-list-activeSelectionBackground);
+            color: var(--vscode-list-activeSelectionForeground);
+            font-weight: 600;
+            border-bottom: 1px solid var(--vscode-panel-border);
+        }
+        
+        .qvd-structure-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid var(--vscode-panel-border);
+        }
+        
+        .qvd-structure-table tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .qvd-structure-table .section-name {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .qvd-structure-table .color-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+            display: inline-block;
+        }
+        
+        .qvd-structure-table .size-value {
+            text-align: right;
+            font-family: monospace;
+        }
+        
+        .qvd-structure-table .percent-value {
+            text-align: right;
+            color: var(--vscode-descriptionForeground);
         }
         
         .warning-banner {
@@ -1196,6 +1318,30 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             <!-- Profiling Tab -->
             <div id="profiling-tab" class="tab-content">
                 <div class="profiling-controls">
+                    <!-- QVD Structure Visualization -->
+                    <div class="qvd-structure-chart">
+                        <h3>📦 QVD File Structure</h3>
+                        <div class="qvd-structure-content">
+                            <div class="qvd-structure-canvas-container">
+                                <canvas id="qvd-structure-canvas"></canvas>
+                            </div>
+                            <div class="qvd-structure-table">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Section</th>
+                                            <th class="size-value">Size</th>
+                                            <th class="percent-value">%</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="qvd-structure-table-body">
+                                        <!-- Will be populated by JavaScript -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <div class="profiling-header">
                         <h2>📊 Field Value Distribution Analysis</h2>
                         <button class="header-button" id="export-qvs-btn" style="display: none;">💾 Export to QVS Script</button>
@@ -1333,6 +1479,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             }
             setupEventListeners();
             setupMessageListener();
+            initQvdStructureChart();
         });
         
         function setupEventListeners() {
@@ -1557,6 +1704,195 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             });
             
             logger.log('Message listener setup complete. Waiting for data:', waitingForInitialData);
+        }
+        
+        // QVD Structure Chart data (pre-calculated)
+        const qvdStructureData = ${JSON.stringify(qvdStructureData)};
+        
+        // Initialize QVD Structure Chart
+        function initQvdStructureChart() {
+            if (!qvdStructureData) {
+                logger.log('No QVD structure data available');
+                return;
+            }
+            
+            // Calculate sizes
+            const headerSize = qvdStructureData.headerSize;
+            const symbolTablesSize = qvdStructureData.symbolTablesSize;
+            const indexTableSize = qvdStructureData.indexTableSize;
+            
+            // Total file size
+            const totalSize = headerSize + symbolTablesSize + indexTableSize;
+            
+            // Calculate percentages
+            const headerPercent = totalSize > 0 ? (headerSize / totalSize * 100).toFixed(1) : 0;
+            const symbolPercent = totalSize > 0 ? (symbolTablesSize / totalSize * 100).toFixed(1) : 0;
+            const indexPercent = totalSize > 0 ? (indexTableSize / totalSize * 100).toFixed(1) : 0;
+            
+            // Format sizes for display
+            function formatBytes(bytes) {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+            
+            const ctx = document.getElementById('qvd-structure-canvas');
+            if (!ctx) {
+                logger.error('QVD structure canvas not found');
+                return;
+            }
+            
+            try {
+                // Detect if we're in a light or dark theme by checking the computed background color
+                const bodyBg = getComputedStyle(document.body).backgroundColor;
+                const isLightTheme = bodyBg && bodyBg !== 'rgba(0, 0, 0, 0)' && 
+                                     (bodyBg.includes('255, 255, 255') || bodyBg.includes('rgb(255') || 
+                                      parseInt(bodyBg.match(/\\d+/)?.[0] || '0') > 127);
+                
+                // Choose colors based on theme - much brighter for dark theme
+                const colors = isLightTheme ? {
+                    header: '#0E7490',        // Darker cyan for light theme
+                    symbolTables: '#7C3AED',  // Darker purple for light theme
+                    indexTable: '#DC2626'     // Darker red for light theme
+                } : {
+                    header: '#22D3EE',        // Very bright cyan for dark theme
+                    symbolTables: '#A78BFA',  // Very bright purple for dark theme
+                    indexTable: '#FB923C'     // Very bright orange for dark theme
+                };
+                
+                // Populate the table with structure data
+                const tableBody = document.getElementById('qvd-structure-table-body');
+                if (tableBody) {
+                    const headerRow = '<tr>' +
+                        '<td class="section-name">' +
+                        '<span class="color-indicator" style="background-color: ' + colors.header + ';"></span>' +
+                        'Header' +
+                        '</td>' +
+                        '<td class="size-value">' + formatBytes(headerSize) + '</td>' +
+                        '<td class="percent-value">' + headerPercent + '%</td>' +
+                        '</tr>';
+                    
+                    const symbolRow = '<tr>' +
+                        '<td class="section-name">' +
+                        '<span class="color-indicator" style="background-color: ' + colors.symbolTables + ';"></span>' +
+                        'Symbol Tables' +
+                        '</td>' +
+                        '<td class="size-value">' + formatBytes(symbolTablesSize) + '</td>' +
+                        '<td class="percent-value">' + symbolPercent + '%</td>' +
+                        '</tr>';
+                    
+                    const indexRow = '<tr>' +
+                        '<td class="section-name">' +
+                        '<span class="color-indicator" style="background-color: ' + colors.indexTable + ';"></span>' +
+                        'Index Table' +
+                        '</td>' +
+                        '<td class="size-value">' + formatBytes(indexTableSize) + '</td>' +
+                        '<td class="percent-value">' + indexPercent + '%</td>' +
+                        '</tr>';
+                    
+                    tableBody.innerHTML = headerRow + symbolRow + indexRow;
+                }
+                
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['QVD File Structure'],
+                        datasets: [
+                            {
+                                label: 'Header',
+                                data: [headerSize],
+                                backgroundColor: colors.header,
+                                borderColor: colors.header,
+                                borderWidth: 1
+                            },
+                            {
+                                label: 'Symbol Tables',
+                                data: [symbolTablesSize],
+                                backgroundColor: colors.symbolTables,
+                                borderColor: colors.symbolTables,
+                                borderWidth: 1
+                            },
+                            {
+                                label: 'Index Table',
+                                data: [indexTableSize],
+                                backgroundColor: colors.indexTable,
+                                borderColor: colors.indexTable,
+                                borderWidth: 1
+                            }
+                        ]
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        maintainAspectRatio: false,
+                        responsive: true,
+                        scales: {
+                            x: {
+                                stacked: true,
+                                ticks: {
+                                    callback: function(value) {
+                                        return formatBytes(value);
+                                    },
+                                    color: '#CCCCCC'
+                                },
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.1)'
+                                },
+                                border: {
+                                    color: 'rgba(255, 255, 255, 0.2)'
+                                }
+                            },
+                            y: {
+                                stacked: true,
+                                ticks: {
+                                    color: '#CCCCCC'
+                                },
+                                grid: {
+                                    display: false
+                                },
+                                border: {
+                                    color: 'rgba(255, 255, 255, 0.2)'
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'bottom',
+                                labels: {
+                                    color: '#CCCCCC',
+                                    padding: 15,
+                                    font: {
+                                        size: 12
+                                    }
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const label = context.dataset.label || '';
+                                        const value = context.parsed.x;
+                                        const percent = context.datasetIndex === 0 ? headerPercent : 
+                                                       context.datasetIndex === 1 ? symbolPercent : 
+                                                       indexPercent;
+                                        return label + ': ' + formatBytes(value) + ' (' + percent + '%)';
+                                    }
+                                },
+                                backgroundColor: 'rgba(30, 30, 30, 0.95)',
+                                titleColor: '#FFFFFF',
+                                bodyColor: '#CCCCCC',
+                                borderColor: 'rgba(255, 255, 255, 0.3)',
+                                borderWidth: 1
+                            }
+                        }
+                    }
+                });
+                
+                logger.log('QVD structure chart initialized successfully');
+            } catch (error) {
+                logger.error('Error initializing QVD structure chart:', error);
+            }
         }
         
         function initializeTables() {
