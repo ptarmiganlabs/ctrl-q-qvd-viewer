@@ -4,6 +4,31 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [1.4.0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.3.2...v1.4.0) (2025-11-11)
+
+
+### Features
+
+* Add QVD structure visualization and file size calculation in profiling tab ([cecab7e](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/cecab7ebef43b903b1d98ec68893846da306b013))
+
+
+### Documentation
+
+* Add QVD file format specification ([b2ecda6](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/b2ecda6fa36e23f8c7c250d88a4b6920551be33c))
+* Enhance QVD_FORMAT.md with detailed explanations on field and index offsets ([209a45a](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/209a45aaf5016ab892d71f27af94d45ab641de91))
+* Revise QVD File Format Specification with detailed sections and improved structure ([9053900](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/9053900364b525c63fd38f87af9ef062941e3331))
+* Update README to refine description of the extension ([b394e04](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/b394e047d40fe6ad187c1d4e4f0fbf3896839e7c))
+
+
+### Miscellaneous
+
+* Update .vscodeignore to include and exclude relevant files and directories ([cd3b1e8](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/cd3b1e896a639e25d59bf39716a63c082f4d5088))
+
+
+### Tests
+
+* Add performance testing suite for large QVD files ([5a2d139](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/5a2d139a370682be97eea70fd1a5377a34ef6427))
+
 ## [1.3.2](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.3.1...v1.3.2) (2025-11-05)
 
 ### Bug Fixes
