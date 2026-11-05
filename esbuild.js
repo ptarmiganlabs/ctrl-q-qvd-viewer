@@ -32,8 +32,8 @@ const esbuildProblemMatcherPlugin = {
 };
 
 /**
- * Copy sql.js's WebAssembly file next to the bundle. sql.js loads sql-wasm.wasm
- * from the directory of the script it runs from, which in the bundle is dist/.
+ * Copy sql.js's WebAssembly file next to the bundle, where the SQLite exporter
+ * reads it from: node_modules is not packaged with the extension.
  * @type {import('esbuild').Plugin}
  */
 const copySqlWasmPlugin = {
@@ -41,37 +41,49 @@ const copySqlWasmPlugin = {
 
   setup(build) {
     build.onEnd(() => {
-      const outdir = path.dirname(build.initialOptions.outfile);
-      fs.mkdirSync(outdir, { recursive: true });
+      const { outdir, outfile } = build.initialOptions;
+      const targetDir = outdir ?? path.dirname(outfile);
+      fs.mkdirSync(targetDir, { recursive: true });
+      // sql.js keeps the file next to its main script
       fs.copyFileSync(
-        require.resolve("sql.js/dist/sql-wasm.wasm"),
-        path.join(outdir, "sql-wasm.wasm")
+        path.join(path.dirname(require.resolve("sql.js")), "sql-wasm.wasm"),
+        path.join(targetDir, "sql-wasm.wasm")
       );
     });
   },
 };
 
+/**
+ * Options for bundling the extension. The tests bundle the SQLite exporter with
+ * them too, to check that it finds its WebAssembly file once bundled.
+ * @type {import('esbuild').BuildOptions}
+ */
+const buildOptions = {
+  entryPoints: ["src/extension.mjs"],
+  bundle: true,
+  format: "cjs",
+  minify: production,
+  sourcemap: !production,
+  sourcesContent: false,
+  platform: "node",
+  outfile: "dist/extension.js",
+  external: ["vscode"],
+  logLevel: "warning",
+  // Define __filename and __dirname for ESM-style code
+  define: {
+    "import.meta.url": "__importMetaUrl",
+  },
+  banner: {
+    js: `const __importMetaUrl = require('url').pathToFileURL(__filename).href;`,
+  },
+  plugins: [copySqlWasmPlugin],
+};
+
 async function main() {
   const ctx = await esbuild.context({
-    entryPoints: ["src/extension.mjs"],
-    bundle: true,
-    format: "cjs",
-    minify: production,
-    sourcemap: !production,
-    sourcesContent: false,
-    platform: "node",
-    outfile: "dist/extension.js",
-    external: ["vscode"],
-    logLevel: "warning",
-    // Define __filename and __dirname for ESM-style code
-    define: {
-      "import.meta.url": "__importMetaUrl",
-    },
-    banner: {
-      js: `const __importMetaUrl = require('url').pathToFileURL(__filename).href;`,
-    },
+    ...buildOptions,
     plugins: [
-      copySqlWasmPlugin,
+      ...buildOptions.plugins,
       /* add to the end of plugins array */
       esbuildProblemMatcherPlugin,
     ],
@@ -84,7 +96,12 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+// Build when run as a script; the tests only load this file for buildOptions
+if (require.main === module) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}
+
+module.exports = { buildOptions };

@@ -3,7 +3,9 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const avro = require("avsc");
+const esbuild = require("esbuild");
 const initSqlJs = require("sql.js");
+const { buildOptions } = require("../esbuild.js");
 
 // Import exporter modules
 let avroExporter;
@@ -48,6 +50,44 @@ function decodeAvro(bytes) {
     decoder.on("end", () => resolve({ header, records }));
     decoder.end(bytes);
   });
+}
+
+/**
+ * Count the rows in the data table of an exported SQLite database
+ * @param {string} filePath - Database file path
+ * @returns {Promise<number>} Number of rows
+ */
+async function countSqliteRows(filePath) {
+  const SQL = await initSqlJs();
+  const db = new SQL.Database(fs.readFileSync(filePath));
+  try {
+    return db.exec("SELECT COUNT(*) FROM data")[0].values[0][0];
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Bundle the SQLite exporter with esbuild.js's options, into a folder of its own
+ * with no node_modules above it, as in the installed extension
+ * @param {string} name - Folder name in the output directory
+ * @returns {Promise<{exportToSQLite: Function, wasmPath: string}>} The bundled exporter, and the wasm file next to it
+ */
+async function bundleSqliteExporter(name) {
+  const outfile = path.join(outputDir, name, "dist", "sqliteExporter.js");
+  await esbuild.build({
+    ...buildOptions,
+    entryPoints: [
+      path.join(__dirname, "..", "src", "exporters", "sqliteExporter.mjs"),
+    ],
+    outfile,
+    sourcemap: false,
+    logLevel: "silent",
+  });
+  return {
+    exportToSQLite: require(outfile).exportToSQLite,
+    wasmPath: path.join(path.dirname(outfile), "sql-wasm.wasm"),
+  };
 }
 
 suite("Exporter Test Suite", () => {
@@ -118,12 +158,13 @@ suite("Exporter Test Suite", () => {
     }
   });
 
-  test("SQLite export - sql-wasm.wasm is built next to the bundled extension", () => {
-    // sql.js in dist/extension.js loads its WebAssembly file from dist/
-    const wasmPath = path.join(__dirname, "..", "dist", "sql-wasm.wasm");
-    assert.ok(
-      fs.existsSync(wasmPath),
-      `${wasmPath} should exist; esbuild.js copies it there`
-    );
+  test("SQLite export - bundled exporter finds its wasm file without node_modules", async () => {
+    const { exportToSQLite } = await bundleSqliteExporter("bundled");
+    const rows = makeRows(100);
+    const filePath = path.join(outputDir, "bundled.db");
+
+    await exportToSQLite(rows, filePath);
+
+    assert.strictEqual(await countSqliteRows(filePath), rows.length);
   });
 });
