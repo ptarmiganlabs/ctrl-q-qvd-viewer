@@ -77,6 +77,8 @@ jobs:
     if: needs.release-please.outputs.releases_created == 'true'
     permissions:
       contents: write
+      # Lets vsce request a GitHub OIDC token for Marketplace Trusted Publishing
+      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -90,8 +92,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # vsce 4.1.0 aligned its OIDC token exchange with the Marketplace (vscode-vsce #1337)
       - name: Install vsce
-        run: npm install -g @vscode/vsce
+        run: npm install -g @vscode/vsce@^4.1.0
 
       - name: Security scan - Check for sensitive files in package
         run: |
@@ -196,10 +199,11 @@ jobs:
           artifacts: ${{ steps.vsix.outputs.filename }}
           token: ${{ github.token }}
 
-      # Publish to VS Code Marketplace
-      # Uncomment when you have VSCE_PAT secret configured
+      # Publish to VS Code Marketplace with Trusted Publishing: vsce exchanges the job's
+      # GitHub OIDC token for a short-lived Marketplace token, so no PAT is stored.
+      # Needs a Trusted Publishing policy on the PtarmiganLabs publisher for this repo and ci.yaml.
       - name: Publish to VS Code Marketplace
-        run: vsce publish -p ${{ secrets.VSCE_PAT }}
+        run: vsce publish --oidc
 
       # Optional: Publish to Open VSX Registry
       # - name: Publish to Open VSX
