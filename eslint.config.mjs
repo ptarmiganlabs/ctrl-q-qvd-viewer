@@ -2,7 +2,7 @@ import globals from "globals";
 
 export default [
   {
-    ignores: ["node_modules/**", "out/**", "dist/**", ".vscode-test/**"],
+    ignores: ["node_modules/**", "out/**", "dist/**", ".vscode-test/**", ".claude/**"],
   },
   {
     files: ["**/*.js"],
