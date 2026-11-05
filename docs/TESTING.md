@@ -230,10 +230,6 @@ This is the scenario that prompted these improvements! Now you can:
 
 Sometimes the test window stays open. Close it manually or restart VS Code.
 
-### TypeScript errors
-
-Run `npm run compile-tests` to compile tests before running.
-
 ## Future Testing Improvements
 
 Planned enhancements:

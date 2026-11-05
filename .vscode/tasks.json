@@ -21,13 +21,6 @@
     },
     {
       "type": "npm",
-      "script": "compile-tests",
-      "problemMatcher": "$esbuild",
-      "label": "npm: compile-tests",
-      "group": "build"
-    },
-    {
-      "type": "npm",
       "script": "package",
       "problemMatcher": "$esbuild",
       "label": "npm: package",

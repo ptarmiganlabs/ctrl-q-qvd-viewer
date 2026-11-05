@@ -9,7 +9,6 @@ For more details on bundling VS Code extensions, see the [official documentation
 - **`npm run compile`** - Compiles the extension with sourcemaps for development
 - **`npm run watch`** - Watches for changes and automatically rebuilds
 - **`npm run package`** - Creates a production build (minified, no sourcemaps)
-- **`npm run compile-tests`** - Compiles test files
 - **`npm test`** - Runs tests
 
 ## Build Output
