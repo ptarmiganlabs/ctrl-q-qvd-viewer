@@ -1,10 +1,34 @@
 import initSqlJs from 'sql.js';
-import { existsSync, unlinkSync, writeFileSync } from 'fs';
-import { join, dirname } from 'path';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
+import { createRequire } from 'module';
+import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// sql.js, once it has started
+let sqlJs = null;
+
+/**
+ * Read sql.js's WebAssembly file. Reading it here rather than in sql.js keeps a
+ * missing or unreadable file from failing initSqlJs(), which keeps its first
+ * result, failed or not, for the rest of the session.
+ * @returns {Buffer} Contents of sql-wasm.wasm
+ */
+function readSqlWasm() {
+  // The bundled extension ships it next to dist/extension.js, copied by esbuild.js
+  const bundled = join(dirname(fileURLToPath(import.meta.url)), "sql-wasm.wasm");
+  if (existsSync(bundled)) {
+    return readFileSync(bundled);
+  }
+  // Loaded from src/, as in the tests: sql.js's own copy, next to its main script.
+  // The bundle has no node_modules to find sql.js in, so name the missing file
+  let sqlJsMain;
+  try {
+    sqlJsMain = createRequire(import.meta.url).resolve("sql.js");
+  } catch {
+    throw new Error(`${bundled} is missing`);
+  }
+  return readFileSync(join(dirname(sqlJsMain), "sql-wasm.wasm"));
+}
 
 /**
  * Export data to SQLite database format
@@ -14,16 +38,11 @@ const __dirname = dirname(__filename);
  */
 export async function exportToSQLite(data, filePath) {
   try {
-    // Initialize SQL.js with WASM file
-    // In Node.js, we need to point to the wasm file in node_modules
-    const SQL = await initSqlJs({
-      locateFile: (file) => {
-        return join(__dirname, "../../node_modules/sql.js/dist", file);
-      },
-    });
+    // Initialize SQL.js once, handing it its WebAssembly file
+    sqlJs ??= await initSqlJs({ wasmBinary: readSqlWasm() });
 
     // Create a new database
-    const db = new SQL.Database();
+    const db = new sqlJs.Database();
 
     if (data.length === 0) {
       // Export empty database
