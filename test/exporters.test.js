@@ -2,9 +2,11 @@ const assert = require("assert");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const avro = require("avsc");
 const initSqlJs = require("sql.js");
 
 // Import exporter modules
+let avroExporter;
 let sqliteExporter;
 let outputDir;
 
@@ -28,16 +30,67 @@ function makeRows(count) {
   return rows;
 }
 
+/**
+ * Decode an Avro object container file held in memory
+ * @param {Buffer} bytes - File contents
+ * @returns {Promise<{header: boolean, records: Array<Object>}>} Whether the file had a header, and its records
+ */
+function decodeAvro(bytes) {
+  return new Promise((resolve, reject) => {
+    let header = false;
+    const records = [];
+    const decoder = new avro.streams.BlockDecoder();
+    decoder.on("metadata", () => {
+      header = true;
+    });
+    decoder.on("data", (record) => records.push(record));
+    decoder.on("error", reject);
+    decoder.on("end", () => resolve({ header, records }));
+    decoder.end(bytes);
+  });
+}
+
 suite("Exporter Test Suite", () => {
   // Load the modules and create an output directory before running tests
   suiteSetup(async () => {
     // Import the ESM modules
+    avroExporter = await import("../src/exporters/avroExporter.mjs");
     sqliteExporter = await import("../src/exporters/sqliteExporter.mjs");
     outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-viewer-export-"));
   });
 
   suiteTeardown(() => {
     fs.rmSync(outputDir, { recursive: true, force: true });
+  });
+
+  test("Avro export - file is complete when the export resolves", async () => {
+    // Enough rows for the file to span several 64 KB blocks
+    const rows = makeRows(20000);
+    const filePath = path.join(outputDir, "rows.avro");
+
+    await avroExporter.exportToAvro(rows, filePath);
+    // Read synchronously, so this is the file as it was when the export resolved
+    const { header, records } = await decodeAvro(fs.readFileSync(filePath));
+
+    assert.ok(header, "File should start with an Avro header");
+    // The decoder silently drops a truncated last block, so count the records
+    assert.strictEqual(records.length, rows.length, "Every row should be in the file");
+    const last = rows[rows.length - 1];
+    assert.deepStrictEqual(
+      { ...records[records.length - 1] },
+      { ...last, created: last.created.getTime() },
+      "Last row should round-trip, with dates as timestamps"
+    );
+  });
+
+  test("Avro export - empty data gives a valid file", async () => {
+    const filePath = path.join(outputDir, "empty.avro");
+
+    await avroExporter.exportToAvro([], filePath);
+    const { header, records } = await decodeAvro(fs.readFileSync(filePath));
+
+    assert.ok(header, "File should have an Avro header");
+    assert.strictEqual(records.length, 0, "File should have no records");
   });
 
   test("SQLite export - rows can be read back", async () => {
