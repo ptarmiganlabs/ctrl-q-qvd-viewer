@@ -1,10 +1,5 @@
 import initSqlJs from 'sql.js';
 import { existsSync, unlinkSync, writeFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 /**
  * Export data to SQLite database format
@@ -14,13 +9,11 @@ const __dirname = dirname(__filename);
  */
 export async function exportToSQLite(data, filePath) {
   try {
-    // Initialize SQL.js with WASM file
-    // In Node.js, we need to point to the wasm file in node_modules
-    const SQL = await initSqlJs({
-      locateFile: (file) => {
-        return join(__dirname, "../../node_modules/sql.js/dist", file);
-      },
-    });
+    // Initialize SQL.js. It loads sql-wasm.wasm from the directory of the script
+    // it runs from: node_modules/sql.js/dist when this module is loaded from src/
+    // (as in the tests), and dist/ in the bundled extension, where esbuild.js
+    // copies the file
+    const SQL = await initSqlJs();
 
     // Create a new database
     const db = new SQL.Database();

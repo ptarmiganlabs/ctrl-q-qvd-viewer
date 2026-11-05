@@ -2,6 +2,8 @@
 // See: https://aka.ms/vscode-bundle-extension
 
 const esbuild = require("esbuild");
+const fs = require("fs");
+const path = require("path");
 
 const production = process.argv.includes("--production");
 const watch = process.argv.includes("--watch");
@@ -29,6 +31,26 @@ const esbuildProblemMatcherPlugin = {
   },
 };
 
+/**
+ * Copy sql.js's WebAssembly file next to the bundle. sql.js loads sql-wasm.wasm
+ * from the directory of the script it runs from, which in the bundle is dist/.
+ * @type {import('esbuild').Plugin}
+ */
+const copySqlWasmPlugin = {
+  name: "copy-sql-wasm",
+
+  setup(build) {
+    build.onEnd(() => {
+      const outdir = path.dirname(build.initialOptions.outfile);
+      fs.mkdirSync(outdir, { recursive: true });
+      fs.copyFileSync(
+        require.resolve("sql.js/dist/sql-wasm.wasm"),
+        path.join(outdir, "sql-wasm.wasm")
+      );
+    });
+  },
+};
+
 async function main() {
   const ctx = await esbuild.context({
     entryPoints: ["src/extension.mjs"],
@@ -49,6 +71,7 @@ async function main() {
       js: `const __importMetaUrl = require('url').pathToFileURL(__filename).href;`,
     },
     plugins: [
+      copySqlWasmPlugin,
       /* add to the end of plugins array */
       esbuildProblemMatcherPlugin,
     ],
