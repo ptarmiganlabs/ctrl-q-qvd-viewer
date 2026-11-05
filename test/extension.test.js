@@ -2,6 +2,7 @@ const assert = require("assert");
 const vscode = require("vscode");
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
 
 // QvdReader is async because it's a CJS wrapper around ESM
 let QvdReader;
@@ -66,6 +67,32 @@ suite("Extension Test Suite", () => {
       fieldNames.every((name) => typeof name === "string" && name.length > 0),
       "All field names should be non-empty strings"
     );
+  });
+
+  test("QVD Reader - File Opened Through a Symlink", async function () {
+    // qvdjs checks the file's real path, so a link in another directory must still open
+    const target = path.join(__dirname, "..", "test-data", "lego", "colors.qvd");
+    const linkDir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-link-"));
+    const link = path.join(linkDir, "colors-link.qvd");
+
+    try {
+      try {
+        fs.symlinkSync(target, link);
+      } catch (error) {
+        // Creating a symlink needs extra rights on Windows
+        if (error.code === "EPERM") {
+          this.skip();
+        }
+        throw error;
+      }
+
+      const result = await new QvdReader().read(link, 10);
+
+      assert.strictEqual(result.error, null);
+      assert.strictEqual(result.data.length, 10);
+    } finally {
+      fs.rmSync(linkDir, { recursive: true, force: true });
+    }
   });
 
   test("Extension Activation", async () => {

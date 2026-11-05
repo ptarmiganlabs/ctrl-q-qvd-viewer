@@ -1,4 +1,5 @@
 import { QvdDataFrame } from 'qvdjs';
+import { realpath } from 'fs/promises';
 import { dirname } from 'path';
 
 /**
@@ -16,10 +17,14 @@ class QvdReader {
       // Load the QVD file using qvdjs
       // Configure allowedDir to the parent directory of the file being opened
       // This allows qvdjs to read files from anywhere while still maintaining
-      // path traversal protection within that directory
+      // path traversal protection within that directory.
+      // qvdjs resolves symlinks before that check, so take the directory of the
+      // file's real path: a QVD opened through a symlink in another directory is
+      // otherwise refused. A path that can't be resolved is left for qvdjs to report.
+      const realFilePath = await realpath(filePath).catch(() => filePath);
       const loadOptions = {
         ...(maxRows === 0 ? {} : { maxRows }),
-        allowedDir: dirname(filePath),
+        allowedDir: dirname(realFilePath),
         // Read a dual value (a date, a formatted number) as the text Qlik displays,
         // as qvdjs 0.x did. Since 1.0 qvdjs reads it as its number by default.
         duals: "text",
