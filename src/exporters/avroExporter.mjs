@@ -1,5 +1,25 @@
 import avro from 'avsc';
-import { existsSync, unlinkSync } from 'fs';
+import { createWriteStream, existsSync, unlinkSync } from 'fs';
+import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
+
+/**
+ * Write records to an Avro object container file
+ * @param {Iterable<Object>} records - Records matching the type
+ * @param {import('avsc').Type} type - Avro record type
+ * @param {string} filePath - Destination file path
+ * @returns {Promise<void>} Resolves once the file has been written and closed
+ */
+function writeAvroFile(records, type, filePath) {
+  // Wait for the file stream to close: the encoder's own "finish" event fires
+  // before it has flushed its last block. writeHeader: true writes the header
+  // even when there are no records.
+  return pipeline(
+    Readable.from(records),
+    new avro.streams.BlockEncoder(type, { writeHeader: true }),
+    createWriteStream(filePath)
+  );
+}
 
 /**
  * Export data to Avro format
@@ -17,12 +37,7 @@ export async function exportToAvro(data, filePath) {
         fields: [{ name: "empty", type: "string" }],
       });
 
-      await new Promise((resolve, reject) => {
-        const encoder = avro.createFileEncoder(filePath, type);
-        encoder.on("finish", resolve);
-        encoder.on("error", reject);
-        encoder.end();
-      });
+      await writeAvroFile([], type, filePath);
       return;
     }
 
@@ -98,17 +113,13 @@ export async function exportToAvro(data, filePath) {
       fields: fields,
     });
 
-    await new Promise((resolve, reject) => {
-      const encoder = avro.createFileEncoder(filePath, type);
-
-      encoder.on("finish", resolve);
-      encoder.on("error", reject);
-
-      // Write rows
+    // Rows as the schema expects them, produced as the encoder asks for them
+    function* processedRows() {
       for (const row of data) {
-        // Convert dates to timestamps and ensure type compatibility
+        // Convert dates to timestamps and ensure type compatibility. Use the
+        // schema's columns, so a missing value becomes null and an extra one is left out
         const processedRow = {};
-        Object.keys(row).forEach((key) => {
+        columnNames.forEach((key) => {
           const value = row[key];
           const typeInfo = columnTypes[key];
 
@@ -123,11 +134,11 @@ export async function exportToAvro(data, filePath) {
             processedRow[key] = value;
           }
         });
-        encoder.write(processedRow);
+        yield processedRow;
       }
+    }
 
-      encoder.end();
-    });
+    await writeAvroFile(processedRows(), type, filePath);
   } catch (error) {
     // Clean up the partially created file on error
     try {

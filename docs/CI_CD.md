@@ -41,7 +41,7 @@ Triggers on:
 
    - Packages the extension (.vsix file)
    - Uploads to GitHub release
-   - Publishes to VS Code Marketplace (when configured)
+   - Publishes to VS Code Marketplace with Trusted Publishing (no stored token)
    - Optionally publishes to Open VSX
 
 4. **sbom**: Generates software bill of materials
@@ -108,10 +108,8 @@ No special configuration needed - the workflows use `GITHUB_TOKEN` automatically
 
 See [PUBLISHING.md](./PUBLISHING.md) for detailed instructions:
 
-1. Create VS Code Marketplace publisher account
-2. Generate Azure DevOps PAT with Marketplace scope
-3. Add `VSCE_PAT` to GitHub repository secrets
-4. Uncomment publishing steps in `ci.yaml`
+1. Sign in to the Marketplace with an account that is a member of the Ptarmigan Labs publisher
+2. Create a Trusted Publishing policy for this repository and `ci.yaml`
 
 ### Step 3: Optional - Open VSX Publishing
 
@@ -232,8 +230,8 @@ Add these to your README.md:
 
 **Publishing fails:**
 
-- Verify VSCE_PAT secret is set
-- Check PAT hasn't expired
+- Check the Trusted Publishing policy matches this repository and `ci.yaml`
+- Check the `publish` job has the `id-token: write` permission
 - Ensure publisher account exists
 - Review marketplace guidelines
 

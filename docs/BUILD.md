@@ -195,22 +195,7 @@ To install the packaged extension:
 
 ### Publish to VS Code Marketplace
 
-To publish the extension to the VS Code Marketplace:
-
-1. Create a publisher account at [marketplace.visualstudio.com](https://marketplace.visualstudio.com/)
-
-2. Get a Personal Access Token (PAT) from Azure DevOps
-
-3. Login with vsce:
-
-   ```bash
-   vsce login <publisher-name>
-   ```
-
-4. Publish:
-   ```bash
-   vsce publish
-   ```
+CI publishes the extension when a Release Please PR is merged, using Marketplace Trusted Publishing. See [PUBLISHING.md](./PUBLISHING.md) for the one-time setup and for publishing by hand.
 
 ## Debugging
 
