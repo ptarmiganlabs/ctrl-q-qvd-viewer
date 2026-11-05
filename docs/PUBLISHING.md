@@ -4,53 +4,35 @@ This document explains how to publish the Ctrl-Q QVD Viewer extension to the Vis
 
 ## Prerequisites
 
-### 1. Create a Microsoft Publisher Account
+### 1. Access to the Marketplace publisher
+
+The extension is published under the existing Marketplace publisher **Ptarmigan Labs** (ID `PtarmiganLabs`). Publisher IDs aren't case-sensitive, so `"publisher": "ptarmiganlabs"` in `package.json` refers to it.
 
 1. Go to [Visual Studio Marketplace Publisher Management](https://marketplace.visualstudio.com/manage)
-2. Sign in with your Microsoft account
-3. Create a publisher with ID: `ptarmiganlabs` (or verify it exists)
-4. Fill in the publisher details:
-   - **Publisher name**: Ptarmigan Labs
-   - **Publisher ID**: ptarmiganlabs
-   - **Email**: (your contact email)
+2. Sign in with a Microsoft account that is a member of the Ptarmigan Labs publisher
 
-### 2. Generate a Personal Access Token (PAT)
+If the page only offers to create a publisher, the account you signed in with isn't a member. Don't create a new publisher: an extension's ID includes its publisher, so anything published under a new one would be a separate extension that existing users never get updates from. If Microsoft asks whether an address is a work or school account or a personal account, the choice matters, because they are separate accounts.
 
-1. Navigate to [Azure DevOps](https://dev.azure.com/)
-2. Click on your user profile → **Personal Access Tokens**
-3. Click **+ New Token**
-4. Configure the token:
-   - **Name**: VS Code Marketplace Publishing
-   - **Organization**: All accessible organizations
-   - **Expiration**: Set to your preference (recommend 90 days for security)
-   - **Scopes**: Select **Custom defined** and check:
-     - ✅ **Marketplace** → **Manage** (this is the critical permission)
-5. Click **Create** and **copy the token immediately** (you won't see it again)
+### 2. Create a Trusted Publishing policy
 
-### 3. Add PAT to GitHub Secrets
+CI publishes with Marketplace Trusted Publishing: the workflow exchanges a GitHub OIDC token for a Marketplace token that lasts up to 15 minutes, so no Personal Access Token is stored in the repository.
 
-1. Go to your GitHub repository
-2. Navigate to **Settings** → **Secrets and variables** → **Actions**
-3. Click **New repository secret**
-4. Add the secret:
-   - **Name**: `VSCE_PAT`
-   - **Value**: (paste your PAT from Azure DevOps)
-5. Click **Add secret**
+1. On the publisher management page, open **Ptarmigan Labs** → **Trusted Publishing** → **Create**
+2. Fill in the policy:
+   - **Policy name**: `ctrl-q-qvd-viewer CI` (any name works)
+   - **Repository owner**: `ptarmiganlabs`
+   - **Repository**: `ctrl-q-qvd-viewer`
+   - **Workflow file**: `ci.yaml`
+   - **Environment**: leave empty (the `publish` job doesn't use a GitHub environment)
+3. Select **Create**
+
+If the workflow file is renamed, or the `publish` job is moved into a GitHub environment, update the policy to match, or publishing will fail.
 
 ## Publishing Methods
 
 ### Option 1: Automated Publishing via GitHub Actions (Recommended)
 
-Once you've set up the `VSCE_PAT` secret:
-
-1. Edit `.github/workflows/ci.yaml`
-2. Uncomment the marketplace publishing section:
-   ```yaml
-   - name: Publish to VS Code Marketplace
-     run: vsce publish -p ${{ secrets.VSCE_PAT }}
-   ```
-3. Commit and push the change
-4. The extension will automatically publish when a release is created
+The `publish` job in `.github/workflows/ci.yaml` runs whenever Release Please creates a release. It installs vsce 4.1.0 or later and runs `vsce publish --oidc`; the job's `id-token: write` permission lets vsce request the GitHub OIDC token.
 
 **How it works:**
 
@@ -61,7 +43,7 @@ Once you've set up the `VSCE_PAT` secret:
 
 ### Option 2: Manual Publishing
 
-If you prefer manual control:
+If you need to publish without CI:
 
 1. Install vsce globally:
 
@@ -69,26 +51,15 @@ If you prefer manual control:
    npm install -g @vscode/vsce
    ```
 
-2. Login to the marketplace:
+2. Package the extension:
 
    ```bash
-   vsce login ptarmiganlabs
+   vsce package
    ```
 
-   (Enter your PAT when prompted)
+3. On the [publisher management page](https://marketplace.visualstudio.com/manage), open the extension's menu and upload the `.vsix` file as an update.
 
-3. Publish the extension:
-
-   ```bash
-   vsce publish
-   ```
-
-   Or publish a specific version:
-
-   ```bash
-   vsce publish minor  # Bumps minor version
-   vsce publish 1.0.0  # Publishes specific version
-   ```
+Publishing from the command line (`vsce login ptarmiganlabs`, then `vsce publish`) needs a Personal Access Token created for **All accessible organizations** with the **Marketplace → Manage** scope. Azure DevOps is retiring that kind of token (a "global" PAT); see the [VS Code Publishing Guide](https://code.visualstudio.com/api/working-with-extensions/publishing-extension) for the current status.
 
 ## Publishing to Open VSX Registry (Optional)
 
@@ -200,11 +171,11 @@ Simply push new commits with conventional commit messages. Release Please handle
 
 ### Common Issues
 
-**Error: "Failed to publish: Permission denied"**
+**Publishing fails at the "Publish to VS Code Marketplace" step**
 
-- Verify your PAT has "Marketplace: Manage" scope
-- Check that the PAT hasn't expired
-- Ensure the publisher ID matches your account
+- Check that the Trusted Publishing policy names repository owner `ptarmiganlabs`, repository `ctrl-q-qvd-viewer` and workflow file `ci.yaml`
+- Check that the `publish` job still has the `id-token: write` permission
+- vsce doesn't fall back to a Personal Access Token when the OIDC exchange fails, so adding a `VSCE_PAT` secret won't help
 
 **Error: "Extension already published with this version"**
 
@@ -213,8 +184,8 @@ Simply push new commits with conventional commit messages. Release Please handle
 
 **Error: "Publisher not found"**
 
-- Create the publisher account first
-- Verify the publisher ID in `package.json` matches
+- Verify the publisher ID in `package.json` is `ptarmiganlabs` (case doesn't matter)
+- Don't create a new publisher; see [Access to the Marketplace publisher](#1-access-to-the-marketplace-publisher)
 
 ## Additional Resources
 
