@@ -167,4 +167,22 @@ suite("Exporter Test Suite", () => {
 
     assert.strictEqual(await countSqliteRows(filePath), rows.length);
   });
+
+  test("SQLite export - a missing wasm file fails one export, not the session", async () => {
+    const { exportToSQLite, wasmPath } = await bundleSqliteExporter("missing-wasm");
+    const rows = makeRows(100);
+    const filePath = path.join(outputDir, "missing-wasm.db");
+    const wasm = fs.readFileSync(wasmPath);
+
+    fs.rmSync(wasmPath);
+    await assert.rejects(
+      exportToSQLite(rows, filePath),
+      /SQLite export failed: .*sql-wasm\.wasm is missing/
+    );
+
+    // Once the file is back, the next export should work
+    fs.writeFileSync(wasmPath, wasm);
+    await exportToSQLite(rows, filePath);
+    assert.strictEqual(await countSqliteRows(filePath), rows.length);
+  });
 });

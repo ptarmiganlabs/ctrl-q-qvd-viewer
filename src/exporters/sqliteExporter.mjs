@@ -1,5 +1,34 @@
 import initSqlJs from 'sql.js';
-import { existsSync, unlinkSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
+import { createRequire } from 'module';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+
+// sql.js, once it has started
+let sqlJs = null;
+
+/**
+ * Read sql.js's WebAssembly file. Reading it here rather than in sql.js keeps a
+ * missing or unreadable file from failing initSqlJs(), which keeps its first
+ * result, failed or not, for the rest of the session.
+ * @returns {Buffer} Contents of sql-wasm.wasm
+ */
+function readSqlWasm() {
+  // The bundled extension ships it next to dist/extension.js, copied by esbuild.js
+  const bundled = join(dirname(fileURLToPath(import.meta.url)), "sql-wasm.wasm");
+  if (existsSync(bundled)) {
+    return readFileSync(bundled);
+  }
+  // Loaded from src/, as in the tests: sql.js's own copy, next to its main script.
+  // The bundle has no node_modules to find sql.js in, so name the missing file
+  let sqlJsMain;
+  try {
+    sqlJsMain = createRequire(import.meta.url).resolve("sql.js");
+  } catch {
+    throw new Error(`${bundled} is missing`);
+  }
+  return readFileSync(join(dirname(sqlJsMain), "sql-wasm.wasm"));
+}
 
 /**
  * Export data to SQLite database format
@@ -9,14 +38,11 @@ import { existsSync, unlinkSync, writeFileSync } from 'fs';
  */
 export async function exportToSQLite(data, filePath) {
   try {
-    // Initialize SQL.js. It loads sql-wasm.wasm from the directory of the script
-    // it runs from: node_modules/sql.js/dist when this module is loaded from src/
-    // (as in the tests), and dist/ in the bundled extension, where esbuild.js
-    // copies the file
-    const SQL = await initSqlJs();
+    // Initialize SQL.js once, handing it its WebAssembly file
+    sqlJs ??= await initSqlJs({ wasmBinary: readSqlWasm() });
 
     // Create a new database
-    const db = new SQL.Database();
+    const db = new sqlJs.Database();
 
     if (data.length === 0) {
       // Export empty database
