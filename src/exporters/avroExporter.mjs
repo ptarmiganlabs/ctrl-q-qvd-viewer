@@ -116,9 +116,10 @@ export async function exportToAvro(data, filePath) {
     // Rows as the schema expects them, produced as the encoder asks for them
     function* processedRows() {
       for (const row of data) {
-        // Convert dates to timestamps and ensure type compatibility
+        // Convert dates to timestamps and ensure type compatibility. Use the
+        // schema's columns, so a missing value becomes null and an extra one is left out
         const processedRow = {};
-        Object.keys(row).forEach((key) => {
+        columnNames.forEach((key) => {
           const value = row[key];
           const typeInfo = columnTypes[key];
 

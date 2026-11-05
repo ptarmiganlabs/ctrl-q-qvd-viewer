@@ -133,6 +133,25 @@ suite("Exporter Test Suite", () => {
     assert.strictEqual(records.length, 0, "File should have no records");
   });
 
+  test("Avro export - columns come from the first row", async () => {
+    // A later row may lack a column, or have one the first row does not
+    const rows = [{ a: 1, b: "x" }, { a: 2 }, { a: 3, b: "z", c: true }];
+    const filePath = path.join(outputDir, "uneven.avro");
+
+    await avroExporter.exportToAvro(rows, filePath);
+    const { records } = await decodeAvro(fs.readFileSync(filePath));
+
+    assert.deepStrictEqual(
+      records.map((record) => ({ ...record })),
+      [
+        { a: 1, b: "x" },
+        { a: 2, b: null },
+        { a: 3, b: "z" },
+      ],
+      "Missing values should be null, and extra columns left out"
+    );
+  });
+
   test("SQLite export - rows can be read back", async () => {
     const rows = makeRows(1000);
     const filePath = path.join(outputDir, "rows.db");
