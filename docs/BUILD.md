@@ -6,7 +6,7 @@ This guide provides detailed instructions for building, testing, and developing 
 
 Before you begin, ensure you have the following installed:
 
-- **Node.js**: Version 18.x or later
+- **Node.js**: Version 22.x or later
   - Download from [nodejs.org](https://nodejs.org/)
   - Verify installation: `node --version`
 - **npm**: Version 8.x or later (comes with Node.js)

@@ -20,6 +20,9 @@ class QvdReader {
       const loadOptions = {
         ...(maxRows === 0 ? {} : { maxRows }),
         allowedDir: dirname(filePath),
+        // Read a dual value (a date, a formatted number) as the text Qlik displays,
+        // as qvdjs 0.x did. Since 1.0 qvdjs reads it as its number by default.
+        duals: "text",
       };
       const df = await QvdDataFrame.fromQvd(filePath, loadOptions);
 
@@ -90,9 +93,19 @@ class QvdReader {
         }),
       };
 
+      // qvdjs 1.0+ leaves text that looks like a number as text. Convert it the way
+      // qvdjs 0.6 did, so the grid, profiling and exports see the values they always
+      // have - including its quirks: "" becomes 0 and "8E5597" becomes Infinity.
+      const toCellValue = (value) =>
+        typeof value === "string" && !isNaN(Number(value))
+          ? Number(value)
+          : value;
+
       // Convert data from array of arrays to array of objects
       const data = df.data.map((row) =>
-        Object.fromEntries(columns.map((col, idx) => [col, row[idx]]))
+        Object.fromEntries(
+          columns.map((col, idx) => [col, toCellValue(row[idx])])
+        )
       );
 
       return {
