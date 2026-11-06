@@ -1515,16 +1515,17 @@ export function getVisualAnalysisHtml(
             
             // Initialize bins
             const bins = Array(binCount).fill(0);
-            const binLabels = [];
-            // Bin edges for the table: a label like -999.0--947.6 can't be split on '-'
+            // Enough decimals to tell neighbouring bin edges apart: one past binWidth's first significant digit
+            const decimals = binWidth > 0 && isFinite(binWidth)
+                ? Math.min(20, Math.max(1, 1 - Math.floor(Math.log10(binWidth))))
+                : 1;
             const binRanges = [];
 
-            // Create bin labels
+            // Work out each bin's edges, for the chart labels and the table
             for (let i = 0; i < binCount; i++) {
                 const binStart = min + i * binWidth;
                 const binEnd = min + (i + 1) * binWidth;
-                binLabels.push(\`\${binStart.toFixed(1)}-\${binEnd.toFixed(1)}\`);
-                binRanges.push({ from: binStart.toFixed(1), to: binEnd.toFixed(1) });
+                binRanges.push({ from: binStart.toFixed(decimals), to: binEnd.toFixed(decimals) });
             }
             
             // Count values in each bin using distribution counts
@@ -1545,7 +1546,7 @@ export function getVisualAnalysisHtml(
             currentChart = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: binLabels,
+                    labels: binRanges.map(range => \`\${range.from} – \${range.to}\`),
                     datasets: [{
                         label: 'Frequency',
                         data: bins,
