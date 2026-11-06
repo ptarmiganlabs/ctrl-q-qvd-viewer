@@ -9,15 +9,25 @@ import { CalendarDate, isBlank } from "./cellValue.mjs";
  * drops its tags from a field with a blank, and doesn't always set them: so a field
  * also holds them when every value is a dual whose text shows the date its number is.
  *
- * Whether a field holds dates or timestamps is the field's, not its values': its tag
- * says, or else the text Qlik shows, so that the rows an export takes don't change it.
+ * A field holds timestamps when it is tagged $timestamp, when its text shows a time
+ * of day, even at midnight, or when a value read has one, whatever its tag. Otherwise
+ * it holds dates. So for a field Qlik shows as days, the rows a read takes decide:
+ * rows that all fall at midnight make dates where the whole field makes timestamps.
+ * Telling for the whole field would take every value in its symbol table, which a
+ * read of some rows doesn't.
+ *
  * A serial is a wall clock with no time zone. Its Date holds that wall clock in its
- * UTC fields, to the millisecond; a date field's is a CalendarDate, at midnight.
+ * UTC fields, to the millisecond, as the exports write it, and a time of day counts
+ * from there: float noise far below a millisecond is none. A date field's Date is a
+ * CalendarDate, at midnight.
  */
 
 // The serials of the first day of the year 1 and the last of 9999
 const FIRST_SERIAL = -693593;
 const LAST_SERIAL = 2958465;
+
+// Milliseconds in a day
+const DAY_MS = 86400000;
 
 // Cells to look at between yields to the event loop
 const CELLS_PER_CHUNK = 250000;
@@ -42,12 +52,12 @@ function takePart(parts, candidates) {
 /**
  * What a dual's text shows of the date its number is: its year, month and day, each
  * as a number, and maybe its time, as the hour and minute
- * @param {QvdDual} dual - The dual
+ * @param {string} text - The dual's text
+ * @param {Date} date - Its number's Date
  * @returns {"date"|"timestamp"|null} Whether the text shows the date, the date and
  *   its time, or neither
  */
-function whatTextShows({ number, text }) {
-  const date = qlikSerialToDate(number);
+function whatTextShows(text, date) {
   const parts = (text.match(/\d+/g) ?? []).map(Number);
   const day = [date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()];
   if (!day.every((part) => takePart(parts, [part]))) {
@@ -63,11 +73,12 @@ function whatTextShows({ number, text }) {
 }
 
 /**
- * A column's dates, as the serial of each value it holds, and what kind they are
+ * A column's dates, as the time of each value it holds, and what kind they are
  * @typedef {object} DateColumn
  * @property {boolean} tagged - Whether the field is tagged $date or $timestamp
  * @property {boolean} timestamps - Whether they are timestamps rather than dates
- * @property {Map<*, number>} serials - Each value's serial, by the dual or number it is
+ * @property {Map<*, number>} times - Each value's Date, as milliseconds since 1970, by
+ *   the dual or number it is
  * @property {boolean} holdsDates - Whether every value so far is a date
  */
 
@@ -80,20 +91,28 @@ function whatTextShows({ number, text }) {
 function takeValue(column, value) {
   // A field tagged as dates may hold a serial without text
   const serial = value instanceof QvdDual ? value.number : column.tagged ? value : null;
-  let shows = "date";
   if (!(typeof serial === "number" && serial >= FIRST_SERIAL && serial <= LAST_SERIAL)) {
-    shows = null;
-  } else if (!column.tagged) {
-    shows = whatTextShows(value);
-  }
-  if (shows === null) {
     column.holdsDates = false;
     return;
   }
-  if (!column.tagged && shows === "timestamp") {
+  const date = qlikSerialToDate(serial);
+  // Untagged, a dual's text must show its date. Tagged or not, text that shows a time
+  // of day makes timestamps
+  if (value instanceof QvdDual && !(column.tagged && column.timestamps)) {
+    const shows = whatTextShows(value.text, date);
+    if (shows === null && !column.tagged) {
+      column.holdsDates = false;
+      return;
+    }
+    if (shows === "timestamp") {
+      column.timestamps = true;
+    }
+  }
+  // So does a time of day in the value itself, even where the text shows only the day
+  if (date.getTime() % DAY_MS !== 0) {
     column.timestamps = true;
   }
-  column.serials.set(value, serial);
+  column.times.set(value, date.getTime());
 }
 
 /**
@@ -109,9 +128,9 @@ function takeValue(column, value) {
 export async function findDateColumns(rows, tags, signal) {
   const columns = tags.map((fieldTags) => ({
     tagged: fieldTags.includes("$date") || fieldTags.includes("$timestamp"),
-    // A tag says which, and $timestamp is the wider
+    // A $timestamp tag makes timestamps from the start, the text or a value later
     timestamps: fieldTags.includes("$timestamp"),
-    serials: new Map(),
+    times: new Map(),
     holdsDates: true,
   }));
   let open = columns.length;
@@ -123,7 +142,7 @@ export async function findDateColumns(rows, tags, signal) {
       const column = columns[index];
       const value = row[index];
       if (column.holdsDates && value !== null && value !== undefined && !isBlank(value)) {
-        if (!column.serials.has(value)) {
+        if (!column.times.has(value)) {
           takeValue(column, value);
           if (!column.holdsDates) {
             open--;
@@ -138,19 +157,16 @@ export async function findDateColumns(rows, tags, signal) {
   }
 
   // One Date for each of the field's values, as its rows share its text, in place of
-  // its serial
+  // its time. Every value of a date field falls at midnight, so its CalendarDate is the
+  // day its Date is on, not the day its serial rounds down to
   return columns.map((column) => {
-    if (!column.holdsDates || column.serials.size === 0) {
+    if (!column.holdsDates || column.times.size === 0) {
       return null;
     }
-    for (const [value, serial] of column.serials) {
-      column.serials.set(
-        value,
-        column.timestamps
-          ? qlikSerialToDate(serial)
-          : new CalendarDate(qlikSerialToDate(Math.floor(serial)).getTime())
-      );
+    const DateOfKind = column.timestamps ? Date : CalendarDate;
+    for (const [value, time] of column.times) {
+      column.times.set(value, new DateOfKind(time));
     }
-    return column.serials;
+    return column.times;
   });
 }

@@ -1211,6 +1211,34 @@ suite("Exporter Test Suite", () => {
     );
   });
 
+  test("Typed exports - a field Qlik shows as days keeps the time of day its serials hold", async () => {
+    const qvdPath = path.join(outputDir, "shown-as-days.qvd");
+    const rows = [
+      [new QvdDual(42382.75, "2016-1-13"), new QvdDual(42382, "2016-1-13")],
+      [new QvdDual(42383.25, "2016-1-14"), new QvdDual(42383, "2016-1-14")],
+    ];
+    await new QvdDataFrame(rows, ["shownAsDays", "days"]).toQvd(qvdPath, {
+      allowedDir: outputDir,
+    });
+    const result = await new QvdReader().read(qvdPath, 0, { dates: true });
+    assert.strictEqual(result.error, null);
+
+    const parquetPath = path.join(outputDir, "shown-as-days.parquet");
+    await parquetExporter.exportToParquet(result.data, parquetPath);
+
+    assert.deepStrictEqual(parquetLogicalTypes(parquetPath), {
+      shownAsDays: "TIMESTAMP(isAdjustedToUTC=false, MILLIS)",
+    });
+    // parquetjs reads a timestamp back as its milliseconds, and a date as a plain Date
+    assert.deepStrictEqual(await readParquet(parquetPath), {
+      schema: { shownAsDays: "INT64", days: "DATE" },
+      rows: [
+        { shownAsDays: Date.UTC(2016, 0, 13, 18), days: new Date(Date.UTC(2016, 0, 13)) },
+        { shownAsDays: Date.UTC(2016, 0, 14, 6), days: new Date(Date.UTC(2016, 0, 14)) },
+      ],
+    });
+  });
+
   test("Typed exports - with a time zone, timestamps are the instants they were, and dates stay dates", async () => {
     // A date, and timestamps either side of Chicago's change to CDT
     const rows = [

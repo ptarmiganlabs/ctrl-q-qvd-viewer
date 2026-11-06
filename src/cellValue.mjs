@@ -5,11 +5,16 @@
 // An optional minus, then digits without a leading zero, then an optional fraction
 const PLAIN_DECIMAL = /^-?(0|[1-9]\d*)(\.\d+)?$/;
 
+// The smallest normal double, 2^-1022 or about 2.2e-308. Below it a double holds fewer
+// digits the smaller it is, until it holds none and is 0
+const SMALLEST_NORMAL = 2 ** -1022;
+
 /**
- * Turn text that is a plain decimal number, such as 42, -7 or 3.14, into that number.
- * Other text stays text: codes with a leading zero, an exponent or a hex prefix, text
- * with spaces around it, blank text, and numbers a double can't hold exactly. A number
- * the file stores as NaN or Infinity is an empty cell.
+ * Turn text that is a plain decimal number, such as 42, -7 or 3.14, into that number,
+ * whatever its size: 0.0000001 is 1e-7. Other text stays text: codes with a leading
+ * zero, an exponent or a hex prefix, text with spaces around it, blank text, and
+ * numbers a double can't hold exactly. A number the file stores as NaN or Infinity is
+ * an empty cell.
  * @param {*} value - A cell's value as qvdjs reads it, with a dual's text for a dual
  * @returns {*} The number, null, or the value as it was
  */
@@ -36,11 +41,15 @@ export function toCellValue(value) {
     }
   }
   const number = Number(value);
-  // Keep the text where the number would show differently: -0 shows as 0, and below
-  // 1e-6 or from 1e21 on a number shows in exponent form, as 0.0000001 shows as 1e-7.
-  // Text such as 1 followed by 400 zeros, whose number is Infinity, is past 1e21 too
-  const size = Math.abs(number);
-  if (Object.is(number, -0) || (size !== 0 && (size < 1e-6 || size >= 1e21))) {
+  // Keep the text where the number isn't what it says: -0 shows as 0, text such as 1
+  // followed by 400 zeros is Infinity, and below the smallest normal double the number
+  // holds fewer digits than the text, as 1 at the 400th decimal is 0. Text of nothing
+  // but zeros, such as 0.00, is 0
+  if (
+    Object.is(number, -0) ||
+    !Number.isFinite(number) ||
+    (Math.abs(number) < SMALLEST_NORMAL && /[1-9]/.test(value))
+  ) {
     return value;
   }
   return number;

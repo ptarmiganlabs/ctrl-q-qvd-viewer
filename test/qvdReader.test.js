@@ -131,14 +131,31 @@ suite("QVD Reader Test Suite", () => {
     ]);
   });
 
-  test("Reader - text whose number would show in exponent form stays text", async () => {
+  test("Reader - text too small for a double to hold stays text, and zeros are 0", async () => {
+    const zeros = (count) => `0.${"0".repeat(count)}`;
     await assertReadsAs([
-      ["0.0000001", "0.0000001"],
-      ["-0.00000012", "-0.00000012"],
-      ["1000000000000000000000", "1000000000000000000000"],
+      // Below 2^-1022 a double holds fewer digits: these would be 1.2345678901233e-311,
+      // 0 and -0
+      [`${zeros(310)}123456789012345`, `${zeros(310)}123456789012345`],
+      [`${zeros(400)}1`, `${zeros(400)}1`],
+      [`-${zeros(400)}1`, `-${zeros(400)}1`],
+      // Just below 2^-1022
+      [`${zeros(307)}222507385850720`, `${zeros(307)}222507385850720`],
+      ["0", 0],
+      ["0.00", 0],
+    ]);
+  });
+
+  test("Reader - a plain decimal is a number whatever its size, as 0.0000001 is 1e-7", async () => {
+    await assertReadsAs([
+      ["0.0000001", 1e-7],
+      ["-0.00000012", -1.2e-7],
+      ["1000000000000000000000", 1e21],
       ["0.000001", 0.000001],
       ["-0.0000010", -0.000001],
       ["100000000000000000000", 1e20],
+      // The smallest with 15 digits above 2^-1022, the smallest normal double
+      [`0.${"0".repeat(307)}222507385850721`, 2.22507385850721e-308],
     ]);
   });
 
@@ -307,7 +324,7 @@ suite("QVD Reader Test Suite", () => {
     ]);
   });
 
-  test("Reader - a field's tag or text, not its values, says whether it holds dates or timestamps", async () => {
+  test("Reader - a field holds timestamps if tagged so, or if its text or a value has a time of day", async () => {
     const filePath = path.join(outputDir, "date-kinds.qvd");
     const columns = ["shownAsDates", "midnights", "twelveHour"];
     const rows = [
@@ -329,19 +346,58 @@ suite("QVD Reader Test Suite", () => {
     assert.strictEqual(result.error, null);
     assert.deepStrictEqual(result.data, [
       {
-        // Timestamps Qlik shows as dates are dates, as shown
-        shownAsDates: new CalendarDate(Date.UTC(2016, 0, 13)),
+        // Timestamps Qlik shows as days keep their time
+        shownAsDates: new Date(Date.UTC(2016, 0, 13, 18)),
         // Text with a time makes timestamps, even at midnight
         midnights: new Date(Date.UTC(2016, 0, 13)),
         twelveHour: new Date(Date.UTC(2016, 0, 13, 18)),
       },
       {
-        shownAsDates: new CalendarDate(Date.UTC(2016, 0, 14)),
+        shownAsDates: new Date(Date.UTC(2016, 0, 14, 6)),
         midnights: new Date(Date.UTC(2016, 0, 14)),
         twelveHour: new Date(Date.UTC(2016, 0, 14, 6)),
       },
     ]);
     assert.ok(!(result.data[0].midnights instanceof CalendarDate), "A timestamp isn't a date");
+  });
+
+  test("Reader - a time of day counts to the millisecond an export writes, whatever the field's tag", async () => {
+    const { findDateColumns } = await import("../src/qvdDates.mjs");
+    const rows = [
+      [
+        // Float noise far below a millisecond, either side of midnight
+        new QvdDual(42383 - 1e-11, "2016-1-14"),
+        // A millisecond past midnight
+        new QvdDual(42383 + 1 / 86400000, "2016-1-14"),
+        new QvdDual(42382.75, "2016-1-13"),
+        new QvdDual(42382, "2016-1-13 00:00:00"),
+        new QvdDual(42382, "Wed"),
+      ],
+      [
+        new QvdDual(42384 + 1e-11, "2016-1-15"),
+        new QvdDual(42384, "2016-1-15"),
+        // A serial without text
+        42383,
+        new QvdDual(42383, "2016-1-14 00:00:00"),
+        new QvdDual(42383, "Thu"),
+      ],
+    ];
+    const tags = [[], [], ["$date"], ["$date"], ["$date"]];
+
+    const columns = await findDateColumns(rows, tags);
+
+    assert.deepStrictEqual(
+      columns.map((dates) => [...dates.values()]),
+      [
+        [new CalendarDate(Date.UTC(2016, 0, 14)), new CalendarDate(Date.UTC(2016, 0, 15))],
+        [new Date(Date.UTC(2016, 0, 14, 0, 0, 0, 1)), new Date(Date.UTC(2016, 0, 15))],
+        // A $date tag doesn't make dates of values with a time, or of text that shows one
+        [new Date(Date.UTC(2016, 0, 13, 18)), new Date(Date.UTC(2016, 0, 14))],
+        [new Date(Date.UTC(2016, 0, 13)), new Date(Date.UTC(2016, 0, 14))],
+        // Text that doesn't show the date doesn't stop a tagged field holding dates
+        [new CalendarDate(Date.UTC(2016, 0, 13)), new CalendarDate(Date.UTC(2016, 0, 14))],
+      ]
+    );
   });
 
   test("Reader - finding a read's dates is given up between chunks", async () => {
