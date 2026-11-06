@@ -146,14 +146,16 @@ suite("QVD Reader Test Suite", () => {
     ]);
   });
 
-  test("Reader - text whose number would show in exponent form stays text", async () => {
+  test("Reader - a plain decimal is a number whatever its size, as 0.0000001 is 1e-7", async () => {
     await assertReadsAs([
-      ["0.0000001", "0.0000001"],
-      ["-0.00000012", "-0.00000012"],
-      ["1000000000000000000000", "1000000000000000000000"],
+      ["0.0000001", 1e-7],
+      ["-0.00000012", -1.2e-7],
+      ["1000000000000000000000", 1e21],
       ["0.000001", 0.000001],
       ["-0.0000010", -0.000001],
       ["100000000000000000000", 1e20],
+      // The smallest with 15 digits above 2^-1022, the smallest normal double
+      [`0.${"0".repeat(307)}222507385850721`, 2.22507385850721e-308],
     ]);
   });
 
