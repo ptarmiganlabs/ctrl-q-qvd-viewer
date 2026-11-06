@@ -3,13 +3,16 @@ import parquetUtil from "parquetjs/lib/util.js";
 import parquetThrift from "parquetjs/gen-nodejs/parquet_types.js";
 
 /**
- * Parquet timestamps with no time zone, which parquetjs can't write itself
+ * Parquet timestamps with their logical type, which parquetjs can't write itself
  *
  * A QVD's timestamps are wall clocks. Parquet marks one as such with the logical type
- * TIMESTAMP(isAdjustedToUTC=false), but parquetjs's Thrift definitions predate logical
+ * TIMESTAMP(isAdjustedToUTC=false), and an instant, a wall clock read in its time zone,
+ * with TIMESTAMP(isAdjustedToUTC=true). parquetjs's Thrift definitions predate logical
  * types: the only timestamp it can write, the older TIMESTAMP_MILLIS annotation, means
- * an instant in UTC, and pyarrow reads it so. A naive timestamp column is written as
- * INT64 milliseconds instead, and its logical type added to the footer afterwards.
+ * an instant in UTC, as pyarrow reads it, and its writer refuses one before 1970. A
+ * timestamp column is written as INT64 milliseconds instead, and its logical type added
+ * to the footer afterwards. A column of instants gets the older annotation too, for
+ * readers that predate logical types.
  */
 
 // The Thrift compact protocol's type ids
@@ -18,17 +21,18 @@ const STRUCT = 12;
 
 /**
  * Write a SchemaElement's logicalType, its field 10, as
- * TIMESTAMP(isAdjustedToUTC=false, unit=MILLIS)
+ * TIMESTAMP(isAdjustedToUTC, unit=MILLIS)
  * @param {Object} output - The Thrift protocol being written
+ * @param {boolean} adjustedToUTC - Whether the timestamps are instants rather than wall clocks
  * @returns {void}
  */
-function writeNaiveTimestampType(output) {
+function writeTimestampType(output, adjustedToUTC) {
   output.writeFieldBegin("logicalType", STRUCT, 10);
   output.writeStructBegin("LogicalType");
   output.writeFieldBegin("TIMESTAMP", STRUCT, 8);
   output.writeStructBegin("TimestampType");
   output.writeFieldBegin("isAdjustedToUTC", BOOL, 1);
-  output.writeBool(false);
+  output.writeBool(adjustedToUTC);
   output.writeFieldEnd();
   output.writeFieldBegin("unit", STRUCT, 2);
   output.writeStructBegin("TimeUnit");
@@ -48,13 +52,18 @@ function writeNaiveTimestampType(output) {
   output.writeFieldEnd();
 }
 
-// A schema element that ends with that logical type, after the fields parquetjs knows
-class NaiveTimestampElement extends parquetThrift.SchemaElement {
+// A schema element that ends with a timestamp's logical type, after the fields parquetjs knows
+class TimestampElement extends parquetThrift.SchemaElement {
+  constructor(element, adjustedToUTC) {
+    super(element);
+    this.adjustedToUTC = adjustedToUTC;
+  }
+
   write(output) {
     const writeFieldStop = output.writeFieldStop;
     output.writeFieldStop = () => {
       output.writeFieldStop = writeFieldStop;
-      writeNaiveTimestampType(output);
+      writeTimestampType(output, this.adjustedToUTC);
       writeFieldStop.call(output);
     };
     super.write(output);
@@ -63,12 +72,15 @@ class NaiveTimestampElement extends parquetThrift.SchemaElement {
 
 /**
  * Mark INT64 columns of a Parquet file parquetjs has written as timestamps of
- * milliseconds with no time zone, by rewriting the file's footer
+ * milliseconds, by rewriting the file's footer
  * @param {string} filePath - The Parquet file
  * @param {Array<string>} columnNames - The columns to mark
+ * @param {object} [options]
+ * @param {boolean} [options.adjustedToUTC] - Whether they are instants, read in their
+ *   time zone, rather than wall clocks with no time zone
  * @returns {Promise<void>}
  */
-export async function markNaiveTimestamps(filePath, columnNames) {
+export async function markTimestamps(filePath, columnNames, { adjustedToUTC = false } = {}) {
   if (columnNames.length === 0) {
     return;
   }
@@ -85,10 +97,17 @@ export async function markNaiveTimestamps(filePath, columnNames) {
     const metadata = new parquetThrift.FileMetaData();
     parquetUtil.decodeThrift(metadata, footer);
     const names = new Set(columnNames);
-    // The first element is the schema's root
-    metadata.schema = metadata.schema.map((element, index) =>
-      index > 0 && names.has(element.name) ? new NaiveTimestampElement(element) : element
-    );
+    // The first element is the schema's root. The older annotation means an instant in
+    // UTC, so only instants get it
+    metadata.schema = metadata.schema.map((element, index) => {
+      if (index === 0 || !names.has(element.name)) {
+        return element;
+      }
+      const marked = adjustedToUTC
+        ? { ...element, converted_type: parquetThrift.ConvertedType.TIMESTAMP_MILLIS }
+        : element;
+      return new TimestampElement(marked, adjustedToUTC);
+    });
     const encoded = parquetUtil.serializeThrift(metadata);
 
     tail.writeUInt32LE(encoded.length, 0);

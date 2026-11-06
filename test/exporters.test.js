@@ -25,7 +25,12 @@ let sqliteExporter;
 let yamlExporter;
 let DataExporter;
 let QvdDataFrame;
+let QvdDual;
+let dateToQlikSerial;
+let qlikSerialToDate;
 let CalendarDate;
+let findDateColumns;
+let toRowObjects;
 // QvdReader is async because it's a CJS wrapper around ESM
 let QvdReader;
 let outputDir;
@@ -42,6 +47,61 @@ function saveDialogTo(filePath) {
     window: { showSaveDialog: async () => ({ fsPath: filePath }) },
     workspace: { getConfiguration: () => ({ get: (_key, fallback) => fallback }) },
   };
+}
+
+/**
+ * Enough of the VS Code API for an export that may ask for its timestamps' time zone
+ * @param {string} filePath - What the save dialog answers
+ * @param {function(Array, object): *} pick - Answers a QuickPick, given its items and options
+ * @param {string} [timeZone] - What the exportTimeZone setting holds; every other
+ *   setting is at its default
+ * @returns {{vscode: object, picks: Array<{items: Array, options: object}>}} The API,
+ *   and the QuickPicks it showed
+ */
+function zoneDialogsTo(filePath, pick, timeZone = "") {
+  const picks = [];
+  const vscode = {
+    Uri: { file: (fsPath) => ({ fsPath }) },
+    window: {
+      showSaveDialog: async () => ({ fsPath: filePath }),
+      showQuickPick: async (items, options) => {
+        picks.push({ items, options });
+        return pick(items, options);
+      },
+    },
+    workspace: {
+      getConfiguration: () => ({ get: (key, fallback) => (key === "exportTimeZone" ? timeZone : fallback) }),
+    },
+  };
+  return { vscode, picks };
+}
+
+/**
+ * Run a query on an exported SQLite database
+ * @param {string} filePath - Database file path
+ * @param {string} sql - The query
+ * @returns {Promise<Array<Array>>} The rows it gives
+ */
+async function querySqlite(filePath, sql) {
+  const SQL = await initSqlJs();
+  const db = new SQL.Database(fs.readFileSync(filePath));
+  try {
+    return db.exec(sql)[0].values;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * The rows of a PostgreSQL export's first INSERT, as the script has them
+ * @param {string} filePath - Script file path
+ * @returns {Array<string>} Such as "  ('2016-03-13', '2016-03-13 01:45:00-06'),"
+ */
+function sqlValueLines(filePath) {
+  const lines = fs.readFileSync(filePath, "utf8").split("\n");
+  const start = lines.indexOf("VALUES") + 1;
+  const end = lines.findIndex((line, index) => index >= start && !line.startsWith("  ("));
+  return lines.slice(start, end);
 }
 
 /**
@@ -343,8 +403,10 @@ suite("Exporter Test Suite", () => {
     sqliteExporter = await import("../src/exporters/sqliteExporter.mjs");
     yamlExporter = await import("../src/exporters/yamlExporter.mjs");
     ({ default: DataExporter } = await import("../src/exporters/index.mjs"));
-    ({ QvdDataFrame } = await import("qvdjs"));
+    ({ QvdDataFrame, QvdDual, dateToQlikSerial, qlikSerialToDate } = await import("qvdjs"));
     ({ CalendarDate } = await import("../src/cellValue.mjs"));
+    ({ findDateColumns } = await import("../src/qvdDates.mjs"));
+    ({ toRowObjects } = await import("../src/qvdReader.mjs"));
     QvdReader = await require("../src/qvdReader.cjs");
     outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-viewer-export-"));
   });
@@ -1146,6 +1208,390 @@ suite("Exporter Test Suite", () => {
         .map(({ name }) => name)
         .filter((name) => DataExporter.writesDates(name)),
       ["arrow", "avro", "excel", "parquet", "postgres", "sqlite"]
+    );
+  });
+
+  test("Typed exports - with a time zone, timestamps are the instants they were, and dates stay dates", async () => {
+    // A date, and timestamps either side of Chicago's change to CDT
+    const rows = [
+      { day: new CalendarDate(Date.UTC(2016, 2, 13)), at: new Date(Date.UTC(2016, 2, 13, 1, 45)) },
+      { day: new CalendarDate(Date.UTC(2016, 2, 14)), at: new Date(Date.UTC(2016, 2, 13, 3, 0)) },
+    ];
+    const instants = [Date.UTC(2016, 2, 13, 7, 45), Date.UTC(2016, 2, 13, 8, 0)];
+    const options = { timeZone: "America/Chicago" };
+    const file = (extension) => path.join(outputDir, `zoned.${extension}`);
+
+    // An instant: the logical type says so, and the older annotation, for older readers
+    await parquetExporter.exportToParquet(rows, file("parquet"), options);
+    assert.deepStrictEqual(parquetLogicalTypes(file("parquet")), {
+      at: "TIMESTAMP(isAdjustedToUTC=true, MILLIS)",
+    });
+    assert.deepStrictEqual(await readParquet(file("parquet")), {
+      schema: { day: "DATE", at: "TIMESTAMP_MILLIS" },
+      // parquetjs reads both back as plain Dates
+      rows: rows.map((row, index) => ({ day: new Date(row.day.getTime()), at: new Date(instants[index]) })),
+    });
+
+    await avroExporter.exportToAvro(rows, file("avro"), options);
+    const { fileSchema, records } = await decodeAvro(fs.readFileSync(file("avro")));
+    assert.deepStrictEqual(fileSchema.fields, [
+      { name: "day", type: { type: "int", logicalType: "date" } },
+      { name: "at", type: { type: "long", logicalType: "timestamp-millis" } },
+    ]);
+    assert.deepStrictEqual(
+      records.map((record) => record.at),
+      instants
+    );
+
+    // Arrow names the zone
+    await arrowExporter.exportToArrow(rows, file("arrow"), options);
+    const table = arrow.tableFromIPC(fs.readFileSync(file("arrow")));
+    assert.deepStrictEqual(
+      table.schema.fields.map((field) => [field.name, String(field.type), field.type.timezone ?? null]),
+      [
+        ["day", "Date32<DAY>", null],
+        ["at", "Timestamp<MILLISECOND, America/Chicago>", "America/Chicago"],
+      ]
+    );
+    assert.deepStrictEqual(
+      readArrow(file("arrow")).rows,
+      rows.map((row, index) => ({ day: row.day.getTime(), at: instants[index] }))
+    );
+
+    // SQLite keeps text, in UTC so that it sorts in time order
+    await sqliteExporter.exportToSQLite(rows, file("db"), options);
+    assert.deepStrictEqual(await querySqlite(file("db"), "SELECT day, at FROM data"), [
+      ["2016-03-13", "2016-03-13 07:45:00Z"],
+      ["2016-03-14", "2016-03-13 08:00:00Z"],
+    ]);
+
+    // PostgreSQL reads each wall clock's offset into its instant
+    await postgresExporter.exportToPostgres(rows, file("sql"), 0, options);
+    const lines = fs.readFileSync(file("sql"), "utf8").split("\n");
+    assert.ok(lines.includes("-- Timestamps: wall clocks read in America/Chicago, with their offsets from UTC"));
+    const create = lines.indexOf('CREATE TABLE "qvd_data" (');
+    assert.deepStrictEqual(lines.slice(create + 1, create + 3), [
+      '  "day" DATE NOT NULL,',
+      '  "at" TIMESTAMPTZ NOT NULL',
+    ]);
+    assert.deepStrictEqual(sqlValueLines(file("sql")), [
+      "  ('2016-03-13', '2016-03-13 01:45:00-06'),",
+      "  ('2016-03-14', '2016-03-13 03:00:00-05');",
+    ]);
+  });
+
+  test("Typed exports - taxi trips either side of Chicago's change to CDT are a quarter hour apart as instants", async function () {
+    this.timeout(60000);
+    const taxi = (name) => path.join(__dirname, "..", "test-data", "chicago_taxi_rides", name);
+    const field = "trip_start_timestamp";
+
+    // Of every row, only this field, and only the trips from 01:00 to 03:59 on 2016-03-13
+    const df = await QvdDataFrame.fromQvd(taxi("chicago_taxi_rides_2016_03.qvd"), { fields: [field], duals: "both" });
+    const from = Date.UTC(2016, 2, 13, 1);
+    const to = Date.UTC(2016, 2, 13, 4);
+    const night = df.data.filter(([value]) => {
+      const wallClock = value instanceof QvdDual ? qlikSerialToDate(value.number).getTime() : NaN;
+      return wallClock >= from && wallClock < to;
+    });
+    // As the reader makes them: Dates whose UTC fields are the wall clocks
+    const tags = [].concat(df.getFieldMetadata(field).tags?.String ?? []);
+    const rows = await toRowObjects(night, [field], undefined, await findDateColumns(night, [tags]));
+    const at = (hour, minute) => rows.filter((row) => row[field].getTime() === Date.UTC(2016, 2, 13, hour, minute));
+    // The clocks skipped from 02:00 to 03:00, so no trip starts in between
+    assert.deepStrictEqual([at(1, 45).length, at(3, 0).length], [1035, 1049]);
+    assert.strictEqual(rows.filter((row) => row[field].getUTCHours() === 2).length, 0);
+    const pair = [at(1, 45)[0], at(3, 0)[0]];
+
+    // Read in Chicago, 01:45 CST and 03:00 CDT are a quarter hour apart
+    const zonedPath = path.join(outputDir, "taxi-zoned.parquet");
+    await parquetExporter.exportToParquet(pair, zonedPath, { timeZone: "America/Chicago" });
+    const zoned = (await readParquet(zonedPath)).rows.map((row) => Number(row[field]));
+    assert.deepStrictEqual(zoned, [Date.UTC(2016, 2, 13, 7, 45), Date.UTC(2016, 2, 13, 8, 0)]);
+
+    // As wall clocks, an hour and a quarter
+    const naivePath = path.join(outputDir, "taxi-naive.parquet");
+    await parquetExporter.exportToParquet(pair, naivePath);
+    const naive = (await readParquet(naivePath)).rows.map((row) => Number(row[field]));
+    assert.deepStrictEqual([naive[1] - naive[0], zoned[1] - zoned[0]], [75 * 60000, 15 * 60000]);
+
+    // January's first trip started at 06:15 CST, 12:15 UTC
+    const january = await new QvdReader().read(taxi("chicago_taxi_rides_2016_01.qvd"), 1, { dates: true });
+    assert.strictEqual(january.error, null);
+    const januaryPath = path.join(outputDir, "taxi-january.parquet");
+    await parquetExporter.exportToParquet(january.data, januaryPath, { timeZone: "America/Chicago" });
+    assert.strictEqual(Number((await readParquet(januaryPath)).rows[0][field]), Date.UTC(2016, 0, 13, 12, 15));
+  });
+
+  test("Typed exports - a QVD's times that Chicago's clocks skipped or showed twice follow the compatible rule", async () => {
+    // Either side of and in the hour skipped on 2016-03-13, and the hour shown twice on
+    // 2016-11-06, each as Qlik stores a timestamp: its serial, and the text it shows
+    const wallClocks = [
+      [2016, 3, 13, 1, 45],
+      [2016, 3, 13, 2, 30],
+      [2016, 3, 13, 3, 0],
+      [2016, 11, 6, 0, 59],
+      [2016, 11, 6, 1, 30],
+      [2016, 11, 6, 2, 0],
+    ].map(([year, month, day, hour, minute]) => new Date(Date.UTC(year, month - 1, day, hour, minute)));
+    const dual = (date) =>
+      new QvdDual(dateToQlikSerial(date), date.toISOString().slice(0, 19).replace("T", " "));
+    const qvdPath = path.join(outputDir, "dst.qvd");
+    await new QvdDataFrame(
+      wallClocks.map((date) => [dual(date)]),
+      ["at"]
+    ).toQvd(qvdPath, { allowedDir: outputDir });
+    const read = await new QvdReader().read(qvdPath, 0, { dates: true });
+    assert.strictEqual(read.error, null);
+    assert.deepStrictEqual(
+      read.data.map((row) => row.at.getTime()),
+      wallClocks.map((date) => date.getTime())
+    );
+
+    // 02:30 is moved past the skipped hour, to 03:30 CDT, and 01:30 is the first, in CDT
+    const options = { timeZone: "America/Chicago" };
+    const shifts = {
+      timeZone: "America/Chicago",
+      moved: 1,
+      ambiguous: 1,
+      examples: { at: { moved: ["2016-03-13 02:30:00"], ambiguous: ["2016-11-06 01:30:00"] } },
+    };
+    const utc = [
+      "2016-03-13 07:45:00Z",
+      "2016-03-13 08:30:00Z",
+      "2016-03-13 08:00:00Z",
+      "2016-11-06 05:59:00Z",
+      "2016-11-06 06:30:00Z",
+      "2016-11-06 08:00:00Z",
+    ];
+
+    const instants = utc.map((text) => Date.parse(text.replace(" ", "T")));
+
+    const parquetPath = path.join(outputDir, "dst.parquet");
+    const parquetShifts = await parquetExporter.exportToParquet(read.data, parquetPath, options);
+    assert.deepStrictEqual(
+      (await readParquet(parquetPath)).rows.map((row) => Number(row.at)),
+      instants
+    );
+    assert.deepStrictEqual(parquetShifts, shifts);
+
+    const avroPath = path.join(outputDir, "dst.avro");
+    const avroShifts = await avroExporter.exportToAvro(read.data, avroPath, options);
+    assert.deepStrictEqual(
+      (await decodeAvro(fs.readFileSync(avroPath))).records.map((record) => record.at),
+      instants
+    );
+    assert.deepStrictEqual(avroShifts, shifts);
+
+    // Arrow builds the column of instants on its own path
+    const arrowPath = path.join(outputDir, "dst.arrow");
+    const arrowShifts = await arrowExporter.exportToArrow(read.data, arrowPath, options);
+    assert.deepStrictEqual(
+      readArrow(arrowPath).rows.map((row) => row.at),
+      instants
+    );
+    assert.deepStrictEqual(arrowShifts, shifts);
+
+    const sqlitePath = path.join(outputDir, "dst.db");
+    const sqliteShifts = await sqliteExporter.exportToSQLite(read.data, sqlitePath, options);
+    assert.deepStrictEqual(
+      await querySqlite(sqlitePath, "SELECT at FROM data"),
+      utc.map((text) => [text])
+    );
+    assert.deepStrictEqual(sqliteShifts, shifts);
+
+    const sqlPath = path.join(outputDir, "dst.sql");
+    const postgresShifts = await postgresExporter.exportToPostgres(read.data, sqlPath, 0, options);
+    assert.deepStrictEqual(sqlValueLines(sqlPath), [
+      "  ('2016-03-13 01:45:00-06'),",
+      "  ('2016-03-13 03:30:00-05'),",
+      "  ('2016-03-13 03:00:00-05'),",
+      "  ('2016-11-06 00:59:00-05'),",
+      "  ('2016-11-06 01:30:00-05'),",
+      "  ('2016-11-06 02:00:00-06');",
+    ]);
+    assert.deepStrictEqual(postgresShifts, shifts);
+  });
+
+  test("Typed exports - a timestamp field named like a member every object has exports as any other", async () => {
+    // In the hour Chicago's clocks skipped, and the hour they showed twice, so that the
+    // conversion notes each under its field
+    const rows = [
+      {
+        constructor: new Date(Date.UTC(2016, 2, 13, 2, 30)),
+        toString: new Date(Date.UTC(2016, 10, 6, 1, 30)),
+      },
+    ];
+    const filePath = path.join(outputDir, "members.db");
+    const shifts = await sqliteExporter.exportToSQLite(rows, filePath, { timeZone: "America/Chicago" });
+    assert.deepStrictEqual(await querySqlite(filePath, 'SELECT "constructor", "toString" FROM data'), [
+      ["2016-03-13 08:30:00Z", "2016-11-06 06:30:00Z"],
+    ]);
+    assert.deepStrictEqual(shifts, {
+      timeZone: "America/Chicago",
+      moved: 1,
+      ambiguous: 1,
+      examples: {
+        constructor: { moved: ["2016-03-13 02:30:00"], ambiguous: [] },
+        toString: { moved: [], ambiguous: ["2016-11-06 01:30:00"] },
+      },
+    });
+  });
+
+  test("Export - the time zone is asked about any timestamp in the rows exported, and only those", async () => {
+    // A column whose first value is a date alone, and whose second is a timestamp
+    const rows = [{ at: new CalendarDate(Date.UTC(2016, 0, 13)) }, { at: new Date(Date.UTC(2016, 0, 13, 6, 15)) }];
+    // No CREATE TABLE, and UTC when asked for a time zone
+    const answers = (items, options) =>
+      options.title === "PostgreSQL Export - CREATE TABLE"
+        ? items.find((item) => item.value === false)
+        : items.find((item) => item.value === "UTC");
+
+    // Both rows: the second is a timestamp, so the column is one of timestamps
+    const bothPath = path.join(outputDir, "both.sql");
+    const both = zoneDialogsTo(bothPath, answers);
+    await DataExporter.exportData(rows, "postgres", "both", both.vscode, outputDir, 0, ["at"]);
+    assert.deepStrictEqual(
+      both.picks.map(({ options }) => options.title),
+      ["PostgreSQL Export - CREATE TABLE", "Time Zone of the Timestamps"]
+    );
+    assert.deepStrictEqual(sqlValueLines(bothPath), [
+      "  ('2016-01-13 00:00:00+00'),",
+      "  ('2016-01-13 06:15:00+00');",
+    ]);
+
+    // The first row alone holds a date alone, so there is nothing to ask about
+    const firstPath = path.join(outputDir, "first.sql");
+    const first = zoneDialogsTo(firstPath, answers);
+    await DataExporter.exportData(rows, "postgres", "first", first.vscode, outputDir, 1, ["at"]);
+    assert.deepStrictEqual(
+      first.picks.map(({ options }) => options.title),
+      ["PostgreSQL Export - CREATE TABLE"]
+    );
+    assert.deepStrictEqual(sqlValueLines(firstPath), ["  ('2016-01-13');"]);
+  });
+
+  test("Export - the time zone is asked only for timestamps, and only by formats that can store one", async () => {
+    const rows = makeDateRows();
+    const fields = ["day", "at"];
+    const parquetPath = path.join(outputDir, "asked.parquet");
+    const asked = zoneDialogsTo(parquetPath, (items) => items.find((item) => item.value === "UTC"));
+    assert.strictEqual(
+      await DataExporter.exportData(rows, "parquet", "asked", asked.vscode, outputDir, 0, fields),
+      parquetPath
+    );
+    assert.deepStrictEqual(
+      asked.picks.map(({ options }) => options.title),
+      ["Time Zone of the Timestamps"]
+    );
+    assert.deepStrictEqual(parquetLogicalTypes(parquetPath), { at: "TIMESTAMP(isAdjustedToUTC=true, MILLIS)" });
+
+    // Without an answer, nothing is exported
+    const cancelledPath = path.join(outputDir, "cancelled.parquet");
+    const cancelled = zoneDialogsTo(cancelledPath, () => undefined);
+    assert.strictEqual(
+      await DataExporter.exportData(rows, "parquet", "cancelled", cancelled.vscode, outputDir, 0, fields),
+      null
+    );
+    assert.ok(!fs.existsSync(cancelledPath), "A cancelled export should write nothing");
+
+    // Dates alone have no time zone, and Excel can't store one: neither asks
+    const days = zoneDialogsTo(path.join(outputDir, "days.parquet"), () =>
+      assert.fail("An export of dates alone shouldn't ask for a time zone")
+    );
+    await DataExporter.exportData(rows.map(({ day }) => ({ day })), "parquet", "days", days.vscode, outputDir, 0, ["day"]);
+    const excel = zoneDialogsTo(path.join(outputDir, "asked.xlsx"), () =>
+      assert.fail("An export to Excel shouldn't ask for a time zone")
+    );
+    await DataExporter.exportData(rows, "excel", "asked", excel.vscode, outputDir, 0, fields);
+    assert.deepStrictEqual([days.picks.length, excel.picks.length], [0, 0]);
+  });
+
+  test("Export - the time zone in the settings is offered first, and reaches the file and the report", async () => {
+    // A date, and timestamps in and after the hour Chicago's clocks skipped
+    const rows = [
+      { day: new CalendarDate(Date.UTC(2016, 2, 13)), at: new Date(Date.UTC(2016, 2, 13, 2, 30)) },
+      { day: new CalendarDate(Date.UTC(2016, 2, 13)), at: new Date(Date.UTC(2016, 2, 13, 3, 0)) },
+    ];
+    const filePath = path.join(outputDir, "setting.arrow");
+    // Taking what is offered first, the settings' zone, an alias of America/Chicago
+    const dialogs = zoneDialogsTo(filePath, (items) => items[0], "US/Central");
+    const reports = [];
+    await DataExporter.exportData(rows, "arrow", "setting", dialogs.vscode, outputDir, 0, ["day", "at"], {
+      report: (shifts) => reports.push(shifts),
+    });
+
+    // The settings' zone, as Intl names it, no zone, UTC, this computer's zone unless it
+    // is one of those, and the rest
+    assert.strictEqual(dialogs.picks.length, 1);
+    const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const labels = ["America/Chicago (default)", "No time zone", "UTC"];
+    if (!["America/Chicago", "UTC"].includes(here)) {
+      labels.push(here);
+    }
+    labels.push("Other time zone…");
+    assert.deepStrictEqual(
+      dialogs.picks[0].items.map((item) => item.label),
+      labels
+    );
+
+    // 02:30 CST is 03:30 CDT, half an hour after 03:00 CDT
+    const table = arrow.tableFromIPC(fs.readFileSync(filePath));
+    assert.strictEqual(table.schema.fields[1].type.timezone, "America/Chicago");
+    assert.deepStrictEqual(
+      readArrow(filePath).rows.map((row) => row.at),
+      [Date.UTC(2016, 2, 13, 8, 30), Date.UTC(2016, 2, 13, 8, 0)]
+    );
+    assert.deepStrictEqual(reports, [
+      {
+        timeZone: "America/Chicago",
+        moved: 1,
+        ambiguous: 0,
+        examples: { at: { moved: ["2016-03-13 02:30:00"], ambiguous: [] } },
+      },
+    ]);
+  });
+
+  test("Export - any time zone VS Code knows can be chosen from the full list", async () => {
+    const filePath = path.join(outputDir, "listed.db");
+    const dialogs = zoneDialogsTo(filePath, (items) =>
+      typeof items[0] === "string"
+        ? items.find((name) => name === "Asia/Tokyo")
+        : items.find((item) => item.label === "Other time zone…")
+    );
+    await DataExporter.exportData(makeDateRows(), "sqlite", "listed", dialogs.vscode, outputDir, 0, ["day", "at"]);
+    assert.strictEqual(dialogs.picks.length, 2);
+    // Every zone Intl lists, and UTC, which its list leaves out
+    const listed = dialogs.picks[1].items;
+    assert.ok(listed.length > 400 && listed.includes("UTC") && listed.includes("America/Chicago"));
+    // Tokyo is 9 hours ahead of UTC
+    assert.deepStrictEqual(await querySqlite(filePath, "SELECT at FROM data"), [
+      ["2016-01-12 21:15:00Z"],
+      ["2016-01-13 15:00:00Z"],
+    ]);
+  });
+
+  test("Export - a time zone in the settings that VS Code doesn't know refuses the export, naming it", async () => {
+    const filePath = path.join(outputDir, "unknown.parquet");
+    const dialogs = zoneDialogsTo(
+      filePath,
+      () => assert.fail("An export that is refused shouldn't ask anything"),
+      "America/Chicgo"
+    );
+    await assert.rejects(
+      DataExporter.exportData(makeDateRows(), "parquet", "unknown", dialogs.vscode, outputDir, 0, ["day", "at"]),
+      (error) => {
+        assert.strictEqual(error.setting, "ctrl-q-qvd-viewer.exportTimeZone");
+        assert.match(error.message, /^The setting ctrl-q-qvd-viewer\.exportTimeZone names "America\/Chicgo", /);
+        return true;
+      }
+    );
+    assert.ok(!fs.existsSync(filePath), "A refused export should write nothing");
+
+    // An export without timestamps doesn't use the setting, so it isn't refused
+    const days = makeDateRows().map(({ day }) => ({ day }));
+    assert.strictEqual(
+      await DataExporter.exportData(days, "parquet", "unknown", dialogs.vscode, outputDir, 0, ["day"]),
+      filePath
     );
   });
 });
