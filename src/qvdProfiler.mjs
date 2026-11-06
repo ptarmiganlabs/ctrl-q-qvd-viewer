@@ -30,14 +30,19 @@ export function profileFields(data, fieldNames, maxUniqueValues = 1000) {
     // Count value frequencies
     const valueCounts = new Map();
     let nullCount = 0;
+    let emptyStringCount = 0;
     let uniqueValueCount = 0;
 
     for (const row of data) {
       const value = row[fieldName];
       
       // Handle null/undefined/empty values
-      if (value === null || value === undefined || value === "") {
+      if (value === null || value === undefined) {
         nullCount++;
+        continue;
+      }
+      if (value === "") {
+        emptyStringCount++;
         continue;
       }
 
@@ -66,12 +71,13 @@ export function profileFields(data, fieldNames, maxUniqueValues = 1000) {
         percentage: ((count / totalRows) * 100).toFixed(2),
       }));
 
-    // Add null count if present
-    if (nullCount > 0) {
+    // Add null count if present, empty strings included
+    const nullOrEmptyCount = nullCount + emptyStringCount;
+    if (nullOrEmptyCount > 0) {
       sortedValues.push({
         value: "(NULL/Empty)",
-        count: nullCount,
-        percentage: ((nullCount / totalRows) * 100).toFixed(2),
+        count: nullOrEmptyCount,
+        percentage: ((nullOrEmptyCount / totalRows) * 100).toFixed(2),
       });
     }
 
@@ -105,14 +111,15 @@ export function profileFields(data, fieldNames, maxUniqueValues = 1000) {
       fieldName,
       uniqueValueCount,
       nullCount,
-      valueCounts
+      valueCounts,
+      emptyStringCount
     );
 
     results.push({
       fieldName,
       totalRows,
       uniqueValues: uniqueValueCount,
-      nullCount,
+      nullCount: nullOrEmptyCount,
       distributions: sortedValues,
       truncated,
       truncatedAt: maxUniqueValues,
