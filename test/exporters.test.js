@@ -428,22 +428,7 @@ suite("Exporter Test Suite", () => {
     assert.deepStrictEqual(exported.errors, []);
     assert.deepStrictEqual(exported.meta.fields, source.meta.fields);
     assert.strictEqual(exported.data.length, result.metadata.noOfRecords);
-    // The reader turns these colour codes into numbers (#154). Once that is fixed,
-    // they come out as in colors.csv and this list goes.
-    const readAsNumbers = {
-      75: "0",
-      132: "0",
-      133: "0",
-      373: "8.45e+86",
-      1001: "93910000",
-      1007: "Infinity",
-    };
-    assert.deepStrictEqual(
-      exported.data,
-      source.data.map((row) =>
-        row.id in readAsNumbers ? { ...row, rgb: readAsNumbers[row.id] } : row
-      )
-    );
+    assert.deepStrictEqual(exported.data, source.data);
   });
 
   test("CSV export - text a spreadsheet would run as a formula gets an apostrophe", async () => {

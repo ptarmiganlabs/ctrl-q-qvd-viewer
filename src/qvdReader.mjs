@@ -2,6 +2,31 @@ import { QvdDataFrame } from 'qvdjs';
 import { realpath } from 'fs/promises';
 import { dirname } from 'path';
 
+// An optional minus, then digits without a leading zero, then an optional fraction
+const PLAIN_DECIMAL = /^-?(0|[1-9]\d*)(\.\d+)?$/;
+
+/**
+ * Turn text that is a plain decimal number, such as 42, -7 or 3.14, into that number.
+ * Other text stays text: codes with a leading zero, an exponent or a hex prefix, text
+ * with spaces around it, blank text, and numbers a double can't hold exactly.
+ * @param {*} value - A cell's value as qvdjs reads it, with a dual's text for a dual
+ * @returns {*} The number, or the value as it was
+ */
+function toCellValue(value) {
+  if (typeof value !== "string" || !PLAIN_DECIMAL.test(value)) {
+    return value;
+  }
+  // A double holds 15 significant digits exactly. With more, the number could differ
+  // from the text, as 12345678901234567891 reads as 12345678901234567000
+  const digits = value.replace("-", "").replace(".", "").replace(/^0+/, "");
+  if (digits.length > 15) {
+    return value;
+  }
+  const number = Number(value);
+  // -0 would show as 0
+  return Object.is(number, -0) ? value : number;
+}
+
 /**
  * Reads and parses QVD file metadata and data
  */
@@ -98,15 +123,8 @@ class QvdReader {
         }),
       };
 
-      // qvdjs 1.0+ leaves text that looks like a number as text. Convert it the way
-      // qvdjs 0.6 did, so the grid, profiling and exports see the values they always
-      // have - including its quirks: "" becomes 0 and "8E5597" becomes Infinity.
-      const toCellValue = (value) =>
-        typeof value === "string" && !isNaN(Number(value))
-          ? Number(value)
-          : value;
-
-      // Convert data from array of arrays to array of objects
+      // Convert data from array of arrays to array of objects, with text that is a
+      // plain decimal number as that number
       const data = df.data.map((row) =>
         Object.fromEntries(
           columns.map((col, idx) => [col, toCellValue(row[idx])])
