@@ -49,18 +49,30 @@ export async function exportToExcel(data, filePath) {
     const columnNames = Object.keys(data[0]);
     const columnTypes = scanColumnTypes(data, columnNames);
 
-    // A column of dates shows them as dates, and one of timestamps with their time. A
-    // column with a date Excel can't show is written as ISO text instead
-    const textDateColumns = columnNames.filter(
-      (key) =>
-        columnTypes[key].hasDate &&
-        data.some((row) => row[key] instanceof Date && row[key].getTime() < EXCEL_FIRST_DATE)
-    );
+    // A column of dates shows them as dates, and one of timestamps with their time, to
+    // the millisecond where one has them. A column with a date Excel can't show is
+    // written as ISO text instead
+    const textDateColumns = [];
     const columns = columnNames.map((key) => {
       const typeInfo = columnTypes[key];
       const column = { header: key, key: key, width: 15 };
-      if (typeInfo.hasDate && !textDateColumns.includes(key)) {
-        column.style = { numFmt: typeInfo.calendarDates ? "yyyy-mm-dd" : "yyyy-mm-dd hh:mm:ss" };
+      if (typeInfo.hasDate) {
+        let early = false;
+        let milliseconds = false;
+        for (const row of data) {
+          const value = row[key];
+          if (value instanceof Date) {
+            early ||= value.getTime() < EXCEL_FIRST_DATE;
+            milliseconds ||= value.getTime() % 1000 !== 0;
+          }
+        }
+        if (early) {
+          textDateColumns.push(key);
+        } else if (typeInfo.calendarDates) {
+          column.style = { numFmt: "yyyy-mm-dd" };
+        } else {
+          column.style = { numFmt: milliseconds ? "yyyy-mm-dd hh:mm:ss.000" : "yyyy-mm-dd hh:mm:ss" };
+        }
       }
       return column;
     });

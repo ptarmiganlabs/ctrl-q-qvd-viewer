@@ -1066,7 +1066,13 @@ suite("Exporter Test Suite", () => {
 
   test("Excel export - dates are formatted date cells, and a column with one before 1900-03-01 is ISO text", async () => {
     const since = [new CalendarDate(Date.UTC(1900, 2, 1)), new CalendarDate(Date.UTC(2016, 0, 14))];
-    const rows = makeDateRows().map((row, index) => ({ ...row, since: since[index] }));
+    // Timestamps, one of them with milliseconds
+    const precise = [new Date(Date.UTC(2016, 0, 13, 6, 15, 0, 250)), new Date(Date.UTC(2016, 0, 14))];
+    const rows = makeDateRows().map((row, index) => ({
+      ...row,
+      since: since[index],
+      precise: precise[index],
+    }));
     const filePath = path.join(outputDir, "dates.xlsx");
 
     await excelExporter.exportToExcel(rows, filePath);
@@ -1092,6 +1098,11 @@ suite("Exporter Test Suite", () => {
     assert.deepStrictEqual(cells(3), [
       [new Date(since[0].getTime()), "yyyy-mm-dd"],
       [new Date(since[1].getTime()), "yyyy-mm-dd"],
+    ]);
+    // The milliseconds show, as SQLite and PostgreSQL write them
+    assert.deepStrictEqual(cells(4), [
+      [precise[0], "yyyy-mm-dd hh:mm:ss.000"],
+      [precise[1], "yyyy-mm-dd hh:mm:ss.000"],
     ]);
     assert.deepStrictEqual(rows[0].day, makeDateRows()[0].day, "The rows should stay as they were");
   });
