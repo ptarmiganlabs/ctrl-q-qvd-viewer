@@ -1,6 +1,16 @@
 import { promises as fs } from "fs";
 
 /**
+ * Heap a Qlik inline script export builds from the rows, for the memory guard.
+ * It needed 7.8 bytes per cell and 1.0 per character of text. Measured by the
+ * smallest heap that let 200,000 or 1,000,000 rows of
+ * chicago_taxi_rides_2016_03.qvd export, against reading them alone, and 50,000
+ * rows of four unique 400-character values for the cost per character. See
+ * DataExporter.memoryCost() for the margins.
+ */
+export const memoryCost = { bytesPerCell: 16, bytesPerTextChar: 3 };
+
+/**
  * Auto-detect the best delimiter for the data
  * @param {Array<Object>} data - Array of row objects
  * @returns {Object} Delimiter object with char and escapeChar

@@ -3,6 +3,16 @@ import * as arrow from 'apache-arrow';
 import { isBlank, settleBlanks } from './blankCells.mjs';
 
 /**
+ * Heap an Arrow export builds from the rows, for the memory guard. It needed 12
+ * bytes per cell and 0.6 per character of text. Its file buffers, outside the
+ * V8 heap, aren't counted. Measured by the smallest heap that let 200,000 or
+ * 1,000,000 rows of chicago_taxi_rides_2016_03.qvd export, against reading them
+ * alone, and 50,000 rows of four unique 400-character values for the cost per
+ * character. See DataExporter.memoryCost() for the margins.
+ */
+export const memoryCost = { bytesPerCell: 24, bytesPerTextChar: 2 };
+
+/**
  * Export data to Apache Arrow format
  * @param {Array<Object>} data - Array of row objects
  * @param {string} filePath - Destination file path

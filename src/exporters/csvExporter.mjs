@@ -3,7 +3,23 @@ import { writeFileAtomically } from "./atomicWrite.mjs";
 
 // Rows turned into CSV text at a time, so a large export never holds the whole
 // file as one string
-const CHUNK_ROWS = 10000;
+export const CHUNK_ROWS = 10000;
+
+/**
+ * Heap a CSV export builds, a chunk of rows at a time, for the memory guard.
+ * With every row in one chunk it needed 108 bytes per cell, and in its own
+ * chunks 1.8 per character of a chunk's text. Only its largest chunk is priced.
+ * Measured by the smallest heap that let 200,000 or 1,000,000 rows of
+ * chicago_taxi_rides_2016_03.qvd export, against reading them alone, and 50,000
+ * rows of four unique 400-character values for the cost per character. See
+ * DataExporter.memoryCost() for the margins.
+ */
+export const memoryCost = {
+  bytesPerCell: 168,
+  bytesPerTextChar: 4,
+  chunkRows: CHUNK_ROWS,
+  writesAsItGoes: true,
+};
 
 // Text that Excel, LibreOffice and Google Sheets would run as a formula: = or @
 // first, a tab or carriage return first, or + or - followed by anything but a

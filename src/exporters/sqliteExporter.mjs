@@ -9,6 +9,16 @@ import { isBlank, settleBlanks } from './blankCells.mjs';
 let sqlJs = null;
 
 /**
+ * Heap a SQLite export builds from the rows, for the memory guard. Its database
+ * lives in sql.js's WebAssembly memory, outside the V8 heap, and it added
+ * nothing measurable to the heap. Measured by the smallest heap that let
+ * 200,000 or 1,000,000 rows of chicago_taxi_rides_2016_03.qvd export, against
+ * reading them alone, and 50,000 rows of four unique 400-character values for
+ * the cost per character. See DataExporter.memoryCost() for the margins.
+ */
+export const memoryCost = { bytesPerCell: 16, bytesPerTextChar: 0 };
+
+/**
  * Read sql.js's WebAssembly file. Reading it here rather than in sql.js keeps a
  * missing or unreadable file from failing initSqlJs(), which keeps its first
  * result, failed or not, for the rest of the session.

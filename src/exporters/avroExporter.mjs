@@ -5,6 +5,16 @@ import { pipeline } from 'stream/promises';
 import { isBlank, settleBlanks } from './blankCells.mjs';
 
 /**
+ * Heap an Avro export builds from the rows, for the memory guard. It writes as
+ * it goes, and added nothing measurable to the V8 heap. Measured by the
+ * smallest heap that let 200,000 or 1,000,000 rows of
+ * chicago_taxi_rides_2016_03.qvd export, against reading them alone, and 50,000
+ * rows of four unique 400-character values for the cost per character. See
+ * DataExporter.memoryCost() for the margins.
+ */
+export const memoryCost = { bytesPerCell: 16, bytesPerTextChar: 0, writesAsItGoes: true };
+
+/**
  * Write records to an Avro object container file
  * @param {Iterable<Object>} records - Records matching the type
  * @param {import('avsc').Type} type - Avro record type

@@ -17,10 +17,25 @@ let csvExporter;
 let parquetExporter;
 let postgresExporter;
 let sqliteExporter;
+let DataExporter;
 let QvdDataFrame;
 // QvdReader is async because it's a CJS wrapper around ESM
 let QvdReader;
 let outputDir;
+
+/**
+ * Enough of the VS Code API for an export that asks only for where to save, with
+ * every setting at its default
+ * @param {string} filePath - What the save dialog answers
+ * @returns {object} The API
+ */
+function saveDialogTo(filePath) {
+  return {
+    Uri: { file: (fsPath) => ({ fsPath }) },
+    window: { showSaveDialog: async () => ({ fsPath: filePath }) },
+    workspace: { getConfiguration: () => ({ get: (_key, fallback) => fallback }) },
+  };
+}
 
 /**
  * Build rows with integer, decimal, string, boolean, null and date values
@@ -223,6 +238,7 @@ suite("Exporter Test Suite", () => {
     parquetExporter = await import("../src/exporters/parquetExporter.mjs");
     postgresExporter = await import("../src/exporters/postgresExporter.mjs");
     sqliteExporter = await import("../src/exporters/sqliteExporter.mjs");
+    ({ default: DataExporter } = await import("../src/exporters/index.mjs"));
     ({ QvdDataFrame } = await import("qvdjs"));
     QvdReader = await require("../src/qvdReader.cjs");
     outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-viewer-export-"));
@@ -230,6 +246,49 @@ suite("Exporter Test Suite", () => {
 
   suiteTeardown(() => {
     fs.rmSync(outputDir, { recursive: true, force: true });
+  });
+
+  test("An export its reserve refuses writes nothing", async () => {
+    const filePath = path.join(outputDir, "refused.csv");
+    let reserved;
+    await assert.rejects(
+      DataExporter.exportData(makeRows(10), "csv", "refused", saveDialogTo(filePath), outputDir, 0, ["id"], {
+        reserve: (rows, limit) => {
+          reserved = { rows: rows.length, limit };
+          throw new Error("Exporting 10 rows to CSV needs about 1 MiB of memory");
+        },
+      }),
+      /needs about 1 MiB/
+    );
+    // Asked once the dialog was answered, for every row
+    assert.deepStrictEqual(reserved, { rows: 10, limit: 0 });
+    assert.ok(!fs.existsSync(filePath));
+  });
+
+  test("An export's reservation is released once it is written", async () => {
+    const filePath = path.join(outputDir, "reserved.csv");
+    let released = 0;
+    const saved = await DataExporter.exportData(makeRows(10), "csv", "reserved", saveDialogTo(filePath), outputDir, 0, ["name", "id"], {
+      reserve: () => () => released++,
+    });
+    assert.strictEqual(saved, filePath);
+    // The fields reach the CSV exporter, in their order, as the header row
+    assert.strictEqual(fs.readFileSync(filePath, "utf8").split("\n")[0], '"name","id"');
+    assert.strictEqual(released, 1);
+  });
+
+  test("An export waits for a reserve that answers later", async () => {
+    const filePath = path.join(outputDir, "reserved-later.csv");
+    const events = [];
+    await DataExporter.exportData(makeRows(10), "csv", "later", saveDialogTo(filePath), outputDir, 0, ["id"], {
+      reserve: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        events.push(fs.existsSync(filePath) ? "written" : "reserved");
+        return () => events.push("released");
+      },
+    });
+    assert.deepStrictEqual(events, ["reserved", "released"]);
+    assert.ok(fs.existsSync(filePath));
   });
 
   test("Arrow export - blank text next to numbers or booleans is null, and text elsewhere", async () => {

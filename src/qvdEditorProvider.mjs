@@ -4,7 +4,7 @@ import QvdReader from "./qvdReader.mjs";
 import { getErrorHtml } from "./webview/templates/errorTemplate.mjs";
 import { getHtmlForWebview } from "./webview/templates/mainTemplate.mjs";
 import { setupMessageHandler } from "./webview/messageHandler.mjs";
-import { getLoadMoreRowCount } from "./webview/loadMore.mjs";
+import { getLoadMoreRowCount, previewRowsFromSetting } from "./webview/loadMore.mjs";
 import { splitRowsIntoBatches } from "./webview/rowBatches.mjs";
 import logger from "./logger.mjs";
 
@@ -43,6 +43,10 @@ class QvdEditorProvider {
    */
   async resolveCustomEditor(document, webviewPanel, _token) {
     console.log("🔵 resolveCustomEditor called for:", document.uri.fsPath);
+    // This editor's reads are given up once it is closed, queued or running,
+    // so they neither hold up other editors' reads nor run for nothing
+    const closed = new AbortController();
+    webviewPanel.onDidDispose(() => closed.abort());
     try {
       logger.log(`Opening QVD file: ${document.uri.fsPath}`);
 
@@ -56,15 +60,21 @@ class QvdEditorProvider {
 
       // Get the max rows configuration
       const config = vscode.workspace.getConfiguration("ctrl-q-qvd-viewer");
-      const maxRows = config.get("maxPreviewRows", 5000);
+      const maxRows = previewRowsFromSetting(config.get("maxPreviewRows"));
 
       // Read and display QVD content
       // Note: We read the file ourselves, not relying on VS Code to read it
       await this.updateWebview(
         document.uri.fsPath,
         webviewPanel.webview,
-        maxRows
+        maxRows,
+        { signal: closed.signal }
       );
+
+      // Closed while it opened: the panel is gone, and touching it would throw
+      if (closed.signal.aborted) {
+        return;
+      }
 
       // Store file path for message handler
       const filePath = document.uri.fsPath;
@@ -76,9 +86,15 @@ class QvdEditorProvider {
         this.qvdReader,
         this.context,
         this.updateWebview.bind(this),
-        maxRows
+        maxRows,
+        closed.signal
       );
     } catch (error) {
+      if (closed.signal.aborted) {
+        // The editor was closed: there is no page to show the error on
+        logger.log(`Editor closed while opening ${document.uri.fsPath}: ${error.message}`);
+        return;
+      }
       logger.error(
         `Fatal error in resolveCustomEditor for ${document.uri.fsPath}:`,
         error
@@ -94,17 +110,25 @@ class QvdEditorProvider {
 
   /**
    * Update webview content with QVD data
+   * @param {string} filePath - The QVD file path
+   * @param {object} webview - The webview to fill
+   * @param {number} maxRows - Rows to read, 0 for every row
+   * @param {{keepPageOnMemoryRefusal?: boolean, signal?: AbortSignal}} [options] -
+   *   keepPageOnMemoryRefusal: when the read is refused as too large for memory, keep the
+   *   page and say so in a warning, instead of replacing it with the error page. For Load
+   *   More and Load All, where the rows already shown are still worth having.
+   *   signal: gives the read up once the editor is closed.
    * @returns {Promise<{rowsSent: Promise<void>}|undefined>} Resolves once the HTML
    *   is set; rowsSent settles once every row has been posted to the webview
    */
-  async updateWebview(filePath, webview, maxRows) {
+  async updateWebview(filePath, webview, maxRows, { keepPageOnMemoryRefusal = false, signal } = {}) {
     const totalStart = performance.now();
     logger.log("⏱️ [TIMING] updateWebview started");
     try {
       logger.log(`Reading QVD file: ${filePath}, maxRows: ${maxRows}`);
 
       const readStart = performance.now();
-      const result = await this.qvdReader.read(filePath, maxRows);
+      const result = await this.qvdReader.read(filePath, maxRows, { signal });
       const readTime = performance.now() - readStart;
       logger.log(
         `⏱️ [TIMING] QVD read: ${readTime.toFixed(0)}ms, rows: ${
@@ -112,8 +136,20 @@ class QvdEditorProvider {
         }`
       );
 
+      if (result.errorReason === "aborted") {
+        // The editor is closed: there is no page left to show anything on
+        logger.log(`Read given up, because its editor was closed: ${filePath}`);
+        return;
+      }
+
       if (result.error) {
         logger.error(`Error reading QVD file: ${filePath}`, result.error);
+        if (keepPageOnMemoryRefusal && result.errorReason === "memory") {
+          // The rows already shown stay, and the page puts its load buttons back
+          vscode.window.showWarningMessage(result.error);
+          await webview.postMessage({ command: "loadRefused" });
+          return;
+        }
         webview.html = getErrorHtml(result.error);
         return;
       }
@@ -171,10 +207,13 @@ class QvdEditorProvider {
       // Send the rows without waiting for them here: VS Code creates a custom
       // editor's webview only once resolveCustomEditor has returned, and until
       // then a postMessage to it does not resolve
-      const rowsSent = this.postRows(webview, result).catch((error) => {
-        logger.error(`Exception while sending rows of QVD file: ${filePath}`, error);
-        webview.html = getErrorHtml(error.message);
-      });
+      const rowsSent = this.postRows(webview, result)
+        .catch((error) => {
+          logger.error(`Exception while sending rows of QVD file: ${filePath}`, error);
+          webview.html = getErrorHtml(error.message);
+        })
+        // The webview has the rows now: the heap they booked here is free for other reads
+        .finally(() => result.release?.());
 
       const totalTime = performance.now() - totalStart;
       logger.log(
