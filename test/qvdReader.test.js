@@ -344,6 +344,17 @@ suite("QVD Reader Test Suite", () => {
     assert.ok(!(result.data[0].midnights instanceof CalendarDate), "A timestamp isn't a date");
   });
 
+  test("Reader - finding a read's dates is given up between chunks", async () => {
+    const { findDateColumns } = await import("../src/qvdDates.mjs");
+    // Enough rows to span more than one chunk between yields
+    const date = new QvdDual(42382, "2016-1-13");
+    const rows = Array.from({ length: 300000 }, () => [date]);
+    const controller = new AbortController();
+    controller.abort();
+
+    await assert.rejects(findDateColumns(rows, [[]], controller.signal), { name: "AbortError" });
+  });
+
   test("Profiling - an all-blank field in the taxi data is neither a date nor a number", async () => {
     const data = await readTestData(
       "chicago_taxi_rides/chicago_taxi_rides_2016_01.qvd",
