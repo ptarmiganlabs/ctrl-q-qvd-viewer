@@ -1200,7 +1200,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
     ">
         <div style="font-size: 48px; margin-bottom: 20px;">⏳</div>
         <div style="font-size: 18px; color: var(--vscode-foreground);">Loading QVD data...</div>
-        <div style="font-size: 14px; color: var(--vscode-descriptionForeground); margin-top: 10px;">
+        <div id="loading-progress" style="font-size: 14px; color: var(--vscode-descriptionForeground); margin-top: 10px;">
             Large file optimization in progress
         </div>
     </div>
@@ -1415,6 +1415,8 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
         let hasMoreRows = ${hasMoreRows};
         // Rows that Load More reads, counted from the start of the file
         let loadMoreRowCount = ${getLoadMoreRowCount(data.length)};
+        // Rows to expect: they arrive in batches, loadInitialData with the first and appendRows with the rest
+        let expectedRows = 0;
         
         // Logging helper - sends logs to extension
         const logger = {
@@ -1434,7 +1436,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
         
         // Data for tables
         // When embedData is false, data will be sent via postMessage after page load
-        const tableData = ${embedData ? JSON.stringify(data) : "[]"};
+        let tableData = ${embedData ? JSON.stringify(data) : "[]"};
         const schemaData = ${JSON.stringify(schemaData)};
         const metadataData = ${JSON.stringify(metadataKV)};
         const lineageData = ${JSON.stringify(lineageData)};
@@ -1654,38 +1656,28 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         logger.log('Received initial data via postMessage');
                         logger.log('Data rows:', message.data ? message.data.length : 0);
                         
-                        // Update global variables with received data
-                        if (message.data) {
-                            // Clear the placeholder and set real data
-                            tableData.length = 0;
-                            // One row at a time: push(...rows) overflows the stack from about 125,000 rows
-                            for (const row of message.data) {
-                                tableData.push(row);
-                            }
-                            currentLoadedRows = message.data.length;
-                        }
+                        // The first batch of rows takes the placeholder's place
+                        tableData = message.data || [];
+                        expectedRows = message.loadedRows !== undefined
+                            ? message.loadedRows
+                            : tableData.length;
                         
                         // Update hasMoreRows, from the message if it says
                         hasMoreRows = message.hasMoreRows !== undefined
                             ? message.hasMoreRows
-                            : currentLoadedRows < totalRowsInFile;
+                            : expectedRows < totalRowsInFile;
                         if (message.loadMoreRowCount !== undefined) {
                             loadMoreRowCount = message.loadMoreRowCount;
                         }
-                        updateLoadedRowsBanner();
+                        receivedRows();
+                        break;
                         
-                        // Hide loading indicator
-                        const loadingIndicator = document.getElementById('loading-indicator');
-                        if (loadingIndicator) {
-                            loadingIndicator.style.display = 'none';
+                    case 'appendRows':
+                        // One row at a time: push(...rows) overflows the stack from about 125,000 rows
+                        for (const row of message.data) {
+                            tableData.push(row);
                         }
-                        
-                        // Initialize tables now that we have data
-                        if (waitingForInitialData) {
-                            waitingForInitialData = false;
-                            initializeTables();
-                            logger.log('Tables initialized with postMessage data');
-                        }
+                        receivedRows();
                         break;
                         
                     default:
@@ -1694,6 +1686,33 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             });
             
             logger.log('Message listener setup complete. Waiting for data:', waitingForInitialData);
+        }
+        
+        // Show the rows once every batch has arrived, and how many have arrived until then
+        function receivedRows() {
+            if (tableData.length < expectedRows) {
+                const progress = document.getElementById('loading-progress');
+                if (progress) {
+                    progress.textContent = \`Received \${tableData.length.toLocaleString()} of \${expectedRows.toLocaleString()} rows\`;
+                }
+                return;
+            }
+            
+            currentLoadedRows = tableData.length;
+            updateLoadedRowsBanner();
+            
+            // Hide loading indicator
+            const loadingIndicator = document.getElementById('loading-indicator');
+            if (loadingIndicator) {
+                loadingIndicator.style.display = 'none';
+            }
+            
+            // Initialize tables now that we have data
+            if (waitingForInitialData) {
+                waitingForInitialData = false;
+                initializeTables();
+                logger.log('Tables initialized with postMessage data');
+            }
         }
         
         // QVD Structure Chart data (pre-calculated)
