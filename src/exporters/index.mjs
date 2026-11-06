@@ -11,23 +11,111 @@ import { exportToXML, memoryCost as xmlCost } from './xmlExporter.mjs';
 import { exportToQlikInline, memoryCost as qlikCost } from './qlikInlineExporter.mjs';
 import { exportToPostgres, memoryCost as postgresCost } from './postgresExporter.mjs';
 
-// What each format's export builds on the heap, as its exporter declares it
-const MEMORY_COSTS = {
-  arrow: arrowCost,
-  avro: avroCost,
-  csv: csvCost,
-  excel: excelCost,
-  json: jsonCost,
-  parquet: parquetCost,
-  postgres: postgresCost,
-  qlik: qlikCost,
-  sqlite: sqliteCost,
-  xml: xmlCost,
-  yaml: yamlCost,
+// Each export format: its name as the user sees it, its file's extension and the save
+// dialog's filter, whether it is in beta, its exporter, what its export builds on the
+// heap as the exporter declares it, and whether it writes a QVD's dates and timestamps
+// as dates, as a format with date types does
+const FORMATS = {
+  arrow: {
+    label: "Export to Arrow",
+    extension: "arrow",
+    filter: "Arrow Files",
+    beta: true,
+    exporter: exportToArrow,
+    cost: arrowCost,
+    dates: true,
+  },
+  avro: {
+    label: "Export to Avro",
+    extension: "avro",
+    filter: "Avro Files",
+    beta: true,
+    exporter: exportToAvro,
+    cost: avroCost,
+    dates: true,
+  },
+  csv: {
+    label: "Export to CSV",
+    extension: "csv",
+    filter: "CSV Files",
+    beta: false,
+    exporter: exportToCSV,
+    cost: csvCost,
+    dates: false,
+  },
+  excel: {
+    label: "Export to Excel",
+    extension: "xlsx",
+    filter: "Excel Files",
+    beta: false,
+    exporter: exportToExcel,
+    cost: excelCost,
+    dates: true,
+  },
+  json: {
+    label: "Export to JSON",
+    extension: "json",
+    filter: "JSON Files",
+    beta: false,
+    exporter: exportToJSON,
+    cost: jsonCost,
+    dates: false,
+  },
+  parquet: {
+    label: "Export to Parquet",
+    extension: "parquet",
+    filter: "Parquet Files",
+    beta: false,
+    exporter: exportToParquet,
+    cost: parquetCost,
+    dates: true,
+  },
+  postgres: {
+    label: "Export to PostgreSQL",
+    extension: "sql",
+    filter: "SQL Files",
+    beta: true,
+    exporter: exportToPostgres,
+    cost: postgresCost,
+    dates: true,
+  },
+  qlik: {
+    label: "Export to Qlik Inline Script",
+    extension: "qvs",
+    filter: "Qlik Script Files",
+    beta: false,
+    exporter: exportToQlikInline,
+    cost: qlikCost,
+    dates: false,
+  },
+  sqlite: {
+    label: "Export to SQLite",
+    extension: "db",
+    filter: "SQLite Database",
+    beta: true,
+    exporter: exportToSQLite,
+    cost: sqliteCost,
+    dates: true,
+  },
+  xml: {
+    label: "Export to XML",
+    extension: "xml",
+    filter: "XML Files",
+    beta: false,
+    exporter: exportToXML,
+    cost: xmlCost,
+    dates: false,
+  },
+  yaml: {
+    label: "Export to YAML",
+    extension: "yaml",
+    filter: "YAML Files",
+    beta: false,
+    exporter: exportToYAML,
+    cost: yamlCost,
+    dates: false,
+  },
 };
-
-// The formats with date types, whose exports read a QVD's dates and timestamps as dates
-const DATE_FORMATS = new Set(["arrow", "avro", "excel", "parquet", "postgres", "sqlite"]);
 
 /**
  * Main DataExporter class that coordinates all export operations
@@ -38,19 +126,7 @@ class DataExporter {
    * @returns {Array<Object>} Array of format objects with name, label, and beta status
    */
   static getExportFormats() {
-    return [
-      { name: "arrow", label: "Export to Arrow", beta: true },
-      { name: "avro", label: "Export to Avro", beta: true },
-      { name: "csv", label: "Export to CSV", beta: false },
-      { name: "excel", label: "Export to Excel", beta: false },
-      { name: "json", label: "Export to JSON", beta: false },
-      { name: "parquet", label: "Export to Parquet", beta: false },
-      { name: "postgres", label: "Export to PostgreSQL", beta: true },
-      { name: "qlik", label: "Export to Qlik Inline Script", beta: false },
-      { name: "sqlite", label: "Export to SQLite", beta: true },
-      { name: "xml", label: "Export to XML", beta: false },
-      { name: "yaml", label: "Export to YAML", beta: false },
-    ];
+    return Object.entries(FORMATS).map(([name, { label, beta }]) => ({ name, label, beta }));
   }
 
   /**
@@ -73,7 +149,7 @@ class DataExporter {
    * @returns {import('../memoryGuard.mjs').ExportCost|null} The cost, or null for a name that isn't a format
    */
   static memoryCost(format) {
-    return Object.hasOwn(MEMORY_COSTS, format) ? MEMORY_COSTS[format] : null;
+    return Object.hasOwn(FORMATS, format) ? FORMATS[format].cost : null;
   }
 
   /**
@@ -83,7 +159,7 @@ class DataExporter {
    * @returns {boolean} True for a format with date types
    */
   static writesDates(format) {
-    return DATE_FORMATS.has(format);
+    return Object.hasOwn(FORMATS, format) && FORMATS[format].dates;
   }
 
   /**
@@ -92,7 +168,7 @@ class DataExporter {
    */
   static leanFormatLabels() {
     return DataExporter.getExportFormats()
-      .filter((entry) => MEMORY_COSTS[entry.name]?.writesAsItGoes)
+      .filter((entry) => FORMATS[entry.name].cost.writesAsItGoes)
       .map((entry) => DataExporter.formatLabel(entry.name));
   }
 
@@ -122,76 +198,7 @@ class DataExporter {
     fields,
     { reserve } = {}
   ) {
-    const formatConfig = {
-      arrow: {
-        extension: "arrow",
-        filter: "Arrow Files",
-        exporter: exportToArrow,
-        beta: true,
-      },
-      avro: {
-        extension: "avro",
-        filter: "Avro Files",
-        exporter: exportToAvro,
-        beta: true,
-      },
-      csv: {
-        extension: "csv",
-        filter: "CSV Files",
-        exporter: exportToCSV,
-        beta: false,
-      },
-      excel: {
-        extension: "xlsx",
-        filter: "Excel Files",
-        exporter: exportToExcel,
-        beta: false,
-      },
-      json: {
-        extension: "json",
-        filter: "JSON Files",
-        exporter: exportToJSON,
-        beta: false,
-      },
-      parquet: {
-        extension: "parquet",
-        filter: "Parquet Files",
-        exporter: exportToParquet,
-        beta: false,
-      },
-      postgres: {
-        extension: "sql",
-        filter: "SQL Files",
-        exporter: exportToPostgres,
-        beta: true,
-      },
-      qlik: {
-        extension: "qvs",
-        filter: "Qlik Script Files",
-        exporter: exportToQlikInline,
-        beta: false,
-      },
-      sqlite: {
-        extension: "db",
-        filter: "SQLite Database",
-        exporter: exportToSQLite,
-        beta: true,
-      },
-      xml: {
-        extension: "xml",
-        filter: "XML Files",
-        exporter: exportToXML,
-        beta: false,
-      },
-      yaml: {
-        extension: "yaml",
-        filter: "YAML Files",
-        exporter: exportToYAML,
-        beta: false,
-      },
-    };
-
-    const config = formatConfig[format];
+    const config = Object.hasOwn(FORMATS, format) ? FORMATS[format] : null;
     if (!config) {
       throw new Error(`Unsupported export format: ${format}`);
     }
