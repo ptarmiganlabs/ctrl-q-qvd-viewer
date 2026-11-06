@@ -4,6 +4,7 @@ import { writeFileSync } from "fs";
 import DataExporter from "../exporters/index.mjs";
 import { profileFields, generateQvsScript } from "../qvdProfiler.mjs";
 import { getVisualAnalysisHtml } from "./templates/visualAnalysisTemplate.mjs";
+import { getLoadMoreRowCount } from "./loadMore.mjs";
 import logger from "../logger.mjs";
 
 /**
@@ -58,7 +59,7 @@ export function setupMessageHandler(
         const currentRows = message.currentRows || maxRows;
         const newMaxRows = message.loadAll
           ? 0
-          : Math.min(currentRows * 2, 100000);
+          : getLoadMoreRowCount(currentRows);
         await updateWebviewFn(filePath, webviewPanel.webview, newMaxRows);
         break;
       case "copyToClipboard":

@@ -181,24 +181,26 @@ export function getVisualAnalysisHtml(
             text-align: center;
         }
         
-        .tabulator-footer .tabulator-page:not(.disabled) {
+        .tabulator-footer .tabulator-page:not(:disabled) {
             cursor: pointer;
         }
-        
-        .tabulator-footer .tabulator-page:not(.disabled):hover {
+
+        .tabulator-footer .tabulator-page:not(:disabled):hover {
             background-color: var(--vscode-button-hoverBackground) !important;
             border-color: var(--vscode-focusBorder, var(--vscode-button-border)) !important;
         }
-        
+
         .tabulator-footer .tabulator-page.active {
             background-color: var(--vscode-button-hoverBackground) !important;
             border-color: var(--vscode-focusBorder) !important;
             font-weight: 700 !important;
         }
-        
-        .tabulator-footer .tabulator-page.disabled {
+
+        /* Tabulator disables a page button with the disabled attribute. Its own hover rule
+           gives disabled buttons a pointer too, and outranks this one without !important */
+        .tabulator-footer .tabulator-page:disabled {
             opacity: 0.4 !important;
-            cursor: not-allowed;
+            cursor: not-allowed !important;
         }
         
         .tabulator .tabulator-footer .tabulator-paginator {
@@ -215,7 +217,17 @@ export function getVisualAnalysisHtml(
             color: var(--vscode-foreground) !important;
             font-weight: 600 !important;
         }
-        
+
+        /* The page size <select> itself has class tabulator-page-size */
+        .tabulator .tabulator-footer select.tabulator-page-size {
+            background-color: var(--vscode-dropdown-background) !important;
+            color: var(--vscode-dropdown-foreground) !important;
+            border: 1px solid var(--vscode-dropdown-border, var(--vscode-contrastBorder)) !important;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-weight: 600;
+        }
+
         /* Quality metrics styles */
         .quality-card {
             background-color: var(--vscode-textBlockQuote-background);
@@ -1503,13 +1515,17 @@ export function getVisualAnalysisHtml(
             
             // Initialize bins
             const bins = Array(binCount).fill(0);
-            const binLabels = [];
-            
-            // Create bin labels
+            // Enough decimals to tell neighbouring bin edges apart: one past binWidth's first significant digit
+            const decimals = binWidth > 0 && isFinite(binWidth)
+                ? Math.min(20, Math.max(1, 1 - Math.floor(Math.log10(binWidth))))
+                : 1;
+            const binRanges = [];
+
+            // Work out each bin's edges, for the chart labels and the table
             for (let i = 0; i < binCount; i++) {
                 const binStart = min + i * binWidth;
                 const binEnd = min + (i + 1) * binWidth;
-                binLabels.push(\`\${binStart.toFixed(1)}-\${binEnd.toFixed(1)}\`);
+                binRanges.push({ from: binStart.toFixed(decimals), to: binEnd.toFixed(decimals) });
             }
             
             // Count values in each bin using distribution counts
@@ -1530,7 +1546,7 @@ export function getVisualAnalysisHtml(
             currentChart = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: binLabels,
+                    labels: binRanges.map(range => \`\${range.from} – \${range.to}\`),
                     datasets: [{
                         label: 'Frequency',
                         data: bins,
@@ -1587,16 +1603,12 @@ export function getVisualAnalysisHtml(
             });
             
             // Update table with histogram data (using totalCount already declared above)
-            const histogramData = binLabels.map((label, i) => {
-                // Split the range label into from and to
-                const [from, to] = label.split('-');
-                return {
-                    from: from,
-                    to: to,
-                    count: bins[i],
-                    percentage: totalCount > 0 ? ((bins[i] / totalCount) * 100).toFixed(2) : '0.00'
-                };
-            });
+            const histogramData = binRanges.map((range, i) => ({
+                from: range.from,
+                to: range.to,
+                count: bins[i],
+                percentage: totalCount > 0 ? ((bins[i] / totalCount) * 100).toFixed(2) : '0.00'
+            }));
             
             if (currentTable) {
                 currentTable.destroy();

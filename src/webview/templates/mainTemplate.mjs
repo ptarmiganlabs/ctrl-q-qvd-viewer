@@ -8,6 +8,7 @@ import {
 import { escapeHtml } from "./errorTemplate.mjs";
 import DataExporter from "../../exporters/index.mjs";
 import { metricHelpContent } from "../qualityMetricHelp.mjs";
+import { getLoadMoreRowCount } from "../loadMore.mjs";
 
 /**
  * Generate HTML for webview with tabbed interface and Tabulator
@@ -462,24 +463,26 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             text-align: center;
         }
         
-        .tabulator-footer .tabulator-page:not(.disabled) {
+        .tabulator-footer .tabulator-page:not(:disabled) {
             cursor: pointer;
         }
-        
-        .tabulator-footer .tabulator-page:not(.disabled):hover {
+
+        .tabulator-footer .tabulator-page:not(:disabled):hover {
             background-color: var(--vscode-button-hoverBackground) !important;
             border-color: var(--vscode-focusBorder, var(--vscode-button-border)) !important;
         }
-        
+
         .tabulator-footer .tabulator-page.active {
             background-color: var(--vscode-button-hoverBackground) !important;
             border-color: var(--vscode-focusBorder) !important;
             font-weight: 700 !important;
         }
-        
-        .tabulator-footer .tabulator-page.disabled {
+
+        /* Tabulator disables a page button with the disabled attribute. Its own hover rule
+           gives disabled buttons a pointer too, and outranks this one without !important */
+        .tabulator-footer .tabulator-page:disabled {
             opacity: 0.4 !important;
-            cursor: not-allowed;
+            cursor: not-allowed !important;
         }
         
         /* Override Tabulator's hardcoded #555 color for paginator */
@@ -499,13 +502,14 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             font-weight: 600 !important;
         }
         
-        .tabulator .tabulator-footer .tabulator-page-size label {
+        /* The page size <select> itself has class tabulator-page-size, and its label is a sibling */
+        .tabulator .tabulator-footer .tabulator-paginator label {
             color: var(--vscode-foreground) !important;
             font-weight: 600 !important;
             margin-right: 6px;
         }
-        
-        .tabulator .tabulator-footer .tabulator-page-size select {
+
+        .tabulator .tabulator-footer select.tabulator-page-size {
             background-color: var(--vscode-dropdown-background) !important;
             color: var(--vscode-dropdown-foreground) !important;
             border: 1px solid var(--vscode-dropdown-border, var(--vscode-contrastBorder)) !important;
@@ -1227,33 +1231,14 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             
             <!-- Data Tab -->
             <div id="data-tab" class="tab-content active">
-                ${
-                  hasMoreRows
-                    ? `
-                <div class="info-banner">
+                <!-- Filled in by updateLoadedRowsBanner() once the rows are known -->
+                <div class="info-banner" id="loaded-rows-banner" style="display: none;">
+                    <div id="loaded-rows-text"></div>
                     <div>
-                        📊 Showing ${data.length.toLocaleString()} of ${totalRows.toLocaleString()} rows 
-                        (${((data.length / totalRows) * 100).toFixed(
-                          1
-                        )}% of file loaded)
-                    </div>
-                    <div>
-                        <button class="load-button" id="loadMoreBtn">
-                            Load More (next ${Math.min(
-                              data.length,
-                              totalRows - data.length
-                            ).toLocaleString()} rows)
-                        </button>
-                        <button class="load-button" id="loadAllBtn">
-                            Load All Remaining (${(
-                              totalRows - data.length
-                            ).toLocaleString()} rows)
-                        </button>
+                        <button class="load-button" id="loadMoreBtn">Load More</button>
+                        <button class="load-button" id="loadAllBtn">Load All Remaining</button>
                     </div>
                 </div>
-                `
-                    : ""
-                }
                 ${
                   dataError
                     ? `
@@ -1388,20 +1373,6 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                                 : ""
                             }
                         </div>
-                        ${
-                          data.length < totalRows
-                            ? `
-                        <div class="info-banner" style="margin-top: 12px;">
-                            ℹ️ <strong>Data Loaded:</strong> Profiling will analyze ${data.length.toLocaleString()} of ${totalRows.toLocaleString()} total rows (limited for performance).
-                            ${
-                              totalRows <= 100000
-                                ? `<button class="load-button" onclick="vscode.postMessage({command: 'loadMore', loadAll: true})">📥 Load All Rows</button> for more accurate profiling.`
-                                : `This limit is configurable in <button class="load-button" onclick="vscode.postMessage({command: 'openSettings'})">⚙️ Settings</button>.`
-                            }
-                        </div>
-                        `
-                            : ""
-                        }
                         <div class="profiling-buttons">
                             <button class="header-button" id="run-profiling-btn">▶️ Run Profiling</button>
                             <button class="header-button" id="clear-profiling-btn">✕ Clear Results</button>
@@ -1432,7 +1403,11 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
     <script nonce="${nonce}">
         const vscode = acquireVsCodeApi();
         const totalRowsInFile = ${totalRows};
-        const currentLoadedRows = ${data.length};
+        // Updated when the rows arrive via postMessage
+        let currentLoadedRows = ${data.length};
+        let hasMoreRows = ${hasMoreRows};
+        // Rows that Load More reads, counted from the start of the file
+        let loadMoreRowCount = ${getLoadMoreRowCount(data.length)};
         
         // Logging helper - sends logs to extension
         const logger = {
@@ -1474,7 +1449,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
         window.addEventListener('DOMContentLoaded', function() {
             ${
               embedData
-                ? "initializeTables();"
+                ? "initializeTables();\n            updateLoadedRowsBanner();"
                 : "// Tables will be initialized after receiving data via postMessage"
             }
             setupEventListeners();
@@ -1677,12 +1652,17 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                             // Clear the placeholder and set real data
                             tableData.length = 0;
                             tableData.push(...message.data);
+                            currentLoadedRows = message.data.length;
                         }
                         
-                        // Update hasMoreRows if provided
-                        if (message.hasMoreRows !== undefined) {
-                            window.hasMoreRows = message.hasMoreRows;
+                        // Update hasMoreRows, from the message if it says
+                        hasMoreRows = message.hasMoreRows !== undefined
+                            ? message.hasMoreRows
+                            : currentLoadedRows < totalRowsInFile;
+                        if (message.loadMoreRowCount !== undefined) {
+                            loadMoreRowCount = message.loadMoreRowCount;
                         }
+                        updateLoadedRowsBanner();
                         
                         // Hide loading indicator
                         const loadingIndicator = document.getElementById('loading-indicator');
@@ -2115,6 +2095,34 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                 command: 'exportData',
                 format: format
             });
+        }
+        
+        // Show how many rows are loaded, or hide the banner once they all are
+        function updateLoadedRowsBanner() {
+            const banner = document.getElementById('loaded-rows-banner');
+            if (!banner) return;
+            if (!hasMoreRows) {
+                banner.style.display = 'none';
+                return;
+            }
+            
+            const remainingRows = totalRowsInFile - currentLoadedRows;
+            const nextBatch = Math.min(loadMoreRowCount, totalRowsInFile) - currentLoadedRows;
+            
+            document.getElementById('loaded-rows-text').textContent =
+                \`📊 Showing \${currentLoadedRows.toLocaleString()} of \${totalRowsInFile.toLocaleString()} rows (\${((currentLoadedRows / totalRowsInFile) * 100).toFixed(1)}% of file loaded)\`;
+            
+            // Labelled and enabled afresh, in case an earlier click left them on "Loading..."
+            const loadMoreBtn = document.getElementById('loadMoreBtn');
+            loadMoreBtn.textContent = \`Load More (next \${nextBatch.toLocaleString()} rows)\`;
+            loadMoreBtn.style.display = nextBatch > 0 ? '' : 'none';
+            loadMoreBtn.disabled = false;
+            
+            const loadAllBtn = document.getElementById('loadAllBtn');
+            loadAllBtn.textContent = \`Load All Remaining (\${remainingRows.toLocaleString()} rows)\`;
+            loadAllBtn.disabled = false;
+            
+            banner.style.display = '';
         }
         
         function loadMoreRows() {
@@ -3221,13 +3229,17 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                     
                     // Initialize bins
                     const bins = Array(binCount).fill(0);
-                    const binLabels = [];
-                    
-                    // Create bin labels
+                    // Enough decimals to tell neighbouring bin edges apart: one past binWidth's first significant digit
+                    const decimals = binWidth > 0 && isFinite(binWidth)
+                        ? Math.min(20, Math.max(1, 1 - Math.floor(Math.log10(binWidth))))
+                        : 1;
+                    const binRanges = [];
+
+                    // Work out each bin's edges, for the chart labels and the table
                     for (let i = 0; i < binCount; i++) {
                         const binStart = min + i * binWidth;
                         const binEnd = min + (i + 1) * binWidth;
-                        binLabels.push(\`\${binStart.toFixed(1)}-\${binEnd.toFixed(1)}\`);
+                        binRanges.push({ from: binStart.toFixed(decimals), to: binEnd.toFixed(decimals) });
                     }
                     
                     // Count values in each bin using the distribution counts
@@ -3248,7 +3260,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                     chart = new Chart(ctx, {
                         type: 'bar',
                         data: {
-                            labels: binLabels,
+                            labels: binRanges.map(range => \`\${range.from} – \${range.to}\`),
                             datasets: [{
                                 label: 'Frequency',
                                 data: bins,
@@ -3311,16 +3323,12 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                     }
                     
                     // Update table with histogram data (using totalCount already declared above)
-                    const histogramData = binLabels.map((label, i) => {
-                        // Split the range label into from and to
-                        const [from, to] = label.split('-');
-                        return {
-                            from: from,
-                            to: to,
-                            count: bins[i],
-                            percentage: totalCount > 0 ? ((bins[i] / totalCount) * 100).toFixed(2) : '0.00'
-                        };
-                    });
+                    const histogramData = binRanges.map((range, i) => ({
+                        from: range.from,
+                        to: range.to,
+                        count: bins[i],
+                        percentage: totalCount > 0 ? ((bins[i] / totalCount) * 100).toFixed(2) : '0.00'
+                    }));
                     
                     if (profilingTable) {
                         profilingTable.destroy();
