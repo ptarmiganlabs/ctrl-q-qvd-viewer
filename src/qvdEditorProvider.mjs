@@ -94,10 +94,17 @@ class QvdEditorProvider {
 
   /**
    * Update webview content with QVD data
+   * @param {string} filePath - The QVD file path
+   * @param {object} webview - The webview to fill
+   * @param {number} maxRows - Rows to read, 0 for every row
+   * @param {{keepPageOnMemoryRefusal?: boolean}} [options] - keepPageOnMemoryRefusal: when
+   *   the read is refused as too large for memory, keep the page and say so in a warning,
+   *   instead of replacing it with the error page. For Load More and Load All, where the
+   *   rows already shown are still worth having.
    * @returns {Promise<{rowsSent: Promise<void>}|undefined>} Resolves once the HTML
    *   is set; rowsSent settles once every row has been posted to the webview
    */
-  async updateWebview(filePath, webview, maxRows) {
+  async updateWebview(filePath, webview, maxRows, { keepPageOnMemoryRefusal = false } = {}) {
     const totalStart = performance.now();
     logger.log("⏱️ [TIMING] updateWebview started");
     try {
@@ -114,6 +121,12 @@ class QvdEditorProvider {
 
       if (result.error) {
         logger.error(`Error reading QVD file: ${filePath}`, result.error);
+        if (keepPageOnMemoryRefusal && result.errorReason === "memory") {
+          // The rows already shown stay, and the page puts its load buttons back
+          vscode.window.showWarningMessage(result.error);
+          await webview.postMessage({ command: "loadRefused" });
+          return;
+        }
         webview.html = getErrorHtml(result.error);
         return;
       }

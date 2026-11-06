@@ -57,7 +57,9 @@ export function setupMessageHandler(
         const newMaxRows = message.loadAll
           ? 0
           : getLoadMoreRowCount(currentRows);
-        await updateWebviewFn(filePath, webviewPanel.webview, newMaxRows);
+        await updateWebviewFn(filePath, webviewPanel.webview, newMaxRows, {
+          keepPageOnMemoryRefusal: true,
+        });
         break;
       case "copyToClipboard":
         // Copy text to clipboard using VS Code API
