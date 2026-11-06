@@ -3,6 +3,7 @@ import {
   getTabulatorJs,
   getTabulatorCss,
   getChartJs,
+  getHistogramViewJs,
 } from "../assetLoader.mjs";
 import { escapeHtml } from "./errorTemplate.mjs";
 import { createHelpIconHtml } from "../qualityMetricHelp.mjs";
@@ -25,6 +26,7 @@ export function getVisualAnalysisHtml(
   const tabulatorJs = getTabulatorJs(extensionPath);
   const tabulatorCss = getTabulatorCss(extensionPath);
   const chartJs = getChartJs(extensionPath);
+  const histogramViewJs = getHistogramViewJs(extensionPath);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1477,6 +1479,11 @@ export function getVisualAnalysisHtml(
     </script>
     
     <script nonce="${nonce}">
+        /* Profiling histogram chart and table, shared with the QVD editor */
+        ${histogramViewJs}
+    </script>
+    
+    <script nonce="${nonce}">
         const fieldResult = ${JSON.stringify(fieldResult)};
         
         // Create chart
@@ -1495,84 +1502,14 @@ export function getVisualAnalysisHtml(
                 return;
             }
 
-            currentChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: histogram.labels,
-                    datasets: [{
-                        label: 'Frequency',
-                        data: histogram.counts,
-                        backgroundColor: 'rgba(75, 192, 192, 0.6)',
-                        borderColor: 'rgba(75, 192, 192, 1)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        title: {
-                            display: true,
-                            text: 'Histogram: Value Distribution',
-                            color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
-                            },
-                            grid: {
-                                color: 'rgba(128, 128, 128, 0.2)'
-                            },
-                            title: {
-                                display: true,
-                                text: 'Frequency',
-                                color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
-                            }
-                        },
-                        x: {
-                            ticks: {
-                                color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground'),
-                                maxRotation: 45,
-                                minRotation: 45
-                            },
-                            grid: {
-                                color: 'rgba(128, 128, 128, 0.2)'
-                            },
-                            title: {
-                                display: true,
-                                text: 'Value Range',
-                                color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
-                            }
-                        }
-                    }
-                }
-            });
+            // Shared with the QVD editor: see histogramView.js
+            currentChart = renderHistogramChart(ctx, histogram);
             
             if (currentTable) {
                 currentTable.destroy();
             }
             
-            currentTable = new Tabulator('#profiling-table', {
-                data: histogram.rows,
-                columns: [
-                    { title: 'From', field: 'from', headerSort: true, widthGrow: 1 },
-                    { title: 'To', field: 'to', headerSort: true, widthGrow: 1 },
-                    { title: 'Count', field: 'count', headerSort: true, widthGrow: 1 },
-                    { title: 'Percentage', field: 'percentage', headerSort: true, widthGrow: 1, 
-                      formatter: (cell) => cell.getValue() + '%' }
-                ],
-                layout: 'fitDataStretch',
-                pagination: true,
-                paginationSize: 50,
-                paginationSizeSelector: [25, 50, 100],
-                paginationCounter: 'rows'
-            });
+            currentTable = renderHistogramTable('#profiling-table', histogram);
         }
         
         function createFrequencyChart() {

@@ -4,6 +4,7 @@ import {
   getTabulatorJs,
   getTabulatorCss,
   getChartJs,
+  getHistogramViewJs,
 } from "../assetLoader.mjs";
 import { escapeHtml } from "./errorTemplate.mjs";
 import DataExporter from "../../exporters/index.mjs";
@@ -29,6 +30,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
   const tabulatorJs = getTabulatorJs(context.extensionPath);
   const tabulatorCss = getTabulatorCss(context.extensionPath);
   const chartJs = getChartJs(context.extensionPath);
+  const histogramViewJs = getHistogramViewJs(context.extensionPath);
 
   // Get the logo URI for the webview
   const logoUri = webview.asWebviewUri(
@@ -1398,6 +1400,11 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
     <script nonce="${nonce}">
         /* Chart.js library - inlined */
         ${chartJs}
+    </script>
+    
+    <script nonce="${nonce}">
+        /* Profiling histogram chart and table, shared with the visual-analysis panel - inlined */
+        ${histogramViewJs}
     </script>
     
     <script nonce="${nonce}">
@@ -3212,64 +3219,8 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         return;
                     }
 
-                    chart = new Chart(ctx, {
-                        type: 'bar',
-                        data: {
-                            labels: histogram.labels,
-                            datasets: [{
-                                label: 'Frequency',
-                                data: histogram.counts,
-                                backgroundColor: 'rgba(75, 192, 192, 0.6)',
-                                borderColor: 'rgba(75, 192, 192, 1)',
-                                borderWidth: 1
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: true,
-                            plugins: {
-                                legend: {
-                                    display: false
-                                },
-                                title: {
-                                    display: true,
-                                    text: 'Histogram: Value Distribution',
-                                    color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
-                                }
-                            },
-                            scales: {
-                                y: {
-                                    beginAtZero: true,
-                                    ticks: {
-                                        color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
-                                    },
-                                    grid: {
-                                        color: 'rgba(128, 128, 128, 0.2)'
-                                    },
-                                    title: {
-                                        display: true,
-                                        text: 'Frequency',
-                                        color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
-                                    }
-                                },
-                                x: {
-                                    ticks: {
-                                        color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground'),
-                                        maxRotation: 45,
-                                        minRotation: 45
-                                    },
-                                    grid: {
-                                        color: 'rgba(128, 128, 128, 0.2)'
-                                    },
-                                    title: {
-                                        display: true,
-                                        text: 'Value Range',
-                                        color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
-                                    }
-                                }
-                            }
-                        }
-                    });
+                    // Shared with the visual-analysis panel: see histogramView.js
+                    chart = renderHistogramChart(ctx, histogram);
                     
                     // Update chart in tracking array
                     const chartIndex = profilingCharts.findIndex(c => c.canvas === canvas);
@@ -3281,21 +3232,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         profilingTable.destroy();
                     }
                     
-                    profilingTable = new Tabulator(\`#profiling-table-\${index}\`, {
-                        data: histogram.rows,
-                        columns: [
-                            { title: 'From', field: 'from', headerSort: true, widthGrow: 1 },
-                            { title: 'To', field: 'to', headerSort: true, widthGrow: 1 },
-                            { title: 'Count', field: 'count', headerSort: true, widthGrow: 1 },
-                            { title: 'Percentage', field: 'percentage', headerSort: true, widthGrow: 1, 
-                              formatter: (cell) => cell.getValue() + '%' }
-                        ],
-                        layout: 'fitDataStretch',
-                        pagination: true,
-                        paginationSize: 50,
-                        paginationSizeSelector: [25, 50, 100],
-                        paginationCounter: 'rows'
-                    });
+                    profilingTable = renderHistogramTable(\`#profiling-table-\${index}\`, histogram);
                 };
                 
                 const createFrequencyChart = () => {
