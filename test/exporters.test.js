@@ -4,6 +4,7 @@ const os = require("os");
 const path = require("path");
 const avro = require("avsc");
 const esbuild = require("esbuild");
+const ExcelJS = require("exceljs");
 const Papa = require("papaparse");
 const parquet = require("parquetjs");
 const initSqlJs = require("sql.js");
@@ -14,6 +15,7 @@ let arrow;
 let arrowExporter;
 let avroExporter;
 let csvExporter;
+let excelExporter;
 let parquetExporter;
 let postgresExporter;
 let sqliteExporter;
@@ -235,6 +237,7 @@ suite("Exporter Test Suite", () => {
     arrowExporter = await import("../src/exporters/arrowExporter.mjs");
     avroExporter = await import("../src/exporters/avroExporter.mjs");
     csvExporter = await import("../src/exporters/csvExporter.mjs");
+    excelExporter = await import("../src/exporters/excelExporter.mjs");
     parquetExporter = await import("../src/exporters/parquetExporter.mjs");
     postgresExporter = await import("../src/exporters/postgresExporter.mjs");
     sqliteExporter = await import("../src/exporters/sqliteExporter.mjs");
@@ -587,6 +590,23 @@ suite("Exporter Test Suite", () => {
     assert.ok(fs.lstatSync(link).isSymbolicLink(), "The link should still be a link");
     assert.strictEqual(fs.readFileSync(real, "utf8"), '"a"\n"1"');
     assert.strictEqual(fs.statSync(real).mode & 0o777, 0o600);
+  });
+
+  test("Excel export - blank text next to numbers or booleans is an empty cell, and text elsewhere", async () => {
+    const filePath = path.join(outputDir, "blanks.xlsx");
+    const rows = makeBlankRows();
+
+    await excelExporter.exportToExcel(rows, filePath);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+    const sheet = workbook.getWorksheet("Data");
+
+    // exceljs reads an empty cell as null
+    assert.deepStrictEqual(
+      [2, 3, 4].map((row) => [1, 2, 3, 4].map((column) => sheet.getRow(row).getCell(column).value)),
+      BLANK_ROWS_STORED.map((row) => Object.values(row))
+    );
+    assert.deepStrictEqual(rows, makeBlankRows(), "The rows should stay as they were");
   });
 
   test("Parquet export - blank text next to numbers or booleans is null, and text elsewhere", async () => {
