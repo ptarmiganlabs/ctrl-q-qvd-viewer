@@ -42,6 +42,20 @@ export function isStringField(data, fieldName, threshold = 0.8) {
   return stringCount / nonNullCount >= threshold;
 }
 
+// A high surrogate followed by a low one: one code point outside the Basic Multilingual Plane
+const SURROGATE_PAIR = /[\uD800-\uDBFF][\uDC00-\uDFFF]/g;
+
+/**
+ * Count a string's characters as Qlik's Len() does: by Unicode code point.
+ * JavaScript's length counts UTF-16 code units, so it counts an emoji twice.
+ * @param {string} value - String to measure
+ * @returns {number} Number of code points
+ */
+function characterCount(value) {
+  const pairs = value.match(SURROGATE_PAIR);
+  return value.length - (pairs ? pairs.length : 0);
+}
+
 /**
  * Calculate length statistics for string values
  * @param {Array<string>} stringValues - Array of string values
@@ -58,18 +72,19 @@ function calculateLengthStats(stringValues) {
     };
   }
 
-  const lengths = stringValues.map((v) => v.length);
-  // Not Math.min(...lengths): spreading overflows the stack from about 120,000 values
-  const min = lengths.reduce((acc, len) => Math.min(acc, len));
-  const max = lengths.reduce((acc, len) => Math.max(acc, len));
-  const sum = lengths.reduce((acc, len) => acc + len, 0);
-  const average = sum / lengths.length;
-
-  // Length frequency distribution
+  // One pass for the shortest, longest and total length, and how often each length occurs
+  let min = Infinity;
+  let max = 0;
+  let sum = 0;
   const lengthFreq = new Map();
-  for (const len of lengths) {
+  for (const value of stringValues) {
+    const len = characterCount(value);
+    min = Math.min(min, len);
+    max = Math.max(max, len);
+    sum += len;
     lengthFreq.set(len, (lengthFreq.get(len) || 0) + 1);
   }
+  const average = sum / stringValues.length;
 
   // Find most common length
   let mostCommon = 0;
