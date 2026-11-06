@@ -1894,8 +1894,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         paginationSize: 100,
                         paginationSizeSelector: [25, 50, 100, 250, 500],
                         paginationCounter: "rows",
-                        movableColumns: true,
-                        resizableColumns: true
+                        movableColumns: true
                     });
                     
                     logger.log('Data table created successfully');
@@ -1933,8 +1932,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                     pagination: true,
                     paginationSize: 50,
                     paginationSizeSelector: [25, 50, 100],
-                    paginationCounter: "rows",
-                    resizableColumns: true
+                    paginationCounter: "rows"
                 });
                 
                 schemaTable.on("cellContext", function(e, cell){
@@ -1957,8 +1955,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                     pagination: true,
                     paginationSize: 50,
                     paginationSizeSelector: [25, 50, 100],
-                    paginationCounter: "rows",
-                    resizableColumns: true
+                    paginationCounter: "rows"
                 });
                 
                 metadataTable.on("cellContext", function(e, cell){
@@ -1982,8 +1979,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                     pagination: true,
                     paginationSize: 25,
                     paginationSizeSelector: [10, 25, 50],
-                    paginationCounter: "rows",
-                    resizableColumns: true
+                    paginationCounter: "rows"
                 });
                 
                 lineageTable.on("cellContext", function(e, cell){
@@ -3342,8 +3338,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         pagination: true,
                         paginationSize: 50,
                         paginationSizeSelector: [25, 50, 100],
-                        paginationCounter: 'rows',
-                        resizableColumns: true
+                        paginationCounter: 'rows'
                     });
                 };
                 
@@ -3427,8 +3422,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         pagination: true,
                         paginationSize: 50,
                         paginationSizeSelector: [25, 50, 100],
-                        paginationCounter: 'rows',
-                        resizableColumns: true
+                        paginationCounter: 'rows'
                     });
                 };
                 

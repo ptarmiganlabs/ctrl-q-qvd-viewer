@@ -1626,8 +1626,7 @@ export function getVisualAnalysisHtml(
                 pagination: true,
                 paginationSize: 50,
                 paginationSizeSelector: [25, 50, 100],
-                paginationCounter: 'rows',
-                resizableColumns: true
+                paginationCounter: 'rows'
             });
         }
         
@@ -1705,8 +1704,7 @@ export function getVisualAnalysisHtml(
                 pagination: true,
                 paginationSize: 50,
                 paginationSizeSelector: [25, 50, 100],
-                paginationCounter: 'rows',
-                resizableColumns: true
+                paginationCounter: 'rows'
             });
         }
         

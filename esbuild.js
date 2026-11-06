@@ -54,6 +54,41 @@ const copySqlWasmPlugin = {
 };
 
 /**
+ * Copy the libraries the webview inlines, Tabulator and Chart.js, into
+ * dist/webview, where the webview templates read them from. Taking them from
+ * their npm packages keeps their versions in package.json, where update tools
+ * see them.
+ * @type {import('esbuild').Plugin}
+ */
+const copyWebviewLibsPlugin = {
+  name: "copy-webview-libs",
+
+  setup(build) {
+    build.onEnd(() => {
+      const { outdir, outfile } = build.initialOptions;
+      const targetDir = path.join(outdir ?? path.dirname(outfile), "webview");
+      fs.mkdirSync(targetDir, { recursive: true });
+      const libs = {
+        "tabulator.min.js": require.resolve(
+          "tabulator-tables/dist/js/tabulator.min.js"
+        ),
+        "tabulator.min.css": require.resolve(
+          "tabulator-tables/dist/css/tabulator.min.css"
+        ),
+        // chart.js exports no path to its UMD build, which sits next to its main script
+        "chart.umd.js": path.join(
+          path.dirname(require.resolve("chart.js")),
+          "chart.umd.js"
+        ),
+      };
+      for (const [name, source] of Object.entries(libs)) {
+        fs.copyFileSync(source, path.join(targetDir, name));
+      }
+    });
+  },
+};
+
+/**
  * Options for bundling the extension. The tests bundle the SQLite exporter with
  * them too, to check that it finds its WebAssembly file once bundled.
  * @type {import('esbuild').BuildOptions}
@@ -76,7 +111,7 @@ const buildOptions = {
   banner: {
     js: `const __importMetaUrl = require('url').pathToFileURL(__filename).href;`,
   },
-  plugins: [copySqlWasmPlugin],
+  plugins: [copySqlWasmPlugin, copyWebviewLibsPlugin],
 };
 
 async function main() {
