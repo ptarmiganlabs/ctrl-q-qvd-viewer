@@ -4,22 +4,7 @@
  */
 
 import { getNonce } from "../assetLoader.mjs";
-
-/**
- * Escape HTML special characters
- * @param {string} text - Text to escape
- * @returns {string} Escaped HTML string
- */
-export function escapeHtml(text) {
-  const map = {
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;",
-  };
-  return String(text).replace(/[&<>"']/g, (m) => map[m]);
-}
+import { escapeHtml } from "./escaping.mjs";
 
 /**
  * Styles for the notice that says why a read failed, on the error page and in the viewer

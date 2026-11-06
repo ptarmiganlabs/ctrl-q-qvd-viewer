@@ -5,7 +5,7 @@ import {
   getChartJs,
   getHistogramViewJs,
 } from "../assetLoader.mjs";
-import { escapeHtml } from "./errorTemplate.mjs";
+import { escapeHtml, scriptJson } from "./escaping.mjs";
 import { createHelpIconHtml } from "../qualityMetricHelp.mjs";
 
 /**
@@ -28,14 +28,16 @@ export function getVisualAnalysisHtml(
   const chartJs = getChartJs(extensionPath);
   const histogramViewJs = getHistogramViewJs(extensionPath);
 
+  // The field's result comes back from the editor's page, and its text is the file's:
+  // every string in it is escaped, and scriptJson() writes it into the script. Scripts
+  // and style elements run by nonce only; style attributes are allowed, as the page's
+  // own markup sets many of them.
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${
-      webview.cspSource
-    } 'unsafe-inline'; script-src 'nonce-${nonce}';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src-elem 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; script-src 'nonce-${nonce}'; form-action 'none'; base-uri 'none';">
     <title>Profiling: ${escapeHtml(fieldResult.fieldName)}</title>
     <style nonce="${nonce}">
         ${tabulatorCss}
@@ -599,18 +601,18 @@ export function getVisualAnalysisHtml(
                     Time Span
                     ${createHelpIconHtml("temporalTimeSpan")}
                 </span>
-                <span class="stat-value">${
+                <span class="stat-value">${escapeHtml(
                   fieldResult.temporalAnalysis.range.spanDescription
-                }</span>
+                )}</span>
             </div>
             <div class="stat-item">
                 <span class="stat-label">
                     Format
                     ${createHelpIconHtml("temporalFormat")}
                 </span>
-                <span class="stat-value">${
+                <span class="stat-value">${escapeHtml(
                   fieldResult.temporalAnalysis.range.format.formatDescription
-                }</span>
+                )}</span>
             </div>
         </div>
         
@@ -627,7 +629,7 @@ export function getVisualAnalysisHtml(
               .map(
                 (item) => `
             <div class="stat-item">
-                <span class="stat-label">${item.period}</span>
+                <span class="stat-label">${escapeHtml(item.period)}</span>
                 <span class="stat-value">${item.count.toLocaleString()}</span>
             </div>
             `
@@ -650,7 +652,7 @@ export function getVisualAnalysisHtml(
               .map(
                 (item) => `
             <div class="stat-item">
-                <span class="stat-label">${item.period}</span>
+                <span class="stat-label">${escapeHtml(item.period)}</span>
                 <span class="stat-value">${item.count.toLocaleString()}</span>
             </div>
             `
@@ -673,7 +675,7 @@ export function getVisualAnalysisHtml(
               .map(
                 (item) => `
             <div class="stat-item">
-                <span class="stat-label">${item.period}</span>
+                <span class="stat-label">${escapeHtml(item.period)}</span>
                 <span class="stat-value">${item.count.toLocaleString()}</span>
             </div>
             `
@@ -746,9 +748,8 @@ export function getVisualAnalysisHtml(
                     Trend Type
                     ${createHelpIconHtml("temporalTrendType")}
                 </span>
-                <span class="stat-value">${fieldResult.temporalAnalysis.trends.trendType.replace(
-                  /_/g,
-                  " "
+                <span class="stat-value">${escapeHtml(
+                  fieldResult.temporalAnalysis.trends.trendType.replace(/_/g, " ")
                 )}</span>
             </div>
             <div class="stat-item" style="grid-column: span 2;">
@@ -756,9 +757,9 @@ export function getVisualAnalysisHtml(
                     Description
                     ${createHelpIconHtml("temporalTrendDescription")}
                 </span>
-                <span class="stat-value">${
+                <span class="stat-value">${escapeHtml(
                   fieldResult.temporalAnalysis.trends.description
-                }</span>
+                )}</span>
             </div>
         </div>
         `
@@ -1220,9 +1221,9 @@ export function getVisualAnalysisHtml(
                     }">
                         ${
                           fieldResult.qualityMetrics.assessment.qualityScore
-                        }/100 - ${
+                        }/100 - ${escapeHtml(
             fieldResult.qualityMetrics.assessment.qualityLevel
-          }
+          )}
                     </span>
                     <span class="beta-badge">Beta</span>
                 </div>
@@ -1237,7 +1238,7 @@ export function getVisualAnalysisHtml(
             ${fieldResult.qualityMetrics.assessment.issues
               .map(
                 (issue) =>
-                  `<div class="quality-issue-item error">❌ ${issue}</div>`
+                  `<div class="quality-issue-item error">❌ ${escapeHtml(issue)}</div>`
               )
               .join("")}
         </div>
@@ -1252,7 +1253,7 @@ export function getVisualAnalysisHtml(
             ${fieldResult.qualityMetrics.assessment.warnings
               .map(
                 (warning) =>
-                  `<div class="quality-issue-item warning">⚠️ ${warning}</div>`
+                  `<div class="quality-issue-item warning">⚠️ ${escapeHtml(warning)}</div>`
               )
               .join("")}
         </div>
@@ -1325,15 +1326,15 @@ export function getVisualAnalysisHtml(
                         <span>Classification</span>
                         ${createHelpIconHtml("classification")}
                     </div>
-                    <div class="quality-metric-value">${
+                    <div class="quality-metric-value">${escapeHtml(
                       fieldResult.qualityMetrics.cardinality.level
-                    }</div>
+                    )}</div>
                 </div>
             </div>
             <div class="quality-recommendation">
-                💡 <strong>Recommendation:</strong> ${
+                💡 <strong>Recommendation:</strong> ${escapeHtml(
                   fieldResult.qualityMetrics.cardinality.recommendation
-                }
+                )}
             </div>
         </div>
         
@@ -1384,7 +1385,7 @@ export function getVisualAnalysisHtml(
                       .map(
                         (dup) => `
                     <div style="display: flex; justify-content: space-between; padding: 4px 8px; font-size: 0.85em; border-bottom: 1px solid var(--vscode-panel-border);">
-                        <span>${dup.value}</span>
+                        <span>${escapeHtml(dup.value)}</span>
                         <span>${dup.count.toLocaleString()} (${
                           dup.percentage
                         }%)</span>
@@ -1417,9 +1418,9 @@ export function getVisualAnalysisHtml(
                         <span>Distribution Type</span>
                         ${createHelpIconHtml("distributionType")}
                     </div>
-                    <div class="quality-metric-value">${
+                    <div class="quality-metric-value">${escapeHtml(
                       fieldResult.qualityMetrics.distribution.skewness
-                    }</div>
+                    )}</div>
                 </div>
                 <div class="quality-metric-item">
                     <div class="quality-metric-label">
@@ -1484,7 +1485,7 @@ export function getVisualAnalysisHtml(
     </script>
     
     <script nonce="${nonce}">
-        const fieldResult = ${JSON.stringify(fieldResult)};
+        const fieldResult = ${scriptJson(fieldResult)};
         
         // Create chart
         const ctx = document.getElementById('profiling-chart').getContext('2d');

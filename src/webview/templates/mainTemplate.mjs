@@ -7,11 +7,11 @@ import {
   getHistogramViewJs,
 } from "../assetLoader.mjs";
 import {
-  escapeHtml,
   failureNoticeHtml,
   FAILURE_BUTTONS_JS,
   FAILURE_NOTICE_CSS,
 } from "./errorTemplate.mjs";
+import { escapeHtml, ESCAPE_HTML_JS, scriptJson } from "./escaping.mjs";
 import DataExporter from "../../exporters/index.mjs";
 import { metricHelpContent } from "../qualityMetricHelp.mjs";
 import { getLoadMoreRowCount } from "../loadMore.mjs";
@@ -186,16 +186,19 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
           indexTableSize: 0,
         };
 
+  // Scripts and style elements run by nonce only. Style attributes are allowed, as
+  // the page's own markup sets many of them; a style element that isn't the page's
+  // own, say one written in a field's name, styles nothing.
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src ${
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src-elem 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src ${
     webview.cspSource
-  };">
+  }; form-action 'none'; base-uri 'none';">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ctrl-Q QVD Viewer</title>
-    <style>
+    <style nonce="${nonce}">
         /* Tabulator CSS - inlined */
         ${tabulatorCss}
         
@@ -1437,17 +1440,20 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             }
         };
         
-        // Data for tables
+        // Data for tables, written by scriptJson(): what the file says can't end this script
         // When embedData is false, data will be sent via postMessage after page load
-        let tableData = ${embedData ? JSON.stringify(data) : "[]"};
-        const schemaData = ${JSON.stringify(schemaData)};
-        const metadataData = ${JSON.stringify(metadataKV)};
-        const lineageData = ${JSON.stringify(lineageData)};
-        
+        let tableData = ${embedData ? scriptJson(data) : "[]"};
+        const schemaData = ${scriptJson(schemaData)};
+        const metadataData = ${scriptJson(metadataKV)};
+        const lineageData = ${scriptJson(lineageData)};
+
         // Available field names for profiling
-        const availableFields = ${JSON.stringify(
+        const availableFields = ${scriptJson(
           metadata && metadata.fields ? metadata.fields.map((f) => f.name) : []
         )};
+
+        // For the text from the file that this script writes into the page as HTML
+        ${ESCAPE_HTML_JS}
         
         let currentContextCell = null;
         let dataTable, schemaTable, metadataTable, lineageTable;
@@ -1729,7 +1735,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
         }
         
         // QVD Structure Chart data (pre-calculated)
-        const qvdStructureData = ${JSON.stringify(qvdStructureData)};
+        const qvdStructureData = ${scriptJson(qvdStructureData)};
         
         // Initialize QVD Structure Chart
         function initQvdStructureChart() {
@@ -1927,6 +1933,8 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                 if (tableData.length > 0) {
                     const columns = Object.keys(tableData[0]).map(key => ({
                         title: key,
+                        // The field's name as text: Tabulator sets a title as HTML
+                        titleFormatter: () => document.createTextNode(key),
                         field: key,
                         headerSort: true,
                         headerFilter: false
@@ -2311,24 +2319,14 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                 
                 // Helper function to create help icon with tooltip
                 function createHelpIcon(metricKey) {
-                    const help = ${JSON.stringify(
-                      metricHelpContent
-                    )}[metricKey];
+                    const help = ${scriptJson(metricHelpContent)}[metricKey];
                     if (!help) return '';
-                    
-                    // Escape HTML special characters in the text
-                    const escapedText = help.text
-                        .replace(/&/g, '&amp;')
-                        .replace(/</g, '&lt;')
-                        .replace(/>/g, '&gt;')
-                        .replace(/"/g, '&quot;')
-                        .replace(/'/g, '&#39;');
-                    
+
                     return \`<span class="quality-metric-help">?
                         <span class="quality-metric-tooltip">
-                            \${escapedText}
+                            \${escapeHtml(help.text)}
                             <br/><br/>
-                            <a href="\${help.link}" target="_blank" rel="noopener noreferrer">Learn more →</a>
+                            <a href="\${escapeHtml(help.link)}" target="_blank" rel="noopener noreferrer">Learn more →</a>
                         </span>
                     </span>\`;
                 }
@@ -2357,7 +2355,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                 
                 const header = document.createElement('h3');
                 header.style.margin = '0';
-                header.innerHTML = \`📊 \${fieldResult.fieldName}\`;
+                header.textContent = \`📊 \${fieldResult.fieldName}\`;
                 
                 const openButton = document.createElement('div');
                 openButton.className = 'open-in-window-dropdown';
@@ -2541,14 +2539,14 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                                         Time Span
                                         \${createHelpIcon('temporalTimeSpan')}
                                     </span>
-                                    <span class="stat-value">\${temporal.range.spanDescription}</span>
+                                    <span class="stat-value">\${escapeHtml(temporal.range.spanDescription)}</span>
                                 </div>
                                 <div class="stat-item">
                                     <span class="stat-label">
                                         Format
                                         \${createHelpIcon('temporalFormat')}
                                     </span>
-                                    <span class="stat-value">\${temporal.range.format.formatDescription}</span>
+                                    <span class="stat-value">\${escapeHtml(temporal.range.format.formatDescription)}</span>
                                 </div>
                             </div>
                         </div>
@@ -2562,7 +2560,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                             <div class="stats-container" style="margin-bottom: 15px; max-height: 200px; overflow-y: auto; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
                                 \${temporal.distribution.byYear.slice(0, 10).map(item => \`
                                 <div class="stat-item">
-                                    <span class="stat-label">\${item.period}</span>
+                                    <span class="stat-label">\${escapeHtml(item.period)}</span>
                                     <span class="stat-value">\${item.count.toLocaleString()}</span>
                                 </div>
                                 \`).join('')}
@@ -2579,7 +2577,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                             <div class="stats-container" style="margin-bottom: 15px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
                                 \${temporal.distribution.byMonth.map(item => \`
                                 <div class="stat-item">
-                                    <span class="stat-label">\${item.period}</span>
+                                    <span class="stat-label">\${escapeHtml(item.period)}</span>
                                     <span class="stat-value">\${item.count.toLocaleString()}</span>
                                 </div>
                                 \`).join('')}
@@ -2596,7 +2594,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                             <div class="stats-container" style="margin-bottom: 15px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
                                 \${temporal.distribution.byDayOfWeek.map(item => \`
                                 <div class="stat-item">
-                                    <span class="stat-label">\${item.period}</span>
+                                    <span class="stat-label">\${escapeHtml(item.period)}</span>
                                     <span class="stat-value">\${item.count.toLocaleString()}</span>
                                 </div>
                                 \`).join('')}
@@ -2651,14 +2649,14 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                                         Trend Type
                                         \${createHelpIcon('temporalTrendType')}
                                     </span>
-                                    <span class="stat-value">\${temporal.trends.trendType.replace(/_/g, ' ')}</span>
+                                    <span class="stat-value">\${escapeHtml(temporal.trends.trendType.replace(/_/g, ' '))}</span>
                                 </div>
                                 <div class="stat-item" style="grid-column: span 2;">
                                     <span class="stat-label">
                                         Description
                                         \${createHelpIcon('temporalTrendDescription')}
                                     </span>
-                                    <span class="stat-value">\${temporal.trends.description}</span>
+                                    <span class="stat-value">\${escapeHtml(temporal.trends.description)}</span>
                                 </div>
                             </div>
                         </div>
@@ -2754,7 +2752,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                                 <div style="display: flex; flex-wrap: wrap; gap: 8px;">
                                     \${strAnalysis.patterns.prefixes.slice(0, 5).map(p => \`
                                         <span style="background-color: var(--vscode-badge-background); color: var(--vscode-badge-foreground); padding: 4px 8px; border-radius: 3px; font-size: 0.85em;">
-                                            "\${p.prefix}" (\${p.count}x, \${p.percentage}%)
+                                            "\${escapeHtml(p.prefix)}" (\${p.count}x, \${p.percentage}%)
                                         </span>
                                     \`).join('')}
                                 </div>
@@ -2769,7 +2767,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                                 <div style="display: flex; flex-wrap: wrap; gap: 8px;">
                                     \${strAnalysis.patterns.suffixes.slice(0, 5).map(s => \`
                                         <span style="background-color: var(--vscode-badge-background); color: var(--vscode-badge-foreground); padding: 4px 8px; border-radius: 3px; font-size: 0.85em;">
-                                            "\${s.suffix}" (\${s.count}x, \${s.percentage}%)
+                                            "\${escapeHtml(s.suffix)}" (\${s.count}x, \${s.percentage}%)
                                         </span>
                                     \`).join('')}
                                 </div>
@@ -2934,7 +2932,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                             <div style="margin-top: 10px;">
                                 <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px;">Sample Email Addresses:</div>
                                 <div style="font-family: var(--vscode-editor-font-family); font-size: 0.85em; color: var(--vscode-foreground);">
-                                    \${strAnalysis.formatDetection.email.samples.slice(0, 3).map(s => \`<div style="padding: 2px 0;">\${s}</div>\`).join('')}
+                                    \${strAnalysis.formatDetection.email.samples.slice(0, 3).map(s => \`<div style="padding: 2px 0;">\${escapeHtml(s)}</div>\`).join('')}
                                 </div>
                             </div>
                             \` : ''}
@@ -2942,7 +2940,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                             <div style="margin-top: 10px;">
                                 <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px;">Sample Phone Numbers:</div>
                                 <div style="font-family: var(--vscode-editor-font-family); font-size: 0.85em; color: var(--vscode-foreground);">
-                                    \${strAnalysis.formatDetection.phone.samples.slice(0, 3).map(s => \`<div style="padding: 2px 0;">\${s}</div>\`).join('')}
+                                    \${strAnalysis.formatDetection.phone.samples.slice(0, 3).map(s => \`<div style="padding: 2px 0;">\${escapeHtml(s)}</div>\`).join('')}
                                 </div>
                             </div>
                             \` : ''}
@@ -2950,7 +2948,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                             <div style="margin-top: 10px;">
                                 <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px;">Sample URLs:</div>
                                 <div style="font-family: var(--vscode-editor-font-family); font-size: 0.85em; color: var(--vscode-foreground);">
-                                    \${strAnalysis.formatDetection.url.samples.slice(0, 3).map(s => \`<div style="padding: 2px 0;">\${s}</div>\`).join('')}
+                                    \${strAnalysis.formatDetection.url.samples.slice(0, 3).map(s => \`<div style="padding: 2px 0;">\${escapeHtml(s)}</div>\`).join('')}
                                 </div>
                             </div>
                             \` : ''}
@@ -2976,7 +2974,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <div class="quality-score-container">
                                     <span class="quality-score \${assessment.color === 'green' ? 'good' : assessment.color === 'yellow' ? 'warning' : 'error'}">
-                                        \${assessment.qualityScore}/100 - \${assessment.qualityLevel}
+                                        \${assessment.qualityScore}/100 - \${escapeHtml(assessment.qualityLevel)}
                                     </span>
                                     <span class="beta-badge-profiling">Beta</span>
                                 </div>
@@ -2989,7 +2987,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                     if (assessment.issues.length > 0) {
                         qualityHtml += '<div class="quality-issues">';
                         assessment.issues.forEach(issue => {
-                            qualityHtml += \`<div class="quality-issue-item error">❌ \${issue}</div>\`;
+                            qualityHtml += \`<div class="quality-issue-item error">❌ \${escapeHtml(issue)}</div>\`;
                         });
                         qualityHtml += '</div>';
                     }
@@ -2998,7 +2996,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                     if (assessment.warnings.length > 0) {
                         qualityHtml += '<div class="quality-issues">';
                         assessment.warnings.forEach(warning => {
-                            qualityHtml += \`<div class="quality-issue-item warning">⚠️ \${warning}</div>\`;
+                            qualityHtml += \`<div class="quality-issue-item warning">⚠️ \${escapeHtml(warning)}</div>\`;
                         });
                         qualityHtml += '</div>';
                     }
@@ -3062,11 +3060,11 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                                         <span>Classification</span>
                                         \${createHelpIcon('classification')}
                                     </div>
-                                    <div class="quality-metric-value">\${quality.cardinality.level}</div>
+                                    <div class="quality-metric-value">\${escapeHtml(quality.cardinality.level)}</div>
                                 </div>
                             </div>
                             <div class="quality-recommendation">
-                                💡 <strong>Recommendation:</strong> \${quality.cardinality.recommendation}
+                                💡 <strong>Recommendation:</strong> \${escapeHtml(quality.cardinality.recommendation)}
                             </div>
                         </div>
                     \`;
@@ -3117,7 +3115,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         quality.uniqueness.topDuplicates.forEach(dup => {
                             qualityHtml += \`
                                 <div class="quality-duplicate-item">
-                                    <span>\${dup.value}</span>
+                                    <span>\${escapeHtml(dup.value)}</span>
                                     <span>\${dup.count.toLocaleString()} (\${dup.percentage}%)</span>
                                 </div>
                             \`;
@@ -3145,7 +3143,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                                         <span>Distribution Type</span>
                                         \${createHelpIcon('distributionType')}
                                     </div>
-                                    <div class="quality-metric-value">\${quality.distribution.skewness}</div>
+                                    <div class="quality-metric-value">\${escapeHtml(quality.distribution.skewness)}</div>
                                 </div>
                                 <div class="quality-metric-item">
                                     <div class="quality-metric-label">
