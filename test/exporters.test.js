@@ -122,23 +122,39 @@ const BLANK_ROWS_STORED = [
 /**
  * Decode an Avro object container file held in memory
  * @param {Buffer} bytes - File contents
- * @returns {Promise<{header: boolean, schema: Object, records: Array<Object>}>} Whether the file had a header, its schema, and its records
+ * @returns {Promise<{header: boolean, schema: Object, fileSchema: Object, records: Array<Object>}>}
+ *   Whether the file had a header, its schema as avsc reads it, its schema as the file
+ *   stores it, logical types included, and its records
  */
 function decodeAvro(bytes) {
   return new Promise((resolve, reject) => {
     let header = false;
     let schema;
+    let fileSchema;
     const records = [];
     const decoder = new avro.streams.BlockDecoder();
-    decoder.on("metadata", (type) => {
+    decoder.on("metadata", (type, codec, fileHeader) => {
       header = true;
       schema = type.schema();
+      fileSchema = JSON.parse(fileHeader.meta["avro.schema"].toString());
     });
     decoder.on("data", (record) => records.push(record));
     decoder.on("error", reject);
-    decoder.on("end", () => resolve({ header, schema, records }));
+    decoder.on("end", () => resolve({ header, schema, fileSchema, records }));
     decoder.end(bytes);
   });
+}
+
+/**
+ * Build rows with a column of dates without a time, from before 1900 on, and one of timestamps
+ * @returns {Array<Object>} Array of row objects
+ */
+function makeDateRows() {
+  return [
+    { day: new Date(Date.UTC(1756, 0, 1)), at: new Date(Date.UTC(2016, 0, 13, 6, 15)) },
+    // Midnight, in a column whose other values have a time
+    { day: new Date(Date.UTC(2016, 0, 14)), at: new Date(Date.UTC(2016, 0, 14)) },
+  ];
 }
 
 /**
@@ -712,8 +728,8 @@ suite("Exporter Test Suite", () => {
       )[0].values;
       assert.deepStrictEqual(
         row,
-        [3, 3.25, "Item 3", 0, null, rows[3].created.toISOString()],
-        "Row should round-trip, with booleans as 0/1 and dates as ISO strings"
+        [3, 3.25, "Item 3", 0, null, "2024-01-01 00:03:00"],
+        "Row should round-trip, with booleans as 0/1 and dates as ISO text with no time zone"
       );
     } finally {
       db.close();
@@ -845,10 +861,10 @@ suite("Exporter Test Suite", () => {
       [{ when: when.getTime() }, { when: null }, { when: null }]
     );
 
-    // Arrow and SQLite store a date as its ISO text
+    // Arrow reads a timestamp back as its milliseconds
     await arrowExporter.exportToArrow(rows, file("arrow"));
     assert.deepStrictEqual(readArrow(file("arrow")).rows, [
-      { when: when.toISOString() },
+      { when: when.getTime() },
       { when: null },
       { when: null },
     ]);
@@ -858,7 +874,7 @@ suite("Exporter Test Suite", () => {
     const db = new SQL.Database(fs.readFileSync(file("db")));
     try {
       assert.deepStrictEqual(db.exec('SELECT "when" FROM data')[0].values, [
-        [when.toISOString()],
+        ["2024-01-02 03:04:05"],
         [null],
         [null],
       ]);
@@ -871,7 +887,7 @@ suite("Exporter Test Suite", () => {
     assert.ok(lines.includes('  "when" TIMESTAMP'), "The column should be a nullable TIMESTAMP");
     const values = lines.indexOf("VALUES");
     assert.deepStrictEqual(lines.slice(values + 1, values + 4), [
-      `  ('${when.toISOString()}'),`,
+      "  ('2024-01-02 03:04:05'),",
       "  (NULL),",
       "  (NULL);",
     ]);
@@ -884,5 +900,102 @@ suite("Exporter Test Suite", () => {
       [2, 3, 4].map((row) => sheet.getRow(row).getCell(1).value),
       [when, null, null]
     );
+  });
+
+  test("Typed exports - a column of dates holds dates, and one of timestamps naive timestamps", async () => {
+    const rows = makeDateRows();
+    const file = (extension) => path.join(outputDir, `naive.${extension}`);
+
+    await parquetExporter.exportToParquet(rows, file("parquet"));
+    assert.deepStrictEqual(await readParquet(file("parquet")), {
+      schema: { day: "DATE", at: "TIMESTAMP_MILLIS" },
+      rows,
+    });
+
+    await avroExporter.exportToAvro(rows, file("avro"));
+    const { fileSchema, records } = await decodeAvro(fs.readFileSync(file("avro")));
+    assert.deepStrictEqual(fileSchema.fields, [
+      { name: "day", type: { type: "int", logicalType: "date" } },
+      { name: "at", type: { type: "long", logicalType: "local-timestamp-millis" } },
+    ]);
+    // Days since 1970, and milliseconds
+    assert.deepStrictEqual(
+      records.map((record) => ({ ...record })),
+      [
+        { day: -78162, at: rows[0].at.getTime() },
+        { day: 16814, at: rows[1].at.getTime() },
+      ]
+    );
+
+    await arrowExporter.exportToArrow(rows, file("arrow"));
+    const table = arrow.tableFromIPC(fs.readFileSync(file("arrow")));
+    assert.deepStrictEqual(
+      table.schema.fields.map((field) => [field.name, String(field.type), field.type.timezone ?? null]),
+      [
+        ["day", "Date32<DAY>", null],
+        ["at", "Timestamp<MILLISECOND>", null],
+      ],
+      "A timestamp should have no time zone"
+    );
+    assert.deepStrictEqual(
+      readArrow(file("arrow")).rows,
+      rows.map((row) => ({ day: row.day.getTime(), at: row.at.getTime() }))
+    );
+
+    await sqliteExporter.exportToSQLite(rows, file("db"));
+    const SQL = await initSqlJs();
+    const db = new SQL.Database(fs.readFileSync(file("db")));
+    try {
+      assert.deepStrictEqual(db.exec("SELECT day, at FROM data")[0].values, [
+        ["1756-01-01", "2016-01-13 06:15:00"],
+        ["2016-01-14", "2016-01-14 00:00:00"],
+      ]);
+    } finally {
+      db.close();
+    }
+
+    await postgresExporter.exportToPostgres(rows, file("sql"), 0, {});
+    const lines = fs.readFileSync(file("sql"), "utf8").split("\n");
+    const create = lines.indexOf('CREATE TABLE "qvd_data" (');
+    assert.deepStrictEqual(lines.slice(create + 1, create + 3), [
+      '  "day" DATE NOT NULL,',
+      '  "at" TIMESTAMP NOT NULL',
+    ]);
+    const values = lines.indexOf("VALUES");
+    assert.deepStrictEqual(lines.slice(values + 1, values + 3), [
+      "  ('1756-01-01', '2016-01-13 06:15:00'),",
+      "  ('2016-01-14', '2016-01-14 00:00:00');",
+    ]);
+  });
+
+  test("Excel export - dates are formatted date cells, and a column with one before 1900-03-01 is ISO text", async () => {
+    const since = [new Date(Date.UTC(1900, 2, 1)), new Date(Date.UTC(2016, 0, 14))];
+    const rows = makeDateRows().map((row, index) => ({ ...row, since: since[index] }));
+    const filePath = path.join(outputDir, "dates.xlsx");
+
+    await excelExporter.exportToExcel(rows, filePath);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+    const sheet = workbook.getWorksheet("Data");
+    const cells = (column) =>
+      [2, 3].map((row) => {
+        const cell = sheet.getRow(row).getCell(column);
+        return [cell.value, cell.numFmt ?? null];
+      });
+
+    // Excel can't show 1756-01-01, so the whole column is text
+    assert.deepStrictEqual(cells(1), [
+      ["1756-01-01", null],
+      ["2016-01-14", null],
+    ]);
+    assert.deepStrictEqual(cells(2), [
+      [rows[0].at, "yyyy-mm-dd hh:mm:ss"],
+      [rows[1].at, "yyyy-mm-dd hh:mm:ss"],
+    ]);
+    assert.deepStrictEqual(cells(3), [
+      [since[0], "yyyy-mm-dd"],
+      [since[1], "yyyy-mm-dd"],
+    ]);
+    assert.deepStrictEqual(rows[0].day, makeDateRows()[0].day, "The rows should stay as they were");
   });
 });

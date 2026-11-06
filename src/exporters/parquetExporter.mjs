@@ -50,7 +50,10 @@ export async function exportToParquet(data, filePath) {
       if (typeInfo.hasString || (typeInfo.hasNumber && typeInfo.hasBoolean)) {
         type = "UTF8";
       } else if (typeInfo.hasDate) {
-        type = "TIMESTAMP_MILLIS";
+        // parquetjs can't mark a timestamp as naive, with isAdjustedToUTC=false. Readers
+        // built on Arrow read this older annotation as naive, and the value is Qlik's
+        // wall clock either way
+        type = typeInfo.allMidnight ? "DATE" : "TIMESTAMP_MILLIS";
       } else if (typeInfo.hasNumber) {
         type = typeInfo.allIntegers ? "INT64" : "DOUBLE";
       } else if (typeInfo.hasBoolean) {

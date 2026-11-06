@@ -1,5 +1,6 @@
 import { existsSync, unlinkSync, writeFileSync } from "fs";
 import { isMissing, scanColumnTypes } from "./columnTypes.mjs";
+import { naiveDateText } from "./naiveDates.mjs";
 
 /**
  * Heap a PostgreSQL export builds from the rows, for the memory guard. It
@@ -91,7 +92,8 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
           // Mixed types or strings - use TEXT
           pgType = "TEXT";
         } else if (typeInfo.hasDate) {
-          pgType = "TIMESTAMP";
+          // TIMESTAMP is without a time zone, as a QVD's timestamps are
+          pgType = typeInfo.allMidnight ? "DATE" : "TIMESTAMP";
         } else if (typeInfo.hasNumber) {
           if (typeInfo.allIntegers) {
             pgType = "BIGINT";
@@ -139,13 +141,13 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
             // Format value based on type
             if (isMissing(value, typeInfo)) {
               return "NULL";
+            } else if (value instanceof Date) {
+              return `'${naiveDateText(value, typeInfo.allMidnight)}'`;
             } else if (typeInfo.hasString) {
               // Escape single quotes for SQL
               return `'${String(value).replace(/'/g, "''")}'`;
             } else if (typeof value === "boolean") {
               return value ? "TRUE" : "FALSE";
-            } else if (value instanceof Date) {
-              return `'${value.toISOString()}'`;
             } else if (typeof value === "string") {
               // String value - escape quotes
               return `'${value.replace(/'/g, "''")}'`;

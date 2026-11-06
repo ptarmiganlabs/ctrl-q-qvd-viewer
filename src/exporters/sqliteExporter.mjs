@@ -4,6 +4,7 @@ import { createRequire } from 'module';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { isMissing, scanColumnTypes } from './columnTypes.mjs';
+import { naiveDateText } from './naiveDates.mjs';
 
 // sql.js, once it has started
 let sqlJs = null;
@@ -81,7 +82,8 @@ export async function exportToSQLite(data, filePath) {
         if (typeInfo.hasString || (typeInfo.hasNumber && typeInfo.hasBoolean)) {
           sqlType = "TEXT";
         } else if (typeInfo.hasDate) {
-          sqlType = "TEXT"; // Store dates as ISO strings
+          // Dates as ISO text with no time zone, which SQLite's date functions read
+          sqlType = "TEXT";
         } else if (typeInfo.hasNumber) {
           sqlType = typeInfo.allIntegers ? "INTEGER" : "REAL";
         } else if (typeInfo.hasBoolean) {
@@ -110,13 +112,13 @@ export async function exportToSQLite(data, filePath) {
         // Convert values based on schema expectations
         if (isMissing(value, typeInfo)) {
           return null;
+        } else if (value instanceof Date) {
+          return naiveDateText(value, typeInfo.allMidnight);
         } else if (typeInfo.hasString) {
           // If schema expects TEXT, convert everything to string
           return String(value);
         } else if (typeof value === "boolean") {
           return value ? 1 : 0;
-        } else if (value instanceof Date) {
-          return value.toISOString();
         }
         return value;
       });

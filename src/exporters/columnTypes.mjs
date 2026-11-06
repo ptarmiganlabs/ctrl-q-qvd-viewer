@@ -1,4 +1,5 @@
 import { isBlank } from "../cellValue.mjs";
+import { DAY_MS } from "./naiveDates.mjs";
 
 /**
  * What a column holds, from which a typed exporter picks the column's type
@@ -10,6 +11,7 @@ import { isBlank } from "../cellValue.mjs";
  * @property {boolean} hasString - Some value is text, counting blank text unless it is null
  * @property {boolean} hasBoolean - Some value is a boolean
  * @property {boolean} hasDate - Some value is a Date
+ * @property {boolean} allMidnight - Every Date is at midnight UTC: a date without a time
  * @property {boolean} hasObject - Some value is an object other than a Date
  * @property {boolean} blanksAreNull - The column's blank text is a missing value
  */
@@ -35,6 +37,7 @@ export function scanColumnTypes(rows, columnNames) {
       hasString: false,
       hasBoolean: false,
       hasDate: false,
+      allMidnight: true,
       hasObject: false,
       blanksAreNull: false,
     };
@@ -61,6 +64,9 @@ export function scanColumnTypes(rows, columnNames) {
         typeInfo.hasBoolean = true;
       } else if (value instanceof Date) {
         typeInfo.hasDate = true;
+        if (value.getTime() % DAY_MS !== 0) {
+          typeInfo.allMidnight = false;
+        }
       } else if (typeof value === "object") {
         typeInfo.hasObject = true;
       }
