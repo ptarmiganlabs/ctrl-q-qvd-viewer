@@ -8,6 +8,7 @@ const ExcelJS = require("exceljs");
 const Papa = require("papaparse");
 const parquet = require("parquetjs");
 const initSqlJs = require("sql.js");
+const yaml = require("js-yaml");
 const { buildOptions } = require("../esbuild.js");
 
 // Import exporter modules
@@ -19,6 +20,7 @@ let excelExporter;
 let parquetExporter;
 let postgresExporter;
 let sqliteExporter;
+let yamlExporter;
 let DataExporter;
 let QvdDataFrame;
 // QvdReader is async because it's a CJS wrapper around ESM
@@ -241,6 +243,7 @@ suite("Exporter Test Suite", () => {
     parquetExporter = await import("../src/exporters/parquetExporter.mjs");
     postgresExporter = await import("../src/exporters/postgresExporter.mjs");
     sqliteExporter = await import("../src/exporters/sqliteExporter.mjs");
+    yamlExporter = await import("../src/exporters/yamlExporter.mjs");
     ({ default: DataExporter } = await import("../src/exporters/index.mjs"));
     ({ QvdDataFrame } = await import("qvdjs"));
     QvdReader = await require("../src/qvdReader.cjs");
@@ -790,6 +793,37 @@ suite("Exporter Test Suite", () => {
     fs.writeFileSync(wasmPath, wasm);
     await exportToSQLite(rows, filePath);
     assert.strictEqual(await countSqliteRows(filePath), rows.length);
+  });
+
+  test("YAML export - text that YAML 1.2 reads as a number is quoted", async () => {
+    const filePath = path.join(outputDir, "numeric-text.yaml");
+    // Floats too large for a double, as keys too, next to text and numbers
+    const row = {
+      rgb: "8E5597",
+      negative: "-8.0E5597",
+      huge: "1E400",
+      "1E400": "key",
+      code: "845E84",
+      text: "8E5597x",
+      number: 8.45e86,
+    };
+
+    await yamlExporter.exportToYAML([row], filePath);
+    const text = fs.readFileSync(filePath, "utf8");
+
+    assert.deepStrictEqual(
+      text.split("\n").filter((line) => line && !line.startsWith("#")),
+      [
+        "- rgb: '8E5597'",
+        "  negative: '-8.0E5597'",
+        "  huge: '1E400'",
+        "  '1E400': key",
+        "  code: '845E84'",
+        "  text: 8E5597x",
+        "  number: 8.45e+86",
+      ]
+    );
+    assert.deepStrictEqual(yaml.load(text), [row]);
   });
 
   test("Typed exports - blank text next to dates is null, and an empty cell in Excel", async () => {
