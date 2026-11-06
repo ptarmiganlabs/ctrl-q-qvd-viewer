@@ -3,23 +3,15 @@ import Papa from "papaparse";
 
 /**
  * Export data to CSV format
+ *
+ * The file starts with the header row, as readers that take column names from the
+ * first line expect. CSV has no comment syntax, so nothing is written before it.
  * @param {Array<Object>} data - Array of row objects
  * @param {string} filePath - Destination file path
  * @returns {Promise<void>}
  */
 export async function exportToCSV(data, filePath) {
   try {
-    // Add header comment (with # prefix, commonly recognized in CSV parsers)
-    const header = [
-      "# CSV Data Export",
-      "# Created by: Ctrl-Q QVD Viewer for VS Code",
-      "# VS Code Extension: https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer",
-      "# GitHub: https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer",
-      `# Generated: ${new Date().toISOString()}`,
-      `# Rows: ${data.length}`,
-      "",
-    ].join("\n");
-
     const csv = Papa.unparse(data, {
       quotes: true,
       quoteChar: '"',
@@ -29,7 +21,7 @@ export async function exportToCSV(data, filePath) {
       newline: "\n",
     });
 
-    await fs.writeFile(filePath, header + csv, "utf8");
+    await fs.writeFile(filePath, csv, "utf8");
   } catch (error) {
     throw new Error(`CSV export failed: ${error.message}`);
   }

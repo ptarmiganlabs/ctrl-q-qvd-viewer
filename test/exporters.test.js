@@ -4,12 +4,16 @@ const os = require("os");
 const path = require("path");
 const avro = require("avsc");
 const esbuild = require("esbuild");
+const Papa = require("papaparse");
 const initSqlJs = require("sql.js");
 const { buildOptions } = require("../esbuild.js");
 
 // Import exporter modules
 let avroExporter;
+let csvExporter;
 let sqliteExporter;
+// QvdReader is async because it's a CJS wrapper around ESM
+let QvdReader;
 let outputDir;
 
 /**
@@ -30,6 +34,31 @@ function makeRows(count) {
     });
   }
   return rows;
+}
+
+/**
+ * Build two rows with the field names and values that CSV has to quote or escape:
+ * spaces and % in names, a comma, quotes, a line break and non-ASCII text in a value,
+ * and a number, a boolean, a null and a date
+ * @returns {Array<Object>} Array of row objects
+ */
+function makeAwkwardRows() {
+  return [
+    {
+      "Order Date": new Date(Date.UTC(2024, 0, 2)),
+      "%CustomerKey": 'Å, "quoted"\nvalue',
+      Amount: 12.5,
+      Active: true,
+      Note: null,
+    },
+    {
+      "Order Date": new Date(Date.UTC(2024, 0, 3)),
+      "%CustomerKey": "Ölstuga",
+      Amount: -3,
+      Active: false,
+      Note: "x",
+    },
+  ];
 }
 
 /**
@@ -95,7 +124,9 @@ suite("Exporter Test Suite", () => {
   suiteSetup(async () => {
     // Import the ESM modules
     avroExporter = await import("../src/exporters/avroExporter.mjs");
+    csvExporter = await import("../src/exporters/csvExporter.mjs");
     sqliteExporter = await import("../src/exporters/sqliteExporter.mjs");
+    QvdReader = await require("../src/qvdReader.cjs");
     outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-viewer-export-"));
   });
 
@@ -150,6 +181,84 @@ suite("Exporter Test Suite", () => {
       ],
       "Missing values should be null, and extra columns left out"
     );
+  });
+
+  test("CSV export - the file starts with the header row", async () => {
+    const filePath = path.join(outputDir, "awkward.csv");
+
+    await csvExporter.exportToCSV(makeAwkwardRows(), filePath);
+
+    // Written out by hand rather than by a CSV library, so a quoting mistake shared by
+    // the writer and a reader can't hide. Dates are ISO strings without quotes, nulls
+    // are empty, and quotes inside a value are doubled. No BOM, no trailing newline.
+    assert.strictEqual(
+      fs.readFileSync(filePath, "utf8"),
+      [
+        '"Order Date","%CustomerKey","Amount","Active","Note"',
+        '2024-01-02T00:00:00.000Z,"Å, ""quoted""\nvalue","12.5","true",',
+        '2024-01-03T00:00:00.000Z,"Ölstuga","-3","false","x"',
+      ].join("\n")
+    );
+  });
+
+  test("CSV export - a reader takes the column names from the first line", async () => {
+    const rows = makeAwkwardRows();
+    const filePath = path.join(outputDir, "header.csv");
+
+    await csvExporter.exportToCSV(rows, filePath);
+    const parsed = Papa.parse(fs.readFileSync(filePath, "utf8"), { header: true });
+
+    assert.deepStrictEqual(parsed.errors, []);
+    assert.deepStrictEqual(parsed.meta.fields, Object.keys(rows[0]));
+    assert.deepStrictEqual(
+      parsed.data.map((row) => row["%CustomerKey"]),
+      rows.map((row) => row["%CustomerKey"]),
+      "Values with a comma, quotes and a line break should come back unchanged"
+    );
+  });
+
+  test("CSV export - exporting the same rows twice gives the same file", async () => {
+    const first = path.join(outputDir, "first.csv");
+    const second = path.join(outputDir, "second.csv");
+
+    await csvExporter.exportToCSV(makeAwkwardRows(), first);
+    // Let the clock move on, so a timestamp in the file would differ
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await csvExporter.exportToCSV(makeAwkwardRows(), second);
+
+    assert.ok(
+      fs.readFileSync(first).equals(fs.readFileSync(second)),
+      "Nothing that changes between runs, such as a timestamp, should be in the file"
+    );
+  });
+
+  test("CSV export - a QVD comes out with the columns of the CSV it was made from", async () => {
+    const legoDir = path.join(__dirname, "..", "test-data", "lego");
+    const result = await new QvdReader().read(path.join(legoDir, "colors.qvd"), 0);
+    const filePath = path.join(outputDir, "colors.csv");
+
+    await csvExporter.exportToCSV(result.data, filePath);
+    const exported = Papa.parse(fs.readFileSync(filePath, "utf8"), { header: true });
+    const source = Papa.parse(
+      fs.readFileSync(path.join(legoDir, "colors.csv"), "utf8").trimEnd(),
+      { header: true }
+    );
+
+    assert.deepStrictEqual(exported.errors, []);
+    assert.deepStrictEqual(exported.meta.fields, source.meta.fields);
+    assert.strictEqual(exported.data.length, result.metadata.noOfRecords);
+    // rgb is left out: colour codes such as 000000 are read as numbers (#154)
+    const pick = ({ id, name, is_trans }) => ({ id, name, is_trans });
+    assert.deepStrictEqual(exported.data.map(pick), source.data.map(pick));
+  });
+
+  test("CSV export - no rows gives an empty file", async () => {
+    const filePath = path.join(outputDir, "empty.csv");
+
+    await csvExporter.exportToCSV([], filePath);
+
+    // The exporter only gets rows, so with none there are no column names to write (#161)
+    assert.strictEqual(fs.readFileSync(filePath, "utf8"), "");
   });
 
   test("SQLite export - rows can be read back", async () => {
