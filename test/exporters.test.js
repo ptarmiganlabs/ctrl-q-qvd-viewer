@@ -25,6 +25,7 @@ let sqliteExporter;
 let yamlExporter;
 let DataExporter;
 let QvdDataFrame;
+let QvdDual;
 let CalendarDate;
 // QvdReader is async because it's a CJS wrapper around ESM
 let QvdReader;
@@ -343,7 +344,7 @@ suite("Exporter Test Suite", () => {
     sqliteExporter = await import("../src/exporters/sqliteExporter.mjs");
     yamlExporter = await import("../src/exporters/yamlExporter.mjs");
     ({ default: DataExporter } = await import("../src/exporters/index.mjs"));
-    ({ QvdDataFrame } = await import("qvdjs"));
+    ({ QvdDataFrame, QvdDual } = await import("qvdjs"));
     ({ CalendarDate } = await import("../src/cellValue.mjs"));
     QvdReader = await require("../src/qvdReader.cjs");
     outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-viewer-export-"));
@@ -1147,5 +1148,33 @@ suite("Exporter Test Suite", () => {
         .filter((name) => DataExporter.writesDates(name)),
       ["arrow", "avro", "excel", "parquet", "postgres", "sqlite"]
     );
+  });
+
+  test("Typed exports - a field Qlik shows as days keeps the time of day its serials hold", async () => {
+    const qvdPath = path.join(outputDir, "shown-as-days.qvd");
+    const rows = [
+      [new QvdDual(42382.75, "2016-1-13"), new QvdDual(42382, "2016-1-13")],
+      [new QvdDual(42383.25, "2016-1-14"), new QvdDual(42383, "2016-1-14")],
+    ];
+    await new QvdDataFrame(rows, ["shownAsDays", "days"]).toQvd(qvdPath, {
+      allowedDir: outputDir,
+    });
+    const result = await new QvdReader().read(qvdPath, 0, { dates: true });
+    assert.strictEqual(result.error, null);
+
+    const parquetPath = path.join(outputDir, "shown-as-days.parquet");
+    await parquetExporter.exportToParquet(result.data, parquetPath);
+
+    assert.deepStrictEqual(parquetLogicalTypes(parquetPath), {
+      shownAsDays: "TIMESTAMP(isAdjustedToUTC=false, MILLIS)",
+    });
+    // parquetjs reads a timestamp back as its milliseconds, and a date as a plain Date
+    assert.deepStrictEqual(await readParquet(parquetPath), {
+      schema: { shownAsDays: "INT64", days: "DATE" },
+      rows: [
+        { shownAsDays: Date.UTC(2016, 0, 13, 18), days: new Date(Date.UTC(2016, 0, 13)) },
+        { shownAsDays: Date.UTC(2016, 0, 14, 6), days: new Date(Date.UTC(2016, 0, 14)) },
+      ],
+    });
   });
 });

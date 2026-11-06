@@ -324,7 +324,7 @@ suite("QVD Reader Test Suite", () => {
     ]);
   });
 
-  test("Reader - a field's tag or text, not its values, says whether it holds dates or timestamps", async () => {
+  test("Reader - a field holds timestamps if tagged so, or if its text or a value has a time of day", async () => {
     const filePath = path.join(outputDir, "date-kinds.qvd");
     const columns = ["shownAsDates", "midnights", "twelveHour"];
     const rows = [
@@ -346,19 +346,58 @@ suite("QVD Reader Test Suite", () => {
     assert.strictEqual(result.error, null);
     assert.deepStrictEqual(result.data, [
       {
-        // Timestamps Qlik shows as dates are dates, as shown
-        shownAsDates: new CalendarDate(Date.UTC(2016, 0, 13)),
+        // Timestamps Qlik shows as days keep their time
+        shownAsDates: new Date(Date.UTC(2016, 0, 13, 18)),
         // Text with a time makes timestamps, even at midnight
         midnights: new Date(Date.UTC(2016, 0, 13)),
         twelveHour: new Date(Date.UTC(2016, 0, 13, 18)),
       },
       {
-        shownAsDates: new CalendarDate(Date.UTC(2016, 0, 14)),
+        shownAsDates: new Date(Date.UTC(2016, 0, 14, 6)),
         midnights: new Date(Date.UTC(2016, 0, 14)),
         twelveHour: new Date(Date.UTC(2016, 0, 14, 6)),
       },
     ]);
     assert.ok(!(result.data[0].midnights instanceof CalendarDate), "A timestamp isn't a date");
+  });
+
+  test("Reader - a time of day counts to the millisecond an export writes, whatever the field's tag", async () => {
+    const { findDateColumns } = await import("../src/qvdDates.mjs");
+    const rows = [
+      [
+        // Float noise far below a millisecond, either side of midnight
+        new QvdDual(42383 - 1e-11, "2016-1-14"),
+        // A millisecond past midnight
+        new QvdDual(42383 + 1 / 86400000, "2016-1-14"),
+        new QvdDual(42382.75, "2016-1-13"),
+        new QvdDual(42382, "2016-1-13 00:00:00"),
+        new QvdDual(42382, "Wed"),
+      ],
+      [
+        new QvdDual(42384 + 1e-11, "2016-1-15"),
+        new QvdDual(42384, "2016-1-15"),
+        // A serial without text
+        42383,
+        new QvdDual(42383, "2016-1-14 00:00:00"),
+        new QvdDual(42383, "Thu"),
+      ],
+    ];
+    const tags = [[], [], ["$date"], ["$date"], ["$date"]];
+
+    const columns = await findDateColumns(rows, tags);
+
+    assert.deepStrictEqual(
+      columns.map((dates) => [...dates.values()]),
+      [
+        [new CalendarDate(Date.UTC(2016, 0, 14)), new CalendarDate(Date.UTC(2016, 0, 15))],
+        [new Date(Date.UTC(2016, 0, 14, 0, 0, 0, 1)), new Date(Date.UTC(2016, 0, 15))],
+        // A $date tag doesn't make dates of values with a time, or of text that shows one
+        [new Date(Date.UTC(2016, 0, 13, 18)), new Date(Date.UTC(2016, 0, 14))],
+        [new Date(Date.UTC(2016, 0, 13)), new Date(Date.UTC(2016, 0, 14))],
+        // Text that doesn't show the date doesn't stop a tagged field holding dates
+        [new CalendarDate(Date.UTC(2016, 0, 13)), new CalendarDate(Date.UTC(2016, 0, 14))],
+      ]
+    );
   });
 
   test("Reader - finding a read's dates is given up between chunks", async () => {
