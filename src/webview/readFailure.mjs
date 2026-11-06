@@ -1,16 +1,13 @@
 import { basename } from "path";
+import { PREVIEW_ROWS_SETTING } from "./loadMore.mjs";
 
 /**
  * Says why a QVD couldn't be read, in terms a VS Code user can act on: one kind
  * of failure for each cause, with its own title and advice. Only damage is
  * called corruption: a missing file, a folder, a permission problem, a lock, a
- * memory refusal, a refused path and a bad option each say what they are.
+ * memory refusal, a refused path and a bad option each say what they are, and
+ * so does a failure of the viewer's own.
  */
-
-/**
- * The setting that says how many rows a file opens with
- */
-export const PREVIEW_ROWS_SETTING = "ctrl-q-qvd-viewer.maxPreviewRows";
 
 // Where a failure that is the viewer's own fault is reported
 const ISSUES_URL = "https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues";
@@ -36,7 +33,7 @@ const PREVIEW_ROWS_SETTINGS = {
  * Why a read failed, as the page says it. Plain text: the page escapes it.
  * @typedef {object} ReadFailure
  * @property {string} kind - missing, directory, permission, locked, memory, path,
- *   option, damaged or unknown
+ *   option, damaged or unknown for a read; viewer for the viewer's own failure
  * @property {string} title - What happened, as a heading
  * @property {string} summary - What happened, in a sentence or two
  * @property {Array<string>} advice - What to do about it, in order
@@ -51,11 +48,16 @@ const PREVIEW_ROWS_SETTINGS = {
  * Say why a read failed
  * @param {object} result - The failed read, as QvdReader.read() gives it: error,
  *   errorName, errorReason, errorCode, errorOption and refusal
- * @param {{filePath?: string, platform?: string}} [options] - filePath: the file read;
- *   platform: as process.platform gives it, which decides what an EPERM means
+ * @param {{filePath?: string, platform?: string, headerRead?: boolean}} [options] -
+ *   filePath: the file read; platform: as process.platform gives it, which decides
+ *   what an EPERM means; headerRead: the file's header has been read since, so it is
+ *   a QVD, whatever is wrong with its rows
  * @returns {ReadFailure} Why
  */
-export function describeReadFailure(result, { filePath = "", platform = process.platform } = {}) {
+export function describeReadFailure(
+  result,
+  { filePath = "", platform = process.platform, headerRead = false } = {}
+) {
   const name = filePath ? basename(filePath) : "the file";
   const detail = result.error ? String(result.error) : null;
   const code = result.errorCode ?? null;
@@ -71,7 +73,7 @@ export function describeReadFailure(result, { filePath = "", platform = process.
     return pathFailure(result.errorReason, detail);
   }
   if (result.errorName === "QvdCorruptedError" || result.errorName === "QvdParseError") {
-    return damagedFailure(name, detail);
+    return damagedFailure(name, detail, headerRead);
   }
 
   switch (code) {
@@ -117,6 +119,25 @@ export function describeReadFailure(result, { filePath = "", platform = process.
       `If it fails again, Show Logs, and report it at ${ISSUES_URL}.`,
     ],
     detail,
+  });
+}
+
+/**
+ * Say why the viewer couldn't show a file: its own failure, such as a page it
+ * couldn't build, not the file's. Reads never throw, so whatever is thrown while
+ * a file is shown is the viewer's, and its system code, if it has one, is about
+ * the viewer's own files, not the QVD.
+ * @param {Error} error - What was thrown
+ * @param {{filePath?: string}} [options] - filePath: the file being shown
+ * @returns {ReadFailure} Why
+ */
+export function describeViewerFailure(error, { filePath = "" } = {}) {
+  const name = filePath ? basename(filePath) : "the file";
+  return failure("viewer", {
+    title: "The viewer couldn't show this file",
+    summary: `The viewer failed while showing ${name}. The file itself may well be fine.`,
+    advice: ["Retry.", `If it fails again, Show Logs, and report it at ${ISSUES_URL}.`],
+    detail: error?.message ?? String(error),
   });
 }
 
@@ -188,6 +209,7 @@ function optionFailure(option, detail) {
       actions: [RETRY, PREVIEW_ROWS_SETTINGS, SHOW_LOGS],
     });
   }
+  // No setting gives these, so a retry would fail the same way
   return failure("option", {
     title: "A setting or option isn't valid",
     summary: option
@@ -195,6 +217,7 @@ function optionFailure(option, detail) {
       : "The QVD reader can't use an option the viewer gave it.",
     advice: [`This is a bug in the viewer. ${report}`],
     detail,
+    actions: [SHOW_LOGS],
   });
 }
 
@@ -230,16 +253,23 @@ function pathFailure(reason, detail) {
  * A file the reader found damaged, or that isn't a QVD: the one kind that is corruption
  * @param {string} name - The file's name
  * @param {string|null} detail - The reader's message
+ * @param {boolean} headerRead - Whether its header has been read since: then it is a
+ *   QVD, and only its rows are damaged
  * @returns {ReadFailure} The failure
  */
-function damagedFailure(name, detail) {
+function damagedFailure(name, detail, headerRead) {
+  const causes =
+    "That happens when a reload stopped before it had stored the file, when another program " +
+    "changed it, or when a copy or download of it was cut short";
   return failure("damaged", {
     title: "This QVD file appears to be corrupted or damaged",
-    summary: `The QVD reader found ${name} damaged, or not a QVD at all.`,
+    summary: headerRead
+      ? `The QVD reader could read the header of ${name}, but its data is damaged.`
+      : `The QVD reader found ${name} damaged, or not a QVD at all.`,
     advice: [
-      "That happens when a reload stopped before it had stored the file, when another program " +
-        "changed it, when a copy or download of it was cut short, or when it isn't a QVD: a CSV " +
-        "or Parquet file renamed .qvd, say.",
+      headerRead
+        ? `${causes}.`
+        : `${causes}, or when it isn't a QVD: a CSV or Parquet file renamed .qvd, say.`,
       "If it is being copied or stored right now, wait until that is done, then Retry.",
       "Otherwise, store it again from Qlik Sense or QlikView, or copy it again from where it came from.",
     ],
@@ -262,8 +292,17 @@ function lockedFailure(name, code, detail) {
     "Wait until that is done, then Retry.",
   ];
   if (code === "EPERM") {
-    // Windows says EPERM for a file it won't let this account read, too
+    // Windows says EPERM for a file it won't let this account read, too, so the
+    // page says both
     advice.push("If it stays this way after that, check that your Windows account may read the file.");
+    return failure("locked", {
+      title: "Windows won't let VS Code read this file",
+      summary:
+        `Windows refused to let VS Code read ${name} (${code}). Most often another program ` +
+        "holds it. It can also mean that your account may not read it.",
+      advice,
+      detail,
+    });
   }
   return failure("locked", {
     title: "The file is in use by another program",

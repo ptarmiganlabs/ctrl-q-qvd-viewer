@@ -106,9 +106,10 @@ export async function toRowObjects(rows, columns, signal, dates = null) {
 
 /**
  * A file's header, as far as pricing a read needs it
- * @typedef {{key: string|null, rowCount: number, columnCount: number, fields: Array<{name: string, symbols: number, bytes: number, tags: Array<string>}>}} Header
+ * @typedef {{key: string|null, rowCount: number, columnCount: number, fields: Array<{name: string, symbols: number, bytes: number, tags: Array<string>}>, view: {metadata: object, columns: Array<string>}}} Header
  *   key: which version of the file it is, or null when the file can't be looked at;
- *   fields: each field's name, symbol count, symbol area's size in bytes, and tags
+ *   fields: each field's name, symbol count, symbol area's size in bytes, and tags;
+ *   view: the header as the viewer shows it, for a file whose rows then fail to read
  */
 
 /**
@@ -160,6 +161,10 @@ async function headerOf(filePath, realFilePath, allowedDir, signal) {
       bytes: Number(field.length) || 0,
       tags: tagsOf(field),
     })),
+    view: {
+      metadata: viewerMetadata(metadata.fileMetadata || {}, metadata.fields),
+      columns: metadata.columns,
+    },
   };
   if (key) {
     headers.delete(realFilePath);
@@ -484,7 +489,8 @@ class QvdReader {
    * A QVD's header as the viewer shows it, without its rows
    * The header of a file whose rows can't be read, because they are damaged or
    * too many for the memory left, usually still reads: in milliseconds, whatever
-   * the file's size. It isn't queued, as reads are.
+   * the file's size, and not at all when a read has just read it and the file
+   * hasn't changed since. It isn't queued, as reads are.
    * @param {string} filePath - Path to the QVD file
    * @param {{signal?: AbortSignal}} [options] - signal: gives it up
    * @returns {Promise<{metadata: object, columns: Array<string>, totalRows: number}>} As read() gives them
@@ -492,12 +498,11 @@ class QvdReader {
    */
   async readHeader(filePath, { signal } = {}) {
     const realFilePath = await realpath(filePath).catch(() => filePath);
-    const header = await QvdDataFrame.readMetadata(filePath, {
-      allowedDir: dirname(realFilePath),
-      signal,
-    });
-    const metadata = viewerMetadata(header.fileMetadata || {}, header.fields);
-    return { metadata, columns: header.columns, totalRows: metadata.noOfRecords };
+    // A read that failed has just read it, and kept it unless the file has changed since
+    const header = await headerOf(filePath, realFilePath, dirname(realFilePath), signal);
+    // A copy, so that a caller can't change the one kept
+    const { metadata, columns } = structuredClone(header.view);
+    return { metadata, columns, totalRows: metadata.noOfRecords };
   }
 
   /**

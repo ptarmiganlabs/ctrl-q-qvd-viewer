@@ -5,7 +5,7 @@ import DataExporter from "../exporters/index.mjs";
 import { describeTimeShifts } from "../exporters/zonedTimestamps.mjs";
 import { PROFILE_BYTES_PER_VALUE, profileFields, generateQvsScript } from "../qvdProfiler.mjs";
 import { getVisualAnalysisHtml } from "./templates/visualAnalysisTemplate.mjs";
-import { getLoadMoreRowCount, LOAD_MORE_MAX_ROWS, previewRowsFromSetting } from "./loadMore.mjs";
+import { getLoadMoreRowCount, LOAD_MORE_MAX_ROWS, previewRows } from "./loadMore.mjs";
 import {
   describeExportRefusal,
   describeProfileRefusal,
@@ -114,11 +114,7 @@ export function setupMessageHandler(
         // now, so that a setting put right takes effect, or the rows the page offered.
         // A retry that fails too replaces the page with why.
         const offered = Number.isInteger(message.rows) && message.rows > 0;
-        const rows = offered
-          ? Math.min(message.rows, LOAD_MORE_MAX_ROWS)
-          : previewRowsFromSetting(
-              vscode.workspace.getConfiguration("ctrl-q-qvd-viewer").get("maxPreviewRows")
-            );
+        const rows = offered ? Math.min(message.rows, LOAD_MORE_MAX_ROWS) : previewRows(vscode);
         await updateWebviewFn(filePath, webviewPanel.webview, rows, { signal });
         break;
       }

@@ -1,6 +1,7 @@
 const assert = require("assert");
 const path = require("path");
 const vscode = require("vscode");
+const { recordingWebview } = require("./fakes");
 
 // Import the editor provider
 let QvdEditorProvider;
@@ -8,33 +9,18 @@ let QvdEditorProvider;
 const root = path.join(__dirname, "..");
 
 /**
- * A webview that records what is posted to it
- * @param {Array<object>} messages - Where to record
- * @returns {object} The webview
- */
-function recordingWebview(messages) {
-  return {
-    html: "",
-    cspSource: "",
-    asWebviewUri: (uri) => uri,
-    postMessage: async (message) => {
-      messages.push(message);
-      return true;
-    },
-  };
-}
-
-/**
- * An editor provider whose reader fails every read
+ * An editor provider whose reader fails every read, and whose files' headers
+ * don't read either
  * @param {string} error - The failure's message
  * @param {string} [errorReason] - Its reason, a memory refusal unless given
- * @returns {object} The provider
+ * @returns {object} The provider, with headersAsked: how often a header was asked for
  */
 function refusingProvider(error, errorReason = "memory") {
   const provider = new QvdEditorProvider({
     extensionPath: root,
     extensionUri: vscode.Uri.file(root),
   });
+  provider.headersAsked = 0;
   provider.qvdReader = {
     read: async () => ({
       metadata: null,
@@ -46,6 +32,12 @@ function refusingProvider(error, errorReason = "memory") {
       errorReason,
       release: () => {},
     }),
+    readHeader: async () => {
+      provider.headersAsked++;
+      throw Object.assign(new Error("The XML header contains no usable QvdTableHeader element"), {
+        name: "QvdCorruptedError",
+      });
+    },
   };
   return provider;
 }
@@ -105,7 +97,7 @@ suite("Load Refused Test Suite", () => {
     ]);
   });
 
-  test("Opening a file refused for memory shows the error page", async () => {
+  test("Opening a file refused for memory, whose header doesn't read either, shows the error page", async () => {
     const provider = refusingProvider(
       "Reading 5,000 of this QVD's 30,000,000 rows needs more memory than VS Code gives its extensions."
     );
@@ -114,7 +106,11 @@ suite("Load Refused Test Suite", () => {
 
     await provider.updateWebview("refused.qvd", webview, 5000);
 
+    // The header was asked for first: only the rows of a memory refusal failed
+    assert.strictEqual(provider.headersAsked, 1);
+    assert.ok(webview.html.includes('data-kind="memory"'));
     assert.ok(webview.html.includes("needs more memory than VS Code gives its extensions"));
+    assert.ok(!webview.html.includes("Ctrl-Q QVD File Viewer"));
     assert.deepStrictEqual(messages, []);
   });
 

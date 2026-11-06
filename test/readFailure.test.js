@@ -3,12 +3,14 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const vscode = require("vscode");
+const { recordingWebview } = require("./fakes");
 
 // Import the reader, the failure's description and page, the editor provider,
 // the message handler, the memory guard and the logger
 let QvdReader;
 let errorFacts;
 let describeReadFailure;
+let describeViewerFailure;
 let PREVIEW_ROWS_SETTING;
 let getErrorHtml;
 let escapeHtml;
@@ -30,43 +32,25 @@ const files = {};
 const canBeRefused = process.platform !== "win32" && process.getuid?.() !== 0;
 
 /**
- * A webview that records what is posted to it, and the listener it is given
- * @param {Array<object>} [messages] - Where to record
- * @returns {object} The webview
- */
-function recordingWebview(messages = []) {
-  return {
-    html: "",
-    cspSource: "",
-    asWebviewUri: (uri) => uri,
-    postMessage: async (message) => {
-      messages.push(message);
-      return true;
-    },
-    onDidReceiveMessage(listener) {
-      this.listener = listener;
-      return { dispose: () => {} };
-    },
-  };
-}
-
-/**
  * An editor provider with the real reader
+ * @param {string} [extensionPath] - Where the extension's files are: an empty
+ *   folder for one whose webview pages can't be built
  * @returns {object} The provider
  */
-function realProvider() {
-  return new QvdEditorProvider({ extensionPath: root, extensionUri: vscode.Uri.file(root) });
+function realProvider(extensionPath = root) {
+  return new QvdEditorProvider({ extensionPath, extensionUri: vscode.Uri.file(extensionPath) });
 }
 
 /**
  * Open a file the way the editor does, and give the page it shows
  * @param {string} filePath - The file
  * @param {number} [maxRows=5000] - Rows to open it with
+ * @param {object} [provider] - The editor provider, the real reader's unless given
  * @returns {Promise<string>} The page's HTML
  */
-async function pageFor(filePath, maxRows = 5000) {
+async function pageFor(filePath, maxRows = 5000, provider = realProvider()) {
   const webview = recordingWebview();
-  const shown = await realProvider().updateWebview(filePath, webview, maxRows);
+  const shown = await provider.updateWebview(filePath, webview, maxRows);
   await shown?.rowsSent;
   return webview.html;
 }
@@ -127,7 +111,8 @@ suite("Read Failure Test Suite", () => {
   suiteSetup(async () => {
     // Import the ESM modules
     ({ default: QvdReader, errorFacts } = await import("../src/qvdReader.mjs"));
-    ({ describeReadFailure, PREVIEW_ROWS_SETTING } = await import("../src/webview/readFailure.mjs"));
+    ({ describeReadFailure, describeViewerFailure } = await import("../src/webview/readFailure.mjs"));
+    ({ PREVIEW_ROWS_SETTING } = await import("../src/webview/loadMore.mjs"));
     ({ getErrorHtml, escapeHtml } = await import("../src/webview/templates/errorTemplate.mjs"));
     ({ default: QvdEditorProvider } = await import("../src/qvdEditorProvider.mjs"));
     ({ setupMessageHandler } = await import("../src/webview/messageHandler.mjs"));
@@ -165,11 +150,18 @@ suite("Read Failure Test Suite", () => {
     fs.mkdirSync(files.folder);
     files.unreadable = write("unreadable.qvd", bytes);
     fs.chmodSync(files.unreadable, 0o000);
+    // A truncated copy of its own, for the header a failed read keeps
+    files.kept = write("kept.qvd", bytes.subarray(0, Math.floor(bytes.length / 2)));
+    // An extension folder without the libraries its pages inline
+    files.noLibraries = path.join(dir, "no-libraries");
+    fs.mkdirSync(files.noLibraries);
   });
 
   suiteTeardown(() => {
-    if (files.unreadable) {
-      fs.chmodSync(files.unreadable, 0o644);
+    for (const name of ["unreadable", "kept"]) {
+      if (files[name] && fs.existsSync(files[name])) {
+        fs.chmodSync(files[name], 0o644);
+      }
     }
     if (dir) {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -273,7 +265,11 @@ suite("Read Failure Test Suite", () => {
 
     const held = describeReadFailure(io("EPERM"), { filePath, platform: "win32" });
     assert.strictEqual(held.kind, "locked");
-    // Windows says EPERM for a file it won't let the account read, too
+    // Windows says EPERM for a file it won't let the account read, too, so the
+    // page doesn't say for certain that another program holds it
+    assert.strictEqual(held.title, "Windows won't let VS Code read this file");
+    assert.ok(!held.summary.startsWith("Another program holds"));
+    assert.ok(held.summary.includes("your account may not read it"));
     assert.ok(held.advice.some((line) => line.includes("Windows account")));
 
     // Elsewhere, EPERM is a refusal, which on macOS can be its privacy protection
@@ -327,11 +323,18 @@ suite("Read Failure Test Suite", () => {
     const rows = describeReadFailure(refused("maxRows"), { filePath: "/data/sets.qvd" });
     assert.ok(rows.advice[0].includes(PREVIEW_ROWS_SETTING));
     assert.ok(rows.actions.some((action) => action.setting === PREVIEW_ROWS_SETTING));
+    // A setting put right takes effect on a retry
+    assert.ok(rows.actions.some((action) => action.command === "retry"));
 
     const cost = describeReadFailure(refused("bytesPerCell"), { filePath: "/data/sets.qvd" });
     assert.ok(cost.summary.includes("bytesPerCell"));
     assert.ok(!cost.advice.join(" ").includes(PREVIEW_ROWS_SETTING));
     assert.ok(!cost.actions.some((action) => action.command === "openSettings"));
+    // No setting gives it, so a retry would fail the same way
+    assert.deepStrictEqual(
+      cost.actions.map((action) => action.command),
+      ["showLogs"]
+    );
   });
 
   test("A failure of no known kind says the file couldn't be read, not that it is corrupted", () => {
@@ -372,6 +375,9 @@ suite("Read Failure Test Suite", () => {
       // The schema tab has the header's fields
       assert.ok(html.includes('"name":"set_num"') && html.includes('"name":"num_parts"'), name);
       assert.ok(html.includes("The file's header could still be read"), name);
+      // Its header read, so it is a QVD: the notice doesn't suggest it might not be
+      assert.ok(html.includes("could read the header of"), name);
+      assert.ok(!html.includes("not a QVD") && !html.includes("renamed .qvd"), name);
       // Neither Load More nor a wait for rows: the notice retries
       assert.ok(html.includes("let hasMoreRows = false;"), name);
       assert.ok(!html.includes('id="loading-indicator"'), name);
@@ -497,5 +503,149 @@ suite("Read Failure Test Suite", () => {
     await webview.listener({ command: "retry" });
     assert.ok(isViewer(webview.html));
     assert.ok(!webview.html.includes('class="read-failure"'));
+  });
+
+  test("A page the viewer can't build is the viewer's failure, not the file's", async () => {
+    // sets.qvd reads, but this extension folder has none of the libraries its pages inline
+    const html = await pageFor(sets, 5000, realProvider(files.noLibraries));
+    assertSays(html, "viewer", "The viewer couldn't show this file");
+    // The library's ENOENT is in the details, and isn't taken for the QVD's
+    assert.ok(html.includes("ENOENT"));
+    assert.ok(!html.includes(escapeHtml("The file can't be found")));
+
+    const thrown = Object.assign(new Error("ENOENT: no such file, open 'tabulator.min.js'"), { code: "ENOENT" });
+    assert.strictEqual(describeViewerFailure(thrown, { filePath: sets }).kind, "viewer");
+  });
+
+  test("A header page that can't be built gives way to the error page, which says why the rows failed", async () => {
+    const html = await pageFor(files.truncated, 5000, realProvider(files.noLibraries));
+    assert.ok(!isViewer(html));
+    assertSays(html, "damaged", "This QVD file appears to be corrupted or damaged");
+  });
+
+  test("Closing the editor while a failure's header is read leaves the page alone", async () => {
+    const closed = new AbortController();
+    const header = await new QvdReader().readHeader(sets);
+    const provider = realProvider();
+    provider.qvdReader = {
+      read: async () => ({
+        error: "Symbol index out of range",
+        errorName: "QvdCorruptedError",
+        errorReason: null,
+        errorCode: null,
+        release: () => {},
+      }),
+      // The editor closes as the header arrives
+      readHeader: async () => {
+        closed.abort();
+        return header;
+      },
+    };
+    const webview = recordingWebview();
+    webview.html = "<p>the page</p>";
+
+    await provider.updateWebview(sets, webview, 5000, { signal: closed.signal });
+
+    assert.strictEqual(webview.html, "<p>the page</p>");
+  });
+
+  test("Closing the editor once its rows are read leaves the page alone, and lets their memory go", async () => {
+    const closed = new AbortController();
+    const read = await new QvdReader().read(colors, 5);
+    let released = 0;
+    const provider = realProvider();
+    provider.qvdReader = {
+      // The editor closes as the rows arrive
+      read: async () => {
+        closed.abort();
+        return { ...read, release: () => released++ };
+      },
+    };
+    const webview = recordingWebview();
+    webview.html = "<p>the page</p>";
+
+    const shown = await provider.updateWebview(colors, webview, 5, { signal: closed.signal });
+    read.release();
+
+    assert.strictEqual(shown, undefined);
+    assert.strictEqual(webview.html, "<p>the page</p>");
+    assert.strictEqual(released, 1);
+  });
+
+  test("A page set as its editor closes is given up, without a second try", async () => {
+    const closed = new AbortController();
+    const read = await new QvdReader().read(colors, 5);
+    let released = 0;
+    const provider = realProvider();
+    provider.qvdReader = { read: async () => ({ ...read, release: () => released++ }) };
+    let tries = 0;
+    const webview = recordingWebview();
+    // VS Code's webview throws once its panel is disposed, which also aborts the editor's signal
+    Object.defineProperty(webview, "html", {
+      get: () => "",
+      set: () => {
+        tries++;
+        closed.abort();
+        throw new Error("Webview is disposed");
+      },
+    });
+
+    await provider.updateWebview(colors, webview, 5, { signal: closed.signal });
+    read.release();
+
+    assert.strictEqual(tries, 1);
+    assert.strictEqual(released, 1);
+  });
+
+  test("The page shown when opening fails has buttons only when something hears them", async () => {
+    /**
+     * Open sets.qvd in an editor whose first page can't be built
+     * @param {object} webview - The editor's webview
+     * @returns {Promise<object>} The webview, once opening has failed
+     */
+    const openFailing = async (webview) => {
+      const provider = realProvider();
+      provider.updateWebview = async () => {
+        throw new Error("The page couldn't be built");
+      };
+      const panel = { webview, onDidDispose: () => ({ dispose: () => {} }) };
+      await assert.rejects(provider.resolveCustomEditor({ uri: vscode.Uri.file(sets) }, panel, {}));
+      return webview;
+    };
+
+    // The handler is set up before the first page, so the error page's buttons reach it
+    const heard = await openFailing(recordingWebview());
+    assert.strictEqual(typeof heard.listener, "function");
+    assertSays(heard.html, "viewer", "The viewer couldn't show this file");
+    assert.ok(heard.html.includes('data-command="retry"'));
+
+    // Where the handler couldn't be set up, the page has no buttons that would do nothing
+    const deaf = recordingWebview();
+    delete deaf.onDidReceiveMessage;
+    const unheard = await openFailing(deaf);
+    assertSays(unheard.html, "viewer", "The viewer couldn't show this file");
+    assert.ok(!unheard.html.includes("data-command="));
+  });
+
+  test("The header a failed read has just read isn't read again", async function () {
+    if (!canBeRefused) {
+      this.skip();
+    }
+    const reader = new QvdReader();
+    const read = await reader.read(files.kept, 10);
+    assert.strictEqual(read.errorName, "QvdCorruptedError");
+
+    // The file can't be opened now, but it is the same version: the header the read kept is used
+    fs.chmodSync(files.kept, 0o000);
+    try {
+      const header = await reader.readHeader(files.kept);
+      assert.strictEqual(header.totalRows, 11673);
+      assert.deepStrictEqual(header.columns, ["set_num", "name", "year", "theme_id", "num_parts"]);
+      // Each caller gets a copy, so the one kept can't be changed
+      header.metadata.fields.length = 0;
+      assert.strictEqual((await reader.readHeader(files.kept)).metadata.fields.length, 5);
+    } finally {
+      fs.chmodSync(files.kept, 0o644);
+    }
   });
 });
