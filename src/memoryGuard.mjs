@@ -13,10 +13,10 @@
  * held rows have booked here, and less what this read will add on top of
  * qvdjs's estimate. A read that won't fit is then refused, catchably, before it
  * reads any rows. qvdjs's budget itself comes from qvdjs (see QvdReader), so
- * that a container's memory limit binds here as it binds there.
+ * that a container's memory limit binds here as it binds there. What a caller
+ * builds is declared by the caller: each exporter declares its own cost, and
+ * the profiler its own.
  */
-
-import { CHUNK_ROWS as CSV_CHUNK_ROWS } from "./exporters/csvExporter.mjs";
 
 /**
  * The smallest factor handed to qvdjs. Zero would switch its check off.
@@ -46,70 +46,11 @@ export const HELD_BYTES_PER_CELL = 32;
 const STRING_HEADER_BYTES = 16;
 const BYTES_PER_TEXT_CHAR = 2;
 
-/**
- * Heap an export builds from the rows, per cell, by format: about one and a
- * half times what each needed for the taxi file. Measured by the smallest heap
- * that let 200,000 or 1,000,000 rows export: Excel 730, YAML 226, CSV 108 (every
- * row in one chunk), XML 107, JSON 35, PostgreSQL 13, Arrow 12 and Qlik inline
- * 7.8 bytes per cell. CSV writes a chunk of rows at a time, so only its largest
- * chunk is priced (EXPORT_CHUNK_ROWS). Arrow's file buffers, outside the V8
- * heap, aren't counted. Parquet and Avro write as they go, and SQLite keeps its
- * database in sql.js's WebAssembly memory, outside the V8 heap too. JSON also
- * stops at V8's longest string, with a catchable error, at about 1.6 million
- * rows of 20 fields.
- */
-export const EXPORT_BYTES_PER_CELL = {
-  arrow: 24,
-  avro: 16,
-  csv: 168,
-  excel: 1100,
-  json: 64,
-  parquet: 16,
-  postgres: 24,
-  qlik: 16,
-  sqlite: 16,
-  xml: 160,
-  yaml: 352,
-};
+// Rows looked at for the share of each field's values that are text
+const SAMPLED_ROWS = 1000;
 
-/**
- * Heap an export builds per character of the rows' text, by format, on top of
- * its cost per cell: what the formats that write the text into one string, or
- * keep it in a document, cost as values get longer. About twice what each
- * needed for 50,000 rows of four 400-character values, since text outside
- * Latin-1 takes two bytes a character: Excel 2.3, YAML 1.9, CSV 1.8 (of the
- * chunk it writes at a time), XML and Qlik inline 1.0, JSON and PostgreSQL 0.9
- * and Arrow 0.6 bytes per character. Parquet, Avro and SQLite added nothing to
- * the V8 heap.
- */
-export const EXPORT_BYTES_PER_TEXT_CHAR = {
-  arrow: 2,
-  avro: 0,
-  csv: 4,
-  excel: 5,
-  json: 2,
-  parquet: 0,
-  postgres: 2,
-  qlik: 3,
-  sqlite: 0,
-  xml: 3,
-  yaml: 4,
-};
-
-/**
- * Rows an export turns into text at a time, by format, so that its heap is its
- * largest chunk's rather than its whole output's. The formats not listed build
- * their whole output at once, or are priced as if they did.
- */
-export const EXPORT_CHUNK_ROWS = { csv: CSV_CHUNK_ROWS };
-
-/**
- * Heap profiling builds, per value of each profiled field: about one and a half
- * times the most measured, on 1,000,000 rows of the taxi file. A date field
- * needed 181 bytes per value, for its Date objects and their sorted copies, and
- * a number or a text field 38.
- */
-export const PROFILE_BYTES_PER_VALUE = 288;
+// Cells an export's pricing looks at between yields to the event loop: a few milliseconds
+const CELLS_PER_YIELD = 1000000;
 
 // Heap booked by rows callers still hold
 let booked = 0;
@@ -202,20 +143,53 @@ export function memorySafetyFactorFor(extraBytes, budget, held = bookedBytes()) 
 }
 
 /**
+ * The share of each field's values that are text, from rows spread through those read
+ * A field whose values are numbers keeps no text alive, however many bytes its
+ * symbols take on disk: the row objects hold its numbers.
+ * @param {Array<Object>} rows - The rows, as objects
+ * @param {Array<string>} columns - Their fields
+ * @returns {Map<string, number>} Each field's share of text among its values that
+ *   aren't null, from 0 to 1; 0 for a field with none
+ */
+export function textShares(rows, columns) {
+  const step = Math.max(1, Math.floor(rows.length / SAMPLED_ROWS));
+  const shares = new Map();
+  for (const column of columns) {
+    let values = 0;
+    let texts = 0;
+    for (let i = 0; i < rows.length; i += step) {
+      const value = rows[i][column];
+      if (value !== null && value !== undefined) {
+        values++;
+        if (typeof value === "string") {
+          texts++;
+        }
+      }
+    }
+    shares.set(column, values > 0 ? texts / values : 0);
+  }
+  return shares;
+}
+
+/**
  * Heap the text that rows keep alive costs, from the file's header
  * Each field's distinct values are its symbols: rows can keep at most one per
  * row alive, or all of them, and each costs about its size on disk in
- * characters, plus a string's header.
- * @param {Array<{symbols: number, bytes: number}>} fields - Each field's symbol
- *   count and the bytes of its symbol area, from the header
+ * characters, plus a string's header. Only the share of them that is text
+ * counts.
+ * @param {Array<{name?: string, symbols: number, bytes: number}>} fields - Each
+ *   field's name, symbol count and the bytes of its symbol area, from the header
  * @param {number} rows - Rows read
+ * @param {Map<string, number>} [shares] - Each field's share of text, from
+ *   textShares(); without it, every field counts as text
  * @returns {number} Bytes, whole: bookings stay exact when they are added and taken away
  */
-export function heldTextBytes(fields, rows) {
+export function heldTextBytes(fields, rows, shares) {
   let bytes = 0;
   for (const field of fields) {
-    if (field.symbols > 0) {
-      const alive = Math.min(field.symbols, rows);
+    const share = shares ? shares.get(field.name) ?? 1 : 1;
+    if (field.symbols > 0 && share > 0) {
+      const alive = Math.min(field.symbols, rows) * share;
       bytes += alive * ((field.bytes / field.symbols) * BYTES_PER_TEXT_CHAR + STRING_HEADER_BYTES);
     }
   }
@@ -223,39 +197,29 @@ export function heldTextBytes(fields, rows) {
 }
 
 /**
- * A format's figure from one of the tables above, or 0 for a name that isn't a format
- * @param {Object<string, number>} table - EXPORT_BYTES_PER_CELL, EXPORT_BYTES_PER_TEXT_CHAR or EXPORT_CHUNK_ROWS
- * @param {string} format - The export format
- * @returns {number} Bytes, or rows for EXPORT_CHUNK_ROWS
+ * What an export builds on the heap from the rows, as its exporter declares it
+ * @typedef {object} ExportCost
+ * @property {number} bytesPerCell - Heap per cell
+ * @property {number} bytesPerTextChar - Heap per character of the rows' text, on top
+ * @property {number} [chunkRows] - Rows it builds from at a time, so that only its largest chunk is priced
+ * @property {boolean} [writesAsItGoes] - Whether it writes as it goes, and so needs little
  */
-export function exportCost(table, format) {
-  return Object.hasOwn(table, format) ? table[format] : 0;
-}
-
-/**
- * Rows an export writes at a time
- * @param {string} format - The export format
- * @returns {number} Rows, or 0 for a format that builds its whole output at once
- */
-export function exportChunkRows(format) {
-  return exportCost(EXPORT_CHUNK_ROWS, format);
-}
 
 /**
  * Heap an export of these rows builds: per cell, and per character of their text
- * A format that writes a chunk of rows at a time holds one chunk's work at a
- * time, so it is priced by its largest chunk.
- * @param {string} format - The export format
+ * An export that writes a chunk of rows at a time holds one chunk's work at a
+ * time, so it is priced by its largest chunk. Every value is looked at, so this
+ * yields to the event loop as it goes.
+ * @param {ExportCost} cost - What the export builds, as its exporter declares it
  * @param {Array<Object>} rows - The rows read
  * @param {number} columnCount - Fields per row
  * @param {number} [limit] - Rows to export, from the first; 0 or none for every row
- * @returns {{bytes: number, rows: number}} The heap, and the rows it is for
+ * @returns {Promise<{bytes: number, rows: number}>} The heap, and the rows it is for
  */
-export function exportHeapBytes(format, rows, columnCount, limit = 0) {
+export async function exportHeapBytes(cost, rows, columnCount, limit = 0) {
   const count = limit > 0 ? Math.min(limit, rows.length) : rows.length;
-  const chunkRows = exportChunkRows(format) || count;
-  const perCell = exportCost(EXPORT_BYTES_PER_CELL, format);
-  const perChar = exportCost(EXPORT_BYTES_PER_TEXT_CHAR, format);
+  const chunkRows = cost.chunkRows > 0 ? cost.chunkRows : count;
+  const rowsPerYield = Math.max(1, Math.floor(CELLS_PER_YIELD / Math.max(1, columnCount)));
   let bytes = 0;
   for (let start = 0; start < count; start += chunkRows) {
     const end = Math.min(start + chunkRows, count);
@@ -268,8 +232,11 @@ export function exportHeapBytes(format, rows, columnCount, limit = 0) {
           chars += value.length;
         }
       }
+      if ((i + 1) % rowsPerYield === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
     }
-    bytes = Math.max(bytes, (end - start) * columnCount * perCell + chars * perChar);
+    bytes = Math.max(bytes, (end - start) * columnCount * cost.bytesPerCell + chars * cost.bytesPerTextChar);
   }
   return { bytes, rows: count };
 }
@@ -285,9 +252,13 @@ function size(bytes) {
 }
 
 /**
- * The formats that write as they go, as the user sees them
+ * Names in a sentence
+ * @param {Array<string>} names - Such as ["CSV", "Parquet", "Avro"]
+ * @returns {string} Such as "CSV, Parquet and Avro"
  */
-const LEAN_FORMATS = ["CSV", "Parquet", "Avro"];
+function listed(names) {
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names.join("");
+}
 
 /**
  * Say why an export is refused for memory
@@ -295,46 +266,149 @@ const LEAN_FORMATS = ["CSV", "Parquet", "Avro"];
  * @param {number} rows - Rows to export
  * @param {number} neededBytes - Heap the export needs
  * @param {number} leftBytes - Heap left for it
+ * @param {Array<string>} [leaner] - The formats that write as they go, as the user
+ *   sees them: suggested, but never the format refused
  * @returns {string} The message
  */
-export function describeExportRefusal(formatLabel, rows, neededBytes, leftBytes) {
-  const others = LEAN_FORMATS.filter((label) => label !== formatLabel);
+export function describeExportRefusal(formatLabel, rows, neededBytes, leftBytes, leaner = []) {
+  const others = leaner.filter((label) => label !== formatLabel);
+  const suggestion =
+    others.length === 0
+      ? ""
+      : others.length === 1
+        ? ` ${others[0]} writes as it goes, and needs much less.`
+        : ` ${listed(others)} write as they go, and need much less.`;
   return (
     `Exporting ${rows.toLocaleString()} rows to ${formatLabel} needs about ${size(neededBytes)} ` +
-    `of memory, and about ${size(leftBytes)} is left in what VS Code gives its extensions. ` +
-    `${others.slice(0, -1).join(", ")} and ${others.at(-1)} write as they go, and need much less.`
+    `of memory, and about ${size(leftBytes)} is left in what VS Code gives its extensions.${suggestion}`
   );
 }
 
 /**
- * Say why qvdjs refused a read for memory, in terms a VS Code user can act on
- * qvdjs's own message suggests a limit option and --max-old-space-size, which
- * the viewer's user can't set.
- * @param {Error} error - What qvdjs threw
- * @returns {string|null} The message, or null when this isn't a memory refusal
+ * Say why profiling is refused for memory
+ * @param {number} fieldCount - Fields to profile
+ * @param {number} rows - Rows profiled
+ * @param {number} neededBytes - Heap profiling needs
+ * @param {number} leftBytes - Heap left for it
+ * @returns {string} The message
  */
-export function describeMemoryRefusal(error) {
+export function describeProfileRefusal(fieldCount, rows, neededBytes, leftBytes) {
+  const fields = fieldCount === 1 ? "a field" : `${fieldCount.toLocaleString()} fields`;
+  return (
+    `Profiling ${fields} over ${rows.toLocaleString()} rows needs about ${size(neededBytes)} of memory, ` +
+    `and about ${size(leftBytes)} is left in what VS Code gives its extensions.` +
+    (fieldCount > 1 ? " Profile fewer fields at a time." : "")
+  );
+}
+
+/**
+ * A read refused for memory, as QvdReader reports it
+ * @typedef {object} Refusal
+ * @property {number} rows - Rows asked for
+ * @property {number} totalRows - Rows in the file
+ * @property {number} fitRows - Rows qvdjs says would fit, or 0 when none does
+ * @property {boolean} forCaller - Whether the rows alone would have fit: what the
+ *   caller builds from them is what doesn't
+ * @property {number} neededBytes - Heap the caller said it builds from the rows
+ * @property {number} leftBytes - Heap left for that once the rows are read, when forCaller
+ */
+
+/**
+ * Whether a read qvdjs refused would have fit without what the caller builds from its rows
+ * @param {object} check - qvdjs's check of the read, from its refusal
+ * @param {{leftBytes: number, readBytes: number, callerBytes: number}} priced -
+ *   leftBytes: heap left for the read at its turn; readBytes: what the read adds
+ *   beyond qvdjs's estimate, the caller's work aside; callerBytes: the caller's work
+ * @returns {{forCaller: boolean, neededBytes: number, leftBytes: number}} What QvdReader adds to the refusal
+ */
+export function pricingOfRefusal(check, { leftBytes, readBytes, callerBytes }) {
+  const estimate = check?.estimate;
+  if (!estimate || !(callerBytes > 0)) {
+    return { forCaller: false, neededBytes: callerBytes, leftBytes: 0 };
+  }
+  // qvdjs counts its external memory against a container's limit, not against the heap
+  const rowsNeed =
+    (Number(estimate.heapBytes) || 0) +
+    (check.budget?.bound === "process" ? Number(estimate.externalBytes) || 0 : 0) +
+    readBytes;
+  return {
+    forCaller: rowsNeed <= leftBytes,
+    neededBytes: callerBytes,
+    leftBytes: Math.max(0, leftBytes - rowsNeed),
+  };
+}
+
+/**
+ * The refusal in what qvdjs threw, if it refused a read for memory
+ * @param {Error} error - What qvdjs threw, with the pricing QvdReader adds to a refusal
+ * @returns {Refusal|null} The refusal, or null when this isn't a memory refusal
+ */
+export function memoryRefusalOf(error) {
   const context = error?.context;
   if (error?.name !== "QvdValidationError" || context?.reason !== "memory") {
     return null;
   }
-
   const totalRows = Number(context.totalRows) || 0;
-  const askedRows = Number(context.maxRows) || totalRows;
-  const fitRows = Number(context.recommendedMaxRows) || 0;
-  const count = (rows) => rows.toLocaleString();
+  const pricing = error.pricing ?? {};
+  return {
+    rows: Number(context.maxRows) || totalRows,
+    totalRows,
+    fitRows: Number(context.recommendedMaxRows) || 0,
+    forCaller: pricing.forCaller === true,
+    neededBytes: Number(pricing.neededBytes) || 0,
+    leftBytes: Number(pricing.leftBytes) || 0,
+  };
+}
 
+/**
+ * Say why a read was refused for memory, in terms a VS Code user can act on
+ * qvdjs's own message suggests a limit option and --max-old-space-size, which
+ * the viewer's user can't set.
+ * @param {Refusal} refusal - The refusal
+ * @param {{offerRows?: boolean}} [options] - offerRows: say how many rows would
+ *   fit; false for an action that reads every row whatever it is given, as
+ *   Export and Profile do
+ * @returns {string} The message
+ */
+export function describeReadRefusal(refusal, { offerRows = true } = {}) {
+  const count = (rows) => rows.toLocaleString();
   const what =
-    askedRows >= totalRows
-      ? `Reading all ${count(totalRows)} rows of this QVD`
-      : `Reading ${count(askedRows)} of this QVD's ${count(totalRows)} rows`;
+    refusal.rows >= refusal.totalRows
+      ? `Reading all ${count(refusal.totalRows)} rows of this QVD`
+      : `Reading ${count(refusal.rows)} of this QVD's ${count(refusal.totalRows)} rows`;
   // qvdjs's row count is for the budget this read was given, so it fits. When
   // there is none, the budget may be gone to rows other reads hold, or to the
   // file's distinct values: neither is known here, so neither is named
   const instead =
-    fitRows > 0
-      ? `About ${count(fitRows)} rows would fit.`
-      : "It doesn't fit in the memory that is left.";
+    refusal.fitRows > 0
+      ? offerRows
+        ? ` About ${count(refusal.fitRows)} rows would fit.`
+        : ""
+      : " It doesn't fit in the memory that is left.";
+  return `${what} needs more memory than VS Code gives its extensions.${instead}`;
+}
 
-  return `${what} needs more memory than VS Code gives its extensions. ${instead}`;
+/**
+ * Say why a read was refused when its rows fit, and what is built from them doesn't
+ * @param {Refusal} refusal - The refusal
+ * @returns {string} The message
+ */
+export function describeCallerRefusal(refusal) {
+  return (
+    `Reading the rows fits, but what is made from them needs about ${size(refusal.neededBytes)} ` +
+    `of memory, and about ${size(refusal.leftBytes)} is left in what VS Code gives its extensions.`
+  );
+}
+
+/**
+ * Say why qvdjs refused a read for memory
+ * @param {Error} error - What qvdjs threw
+ * @returns {string|null} The message, or null when this isn't a memory refusal
+ */
+export function describeMemoryRefusal(error) {
+  const refusal = memoryRefusalOf(error);
+  if (!refusal) {
+    return null;
+  }
+  return refusal.forCaller ? describeCallerRefusal(refusal) : describeReadRefusal(refusal);
 }

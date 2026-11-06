@@ -192,6 +192,20 @@ suite("Exporter Test Suite", () => {
     assert.strictEqual(released, 1);
   });
 
+  test("An export waits for a reserve that answers later", async () => {
+    const filePath = path.join(outputDir, "reserved-later.csv");
+    const events = [];
+    await DataExporter.exportData(makeRows(10), "csv", "later", saveDialogTo(filePath), outputDir, 0, ["id"], {
+      reserve: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        events.push(fs.existsSync(filePath) ? "written" : "reserved");
+        return () => events.push("released");
+      },
+    });
+    assert.deepStrictEqual(events, ["reserved", "released"]);
+    assert.ok(fs.existsSync(filePath));
+  });
+
   test("Avro export - file is complete when the export resolves", async () => {
     // Enough rows for the file to span several 64 KB blocks
     const rows = makeRows(20000);

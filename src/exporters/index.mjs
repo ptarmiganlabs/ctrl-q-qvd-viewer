@@ -1,15 +1,30 @@
 import { join } from 'path';
-import { exportToCSV } from './csvExporter.mjs';
-import { exportToJSON } from './jsonExporter.mjs';
-import { exportToExcel } from './excelExporter.mjs';
-import { exportToParquet } from './parquetExporter.mjs';
-import { exportToYAML } from './yamlExporter.mjs';
-import { exportToAvro } from './avroExporter.mjs';
-import { exportToArrow } from './arrowExporter.mjs';
-import { exportToSQLite } from './sqliteExporter.mjs';
-import { exportToXML } from './xmlExporter.mjs';
-import { exportToQlikInline } from './qlikInlineExporter.mjs';
-import { exportToPostgres } from './postgresExporter.mjs';
+import { exportToCSV, memoryCost as csvCost } from './csvExporter.mjs';
+import { exportToJSON, memoryCost as jsonCost } from './jsonExporter.mjs';
+import { exportToExcel, memoryCost as excelCost } from './excelExporter.mjs';
+import { exportToParquet, memoryCost as parquetCost } from './parquetExporter.mjs';
+import { exportToYAML, memoryCost as yamlCost } from './yamlExporter.mjs';
+import { exportToAvro, memoryCost as avroCost } from './avroExporter.mjs';
+import { exportToArrow, memoryCost as arrowCost } from './arrowExporter.mjs';
+import { exportToSQLite, memoryCost as sqliteCost } from './sqliteExporter.mjs';
+import { exportToXML, memoryCost as xmlCost } from './xmlExporter.mjs';
+import { exportToQlikInline, memoryCost as qlikCost } from './qlikInlineExporter.mjs';
+import { exportToPostgres, memoryCost as postgresCost } from './postgresExporter.mjs';
+
+// What each format's export builds on the heap, as its exporter declares it
+const MEMORY_COSTS = {
+  arrow: arrowCost,
+  avro: avroCost,
+  csv: csvCost,
+  excel: excelCost,
+  json: jsonCost,
+  parquet: parquetCost,
+  postgres: postgresCost,
+  qlik: qlikCost,
+  sqlite: sqliteCost,
+  xml: xmlCost,
+  yaml: yamlCost,
+};
 
 /**
  * Main DataExporter class that coordinates all export operations
@@ -36,6 +51,39 @@ class DataExporter {
   }
 
   /**
+   * A format's name as the user sees it
+   * @param {string} format - The export format, such as "excel"
+   * @returns {string} Such as "Excel"; the name itself for one that isn't a format
+   */
+  static formatLabel(format) {
+    const known = DataExporter.getExportFormats().find((entry) => entry.name === format);
+    return known ? known.label.replace(/^Export to /, "") : String(format);
+  }
+
+  /**
+   * What a format's export builds on the heap from the rows, for the memory guard
+   * Each exporter declares its own, next to the code that builds it. Each is
+   * about one and a half times what the export needed per cell, and twice what
+   * it needed per character of text, since text outside Latin-1 takes two bytes
+   * a character.
+   * @param {string} format - The export format
+   * @returns {import('../memoryGuard.mjs').ExportCost|null} The cost, or null for a name that isn't a format
+   */
+  static memoryCost(format) {
+    return Object.hasOwn(MEMORY_COSTS, format) ? MEMORY_COSTS[format] : null;
+  }
+
+  /**
+   * The formats whose export writes as it goes, and so needs little memory, as the user sees them
+   * @returns {Array<string>} Such as "CSV"
+   */
+  static leanFormatLabels() {
+    return DataExporter.getExportFormats()
+      .filter((entry) => MEMORY_COSTS[entry.name]?.writesAsItGoes)
+      .map((entry) => DataExporter.formatLabel(entry.name));
+  }
+
+  /**
    * Show save dialog and export data to the selected format
    * @param {Array<Object>} data - Array of row objects
    * @param {string} format - Export format ('csv', 'json', 'excel', 'parquet', 'yaml', 'avro', 'arrow', 'sqlite', 'xml', 'qlik', 'postgres')
@@ -45,10 +93,10 @@ class DataExporter {
    * @param {number} maxRows - Maximum number of rows (for Qlik and PostgreSQL formats)
    * @param {Array<string>} [fields] - The QVD's field names in order (for CSV's header row)
    * @param {object} [options]
-   * @param {function(Array<Object>, number): function(): void} [options.reserve] - Called with
-   *   the rows and the row limit once every question is answered, just before the export
-   *   is written. It returns a release, called when the export ends, or throws to refuse
-   *   the export.
+   * @param {function(Array<Object>, number): (function(): void|Promise<function(): void>)} [options.reserve] -
+   *   Called with the rows and the row limit once every question is answered, just before
+   *   the export is written. It returns a release, or a promise of one, called when the
+   *   export ends, or throws to refuse the export.
    * @returns {Promise<string|null>} Path to saved file or null if cancelled
    */
   static async exportData(
@@ -295,7 +343,7 @@ class DataExporter {
 
     // The heap the export needs, booked now the questions are answered
     const limited = format === "qlik" || format === "postgres";
-    const release = reserve ? reserve(data, limited ? maxRows : 0) : () => {};
+    const release = reserve ? await reserve(data, limited ? maxRows : 0) : () => {};
 
     try {
       // Perform export

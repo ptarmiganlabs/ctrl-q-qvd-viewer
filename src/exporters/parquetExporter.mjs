@@ -2,6 +2,16 @@ import parquet from 'parquetjs';
 import { existsSync, unlinkSync } from 'fs';
 
 /**
+ * Heap a Parquet export builds from the rows, for the memory guard. It writes
+ * as it goes, and added nothing measurable to the V8 heap. Measured by the
+ * smallest heap that let 200,000 or 1,000,000 rows of
+ * chicago_taxi_rides_2016_03.qvd export, against reading them alone, and 50,000
+ * rows of four unique 400-character values for the cost per character. See
+ * DataExporter.memoryCost() for the margins.
+ */
+export const memoryCost = { bytesPerCell: 16, bytesPerTextChar: 0, writesAsItGoes: true };
+
+/**
  * Export data to Parquet format
  * @param {Array<Object>} data - Array of row objects
  * @param {string} filePath - Destination file path

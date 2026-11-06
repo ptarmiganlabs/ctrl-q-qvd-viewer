@@ -6,11 +6,16 @@ import {
   CONVERSION_BYTES_PER_CELL,
   HELD_BYTES_PER_CELL,
   bookHeap,
-  describeMemoryRefusal,
+  bookedBytes,
+  describeCallerRefusal,
+  describeReadRefusal,
   heldTextBytes,
   knownBudget,
+  memoryRefusalOf,
   memorySafetyFactorFor,
+  pricingOfRefusal,
   rememberBudget,
+  textShares,
 } from './memoryGuard.mjs';
 
 // Reads run one at a time in the whole extension host, whichever editor asks.
@@ -43,6 +48,13 @@ const QVDJS_BYTES_PER_CELL = 16;
 
 // Cells to convert between yields to the event loop: about 15 ms of work
 const CELLS_PER_CHUNK = 250000;
+
+// Times a read is priced afresh because its file changed while it waited for its
+// turn, before it is read as it then is
+const PRICINGS = 3;
+
+// What a read's turn returns when its file changed while it waited
+const FILE_CHANGED = Symbol("file changed");
 
 // qvdjs 1.0+ leaves text that looks like a number as text. Convert it the way
 // qvdjs 0.6 did, so the grid, profiling and exports see the values they always
@@ -79,9 +91,20 @@ export async function toRowObjects(rows, columns, signal) {
 
 /**
  * A file's header, as far as pricing a read needs it
- * @typedef {{rowCount: number, columnCount: number, fields: Array<{name: string, symbols: number, bytes: number}>}} Header
+ * @typedef {{key: string|null, rowCount: number, columnCount: number, fields: Array<{name: string, symbols: number, bytes: number}>}} Header
+ *   key: which version of the file it is, or null when the file can't be looked at;
  *   fields: each field's name, symbol count and symbol area's size in bytes
  */
+
+/**
+ * Which version of a file this is: its inode, size and modification time
+ * @param {string} realFilePath - The file's real path
+ * @returns {Promise<string|null>} The version, or null when the file can't be looked at
+ */
+async function fileVersion(realFilePath) {
+  const stats = await stat(realFilePath).catch(() => null);
+  return stats ? `${stats.ino}:${stats.size}:${stats.mtimeMs}` : null;
+}
 
 /**
  * The file's header, from the files read lately when it hasn't changed since
@@ -92,16 +115,15 @@ export async function toRowObjects(rows, columns, signal) {
  * @returns {Promise<Header>} The header
  */
 async function headerOf(filePath, realFilePath, allowedDir, signal) {
-  const stats = await stat(realFilePath).catch(() => null);
-  // The same inode, size and modification time: the same file
-  const key = stats ? `${stats.ino}:${stats.size}:${stats.mtimeMs}` : null;
+  const key = await fileVersion(realFilePath);
   const kept = headers.get(realFilePath);
   if (key && kept?.key === key) {
-    return kept.header;
+    return kept;
   }
 
   const metadata = await QvdDataFrame.readMetadata(filePath, { allowedDir, signal });
   const header = {
+    key,
     rowCount: metadata.rowCount,
     columnCount: metadata.columns.length,
     fields: metadata.fields.map((field) => ({
@@ -112,7 +134,7 @@ async function headerOf(filePath, realFilePath, allowedDir, signal) {
   };
   if (key) {
     headers.delete(realFilePath);
-    headers.set(realFilePath, { key, header });
+    headers.set(realFilePath, header);
     if (headers.size > HEADERS_KEPT) {
       headers.delete(headers.keys().next().value);
     }
@@ -193,18 +215,26 @@ function readCostBound(header, cells, callerBytes) {
  */
 function failedRead(error) {
   const aborted = error?.name === "AbortError";
+  const refusal = aborted ? null : memoryRefusalOf(error);
+  let message;
+  if (aborted) {
+    message = "The read was given up, because its editor was closed.";
+  } else if (refusal) {
+    message = refusal.forCaller ? describeCallerRefusal(refusal) : describeReadRefusal(refusal);
+  } else {
+    message = error?.message ?? String(error);
+  }
   return {
     metadata: null,
     data: [],
     columns: [],
     totalRows: 0,
     dataError: null,
-    error: aborted
-      ? "The read was given up, because its editor was closed."
-      : describeMemoryRefusal(error) ?? error?.message ?? String(error),
+    error: message,
     // qvdjs's error class and reason, so a caller can tell a refusal from damage
     errorName: error?.name ?? null,
     errorReason: aborted ? "aborted" : error?.context?.reason ?? null,
+    refusal,
     release: () => {},
   };
 }
@@ -230,11 +260,12 @@ class QvdReader {
    * @param {boolean} [options.holdCallerBytes=true] - Whether the rows' booking includes
    *   the caller's work from the start. A caller that waits on the user first, as Export
    *   does for its dialogs, books its work itself when it begins.
-   * @returns {Promise<{metadata: object, data: Array, error: string|null, errorName: string|null, errorReason: string|null, release: function(): void}>}
+   * @returns {Promise<{metadata: object, data: Array, error: string|null, errorName: string|null, errorReason: string|null, refusal: import('./memoryGuard.mjs').Refusal|null, release: function(): void}>}
    *   errorName and errorReason are qvdjs's error class and context.reason, such as
    *   "memory", "option" for a maxRows or cost that isn't a count, or "aborted" for a
-   *   read given up. release() ends the heap the rows have booked: call it once done
-   *   with them, so that later reads may use it.
+   *   read given up. refusal, for a memory refusal, says whether the rows or what the
+   *   caller builds from them didn't fit. release() ends the heap the rows have booked:
+   *   call it once done with them, so that later reads may use it.
    */
   async read(
     filePath,
@@ -258,150 +289,245 @@ class QvdReader {
       const realFilePath = await realpath(filePath).catch(() => filePath);
       const allowedDir = dirname(realFilePath);
 
-      // The header alone, whatever the file's size, says how much the read returns
-      const header = await headerOf(filePath, realFilePath, allowedDir, signal);
-      const rows = maxRows === 0 ? header.rowCount : Math.min(maxRows, header.rowCount);
-      const cells = rows * header.columnCount;
-      // What the caller builds, for as many rows as it builds from at once
-      const callerRows = chunkRows > 0 ? Math.min(chunkRows, rows) : rows;
-      const callerBytes = callerRows * (header.columnCount * bytesPerCell + bytesPerRow);
-      const small = readCostBound(header, cells, callerBytes) <= SMALL_READ_BYTES;
-      const budget = await budgetFor(filePath, allowedDir, header, signal);
+      // Priced again when the file changed while the read waited for its turn,
+      // as a reload rewriting it would: its rows are qvdjs's to read as they are then
+      for (let pricing = 1; ; pricing++) {
+        // The header alone, whatever the file's size, says how much the read returns
+        const header = await headerOf(filePath, realFilePath, allowedDir, signal);
+        const rows = maxRows === 0 ? header.rowCount : Math.min(maxRows, header.rowCount);
+        const cells = rows * header.columnCount;
+        // What the caller builds, for as many rows as it builds from at once
+        const callerRows = chunkRows > 0 ? Math.min(chunkRows, rows) : rows;
+        const callerBytes = callerRows * (header.columnCount * bytesPerCell + bytesPerRow);
+        const costBound = readCostBound(header, cells, callerBytes);
+        const small = costBound <= SMALL_READ_BYTES;
+        const budget = await budgetFor(filePath, allowedDir, header, signal);
 
-      return await (small ? smallReads : largeReads).run(
-        () =>
-          this.#readNow(filePath, maxRows, {
-            allowedDir,
-            signal,
-            budget,
-            // Beyond qvdjs's estimate: the row objects, the caller's work, and
-            // room for a small read beside a large one
-            extraBytes:
-              cells * CONVERSION_BYTES_PER_CELL + callerBytes + (small ? 0 : SMALL_READ_BYTES),
-            // Held by the rows besides their objects: the text they keep alive,
-            // and the caller's work unless it books that itself
-            heldBytes: heldTextBytes(header.fields, rows) + (holdCallerBytes ? callerBytes : 0),
-          }),
-        { signal }
-      );
+        const outcome = await (small ? smallReads : largeReads).run(
+          () =>
+            this.#readNow(filePath, maxRows, {
+              allowedDir,
+              realFilePath,
+              signal,
+              budget,
+              header: pricing < PRICINGS ? header : null,
+              fields: header.fields,
+              conversionBytes: cells * CONVERSION_BYTES_PER_CELL,
+              callerBytes,
+              // Room for a small read beside a large one
+              reserveBytes: small ? 0 : SMALL_READ_BYTES,
+              // The caller's work is held with the rows unless it books that itself
+              callerHeldBytes: holdCallerBytes ? callerBytes : 0,
+              costBound,
+            }),
+          { signal }
+        );
+        if (outcome !== FILE_CHANGED) {
+          return outcome;
+        }
+      }
     } catch (error) {
       return failedRead(error);
     }
   }
 
   /**
+   * The number of rows in a QVD, from its header alone
+   * @param {string} filePath - Path to the QVD file
+   * @param {{signal?: AbortSignal}} [options] - signal: gives it up
+   * @returns {Promise<number>} The rows
+   * @throws {Error} What reading the header throws
+   */
+  async rowCount(filePath, { signal } = {}) {
+    const realFilePath = await realpath(filePath).catch(() => filePath);
+    const header = await headerOf(filePath, realFilePath, dirname(realFilePath), signal);
+    return header.rowCount;
+  }
+
+  /**
+   * Wait until the large reads running or waiting now are done
+   * A read's check counts what was booked when its turn came, not what starts
+   * beside it. Work that starts while one runs, such as an export once its
+   * dialogs are answered, waits for it here, and is then priced against what it
+   * holds.
+   * @param {{signal?: AbortSignal}} [options] - signal: gives the wait up
+   * @returns {Promise<void>} Resolves once they are done
+   */
+  async afterLargeReads({ signal } = {}) {
+    await largeReads.run(async () => {}, { signal });
+  }
+
+  /**
    * Read QVD file now, at its turn in the queue
    * @param {string} filePath - Path to the QVD file
    * @param {number} maxRows - Maximum number of rows to read (0 = all rows)
-   * @param {{allowedDir: string, signal?: AbortSignal, budget: object|null, extraBytes: number, heldBytes: number}} plan -
-   *   budget: qvdjs's; extraBytes: heap the read needs beyond qvdjs's estimate;
-   *   heldBytes: heap the rows hold besides their objects
-   * @returns {Promise<object>} As read() describes
+   * @param {object} plan - How the read was priced
+   * @param {string} plan.allowedDir - The directory qvdjs may read in
+   * @param {string} plan.realFilePath - The file's real path
+   * @param {AbortSignal} [plan.signal] - Gives the read up
+   * @param {object|null} plan.budget - qvdjs's budget
+   * @param {object|null} plan.header - The header the read was priced from, to check the file
+   *   against; null to read the file as it is
+   * @param {Array<object>} plan.fields - The header's fields, for the text the rows keep alive
+   * @param {number} plan.conversionBytes - Heap the row objects need beyond qvdjs's estimate
+   * @param {number} plan.callerBytes - Heap the caller builds from the rows
+   * @param {number} plan.reserveBytes - Heap left for a small read beside this one
+   * @param {number} plan.callerHeldBytes - Heap the rows' booking holds for the caller's work
+   * @param {number} plan.costBound - An upper bound on what the read costs
+   * @returns {Promise<object|symbol>} As read() describes, or FILE_CHANGED
    */
-  async #readNow(filePath, maxRows, { allowedDir, signal, budget, extraBytes, heldBytes }) {
-    // Load the QVD file using qvdjs
-    const loadOptions = {
-      ...(maxRows === 0 ? {} : { maxRows }),
-      allowedDir,
-      // Read a dual value (a date, a formatted number) as the text Qlik displays,
-      // as qvdjs 0.x did. Since 1.0 qvdjs reads it as its number by default.
-      duals: "text",
-      // Priced at this read's turn: qvdjs's budget, less the heap rows still held
-      // have booked and what the row objects and the caller add, so that a read
-      // too large is refused rather than aborting the extension host
-      ...(budget ? { memorySafetyFactor: memorySafetyFactorFor(extraBytes, budget) } : {}),
-      ...(signal ? { signal } : {}),
+  async #readNow(filePath, maxRows, plan) {
+    const { allowedDir, realFilePath, signal, budget, header, fields } = plan;
+    const { conversionBytes, callerBytes, reserveBytes, callerHeldBytes, costBound } = plan;
+
+    // A file rewritten since it was priced is priced again
+    if (header?.key && (await fileVersion(realFilePath)) !== header.key) {
+      return FILE_CHANGED;
+    }
+
+    // Priced at this read's turn: qvdjs's budget, less the heap rows still held
+    // have booked and what the row objects and the caller add, so that a read
+    // too large is refused rather than aborting the extension host
+    const held = bookedBytes();
+    const extraBytes = conversionBytes + callerBytes + reserveBytes;
+    const factor = budget ? memorySafetyFactorFor(extraBytes, budget, held) : null;
+
+    // Given up while it runs, the read still holds what it has read until it
+    // stops, and the next read may start before that: booked meanwhile, at most
+    // what this read was allowed, so that what starts next is priced against it
+    let releaseAbandoned = () => {};
+    const abandon = () => {
+      const allowed = factor === null ? costBound : factor * budget.bytes + conversionBytes;
+      releaseAbandoned = bookHeap(Math.min(costBound, allowed));
     };
-    const df = await QvdDataFrame.fromQvd(filePath, loadOptions);
+    signal?.addEventListener("abort", abandon, { once: true });
+    try {
+      signal?.throwIfAborted();
 
-    // Get columns from the DataFrame
-    const columns = df.columns || [];
-
-    // Get file-level metadata
-    const fileMetadata = df.fileMetadata || {};
-
-    // Get field metadata
-    const allFieldMetadata = df.getAllFieldMetadata();
-
-    // Build metadata object matching the expected structure
-    const metadata = {
-      qvBuildNo: fileMetadata.qvBuildNo || "",
-      creatorDoc: fileMetadata.creatorDoc || "",
-      createUtcTime: fileMetadata.createUtcTime || "",
-      sourceCreateUtcTime: fileMetadata.sourceCreateUtcTime || "",
-      sourceFileUtcTime: fileMetadata.sourceFileUtcTime || "",
-      sourceFileSize: fileMetadata.sourceFileSize || "",
-      staleUtcTime: fileMetadata.staleUtcTime || "",
-      tableName: fileMetadata.tableName || "",
-      tableCreator: fileMetadata.tableCreator || "",
-      compression: fileMetadata.compression || "",
-      recordByteSize: fileMetadata.recordByteSize || "",
-      noOfRecords: parseInt(fileMetadata.noOfRecords) || 0,
-      offset: parseInt(fileMetadata.offset) || 0,
-      length: parseInt(fileMetadata.length) || 0,
-      comment: fileMetadata.comment || "",
-      encryptionInfo: fileMetadata.encryptionInfo || "",
-      tableTags: fileMetadata.tableTags || "",
-      profilingData: fileMetadata.profilingData || "",
-      lineage: fileMetadata.lineage || [],
-      fields: allFieldMetadata.map((field) => {
-        // Handle Tags - normalize the structure
-        let tagsArray = [];
-        if (field.tags) {
-          if (field.tags.String) {
-            tagsArray = Array.isArray(field.tags.String)
-              ? field.tags.String
-              : [field.tags.String];
-          }
+      // Load the QVD file using qvdjs
+      const loadOptions = {
+        ...(maxRows === 0 ? {} : { maxRows }),
+        allowedDir,
+        // Read a dual value (a date, a formatted number) as the text Qlik displays,
+        // as qvdjs 0.x did. Since 1.0 qvdjs reads it as its number by default.
+        duals: "text",
+        ...(factor === null ? {} : { memorySafetyFactor: factor }),
+        ...(signal ? { signal } : {}),
+      };
+      let df;
+      try {
+        df = await QvdDataFrame.fromQvd(filePath, loadOptions);
+      } catch (error) {
+        // Whether the rows didn't fit, or what the caller builds from them
+        if (budget && error?.name === "QvdValidationError" && error.context?.reason === "memory") {
+          error.pricing = pricingOfRefusal(error.context.check, {
+            leftBytes: budget.factor * budget.bytes - held,
+            readBytes: conversionBytes + reserveBytes,
+            callerBytes,
+          });
         }
+        throw error;
+      }
 
-        return {
-          name: field.fieldName || "",
-          type: field.type || "",
-          extent: field.extent || "",
-          noOfSymbols: parseInt(field.noOfSymbols) || 0,
-          offset: parseInt(field.offset) || 0,
-          length: parseInt(field.length) || 0,
-          bitOffset: parseInt(field.bitOffset) || 0,
-          bitWidth: parseInt(field.bitWidth) || 0,
-          bias: parseInt(field.bias) || 0,
-          numberFormat: field.numberFormat
-            ? {
-                type: field.numberFormat.Type || "",
-                nDec: field.numberFormat.nDec || "",
-                useThou: field.numberFormat.UseThou || "",
-                fmt: field.numberFormat.Fmt || "",
-                dec: field.numberFormat.Dec || "",
-                thou: field.numberFormat.Thou || "",
-              }
-            : null,
-          tags: tagsArray,
-          comment: field.comment || "",
-        };
-      }),
-    };
+      // Get columns from the DataFrame
+      const columns = df.columns || [];
 
-    // Convert data from array of arrays to array of objects
-    const data = await toRowObjects(df.data, columns, signal);
+      // Get file-level metadata
+      const fileMetadata = df.fileMetadata || {};
 
-    // Given up after the conversion's last check: nobody is waiting for these
-    // rows, so nothing is booked for them
-    signal?.throwIfAborted();
+      // Get field metadata
+      const allFieldMetadata = df.getAllFieldMetadata();
 
-    // The rows hold this until the caller releases them, or drops them
-    const release = bookHeap(data.length * columns.length * HELD_BYTES_PER_CELL + heldBytes, data);
+      // Build metadata object matching the expected structure
+      const metadata = {
+        qvBuildNo: fileMetadata.qvBuildNo || "",
+        creatorDoc: fileMetadata.creatorDoc || "",
+        createUtcTime: fileMetadata.createUtcTime || "",
+        sourceCreateUtcTime: fileMetadata.sourceCreateUtcTime || "",
+        sourceFileUtcTime: fileMetadata.sourceFileUtcTime || "",
+        sourceFileSize: fileMetadata.sourceFileSize || "",
+        staleUtcTime: fileMetadata.staleUtcTime || "",
+        tableName: fileMetadata.tableName || "",
+        tableCreator: fileMetadata.tableCreator || "",
+        compression: fileMetadata.compression || "",
+        recordByteSize: fileMetadata.recordByteSize || "",
+        noOfRecords: parseInt(fileMetadata.noOfRecords) || 0,
+        offset: parseInt(fileMetadata.offset) || 0,
+        length: parseInt(fileMetadata.length) || 0,
+        comment: fileMetadata.comment || "",
+        encryptionInfo: fileMetadata.encryptionInfo || "",
+        tableTags: fileMetadata.tableTags || "",
+        profilingData: fileMetadata.profilingData || "",
+        lineage: fileMetadata.lineage || [],
+        fields: allFieldMetadata.map((field) => {
+          // Handle Tags - normalize the structure
+          let tagsArray = [];
+          if (field.tags) {
+            if (field.tags.String) {
+              tagsArray = Array.isArray(field.tags.String)
+                ? field.tags.String
+                : [field.tags.String];
+            }
+          }
 
-    return {
-      metadata,
-      data,
-      columns,
-      totalRows: metadata.noOfRecords || 0,
-      dataError: null,
-      error: null,
-      errorName: null,
-      errorReason: null,
-      release,
-    };
+          return {
+            name: field.fieldName || "",
+            type: field.type || "",
+            extent: field.extent || "",
+            noOfSymbols: parseInt(field.noOfSymbols) || 0,
+            offset: parseInt(field.offset) || 0,
+            length: parseInt(field.length) || 0,
+            bitOffset: parseInt(field.bitOffset) || 0,
+            bitWidth: parseInt(field.bitWidth) || 0,
+            bias: parseInt(field.bias) || 0,
+            numberFormat: field.numberFormat
+              ? {
+                  type: field.numberFormat.Type || "",
+                  nDec: field.numberFormat.nDec || "",
+                  useThou: field.numberFormat.UseThou || "",
+                  fmt: field.numberFormat.Fmt || "",
+                  dec: field.numberFormat.Dec || "",
+                  thou: field.numberFormat.Thou || "",
+                }
+              : null,
+            tags: tagsArray,
+            comment: field.comment || "",
+          };
+        }),
+      };
+
+      // Convert data from array of arrays to array of objects
+      const data = await toRowObjects(df.data, columns, signal);
+
+      // Given up after the conversion's last check: nobody is waiting for these
+      // rows, so nothing is booked for them
+      signal?.throwIfAborted();
+
+      // The rows hold this until the caller releases them, or drops them: their
+      // objects, the text they keep alive, which a field of numbers doesn't, and
+      // the caller's work when it is held with them
+      const heldBytes =
+        data.length * columns.length * HELD_BYTES_PER_CELL +
+        heldTextBytes(fields, data.length, textShares(data, columns)) +
+        callerHeldBytes;
+      const release = bookHeap(heldBytes, data);
+
+      return {
+        metadata,
+        data,
+        columns,
+        totalRows: metadata.noOfRecords || 0,
+        dataError: null,
+        error: null,
+        errorName: null,
+        errorReason: null,
+        refusal: null,
+        release,
+      };
+    } finally {
+      signal?.removeEventListener("abort", abandon);
+      releaseAbandoned();
+    }
   }
 
   /**

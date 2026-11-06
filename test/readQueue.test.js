@@ -105,18 +105,53 @@ suite("Read Queue Test Suite", () => {
     assert.strictEqual(await queue.run(async () => "next"), "next");
   });
 
-  test("Aborting a running task lets the next one start, even if it never settles", async () => {
-    const queue = createReadQueue();
+  test("Aborting a running task lets the next one start after a while, even if it never settles", async () => {
+    const queue = createReadQueue({ graceMs: 50 });
     const controller = new AbortController();
 
     // A read of a file on a share that stopped answering
     const stuck = queue.run(() => new Promise(() => {}), { signal: controller.signal });
-    const next = queue.run(async () => "next");
+    let started = 0;
+    const next = queue.run(async () => {
+      started = Date.now();
+      return "next";
+    });
     await new Promise((resolve) => setImmediate(resolve));
+    const aborted = Date.now();
     controller.abort();
 
     await assert.rejects(stuck, { name: "AbortError" });
     assert.strictEqual(await next, "next");
+    assert.ok(started - aborted >= 40, `started ${started - aborted} ms after the abort`);
+  });
+
+  test("A running task that is aborted holds the next one until it stops", async () => {
+    const queue = createReadQueue({ graceMs: 10000 });
+    const controller = new AbortController();
+    const events = [];
+
+    // A read that stops at its next look at its signal, a little after the abort
+    const running = queue.run(
+      () =>
+        new Promise((resolve) => {
+          controller.signal.addEventListener("abort", () =>
+            setTimeout(() => {
+              events.push("stopped");
+              resolve();
+            }, 30)
+          );
+        }),
+      { signal: controller.signal }
+    );
+    const next = queue.run(async () => events.push("next"));
+    await new Promise((resolve) => setImmediate(resolve));
+    controller.abort();
+
+    // Its caller hears at once, and the next task waits for it to stop, not for the grace
+    await assert.rejects(running, { name: "AbortError" });
+    assert.deepStrictEqual(events, []);
+    await next;
+    assert.deepStrictEqual(events, ["stopped", "next"]);
   });
 
   test("Size counts the tasks queued and running", async () => {
