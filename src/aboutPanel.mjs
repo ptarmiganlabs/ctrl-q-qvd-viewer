@@ -3,9 +3,30 @@ import { readFile } from "fs/promises";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import logger from "./logger.mjs";
+import { getNonce } from "./webview/assetLoader.mjs";
+import { escapeHtml } from "./webview/templates/escaping.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+/**
+ * The page a link on the About panel opens, if it is one to open: a web page at an
+ * https: address. The panel's links are all such pages, and a message that asks for
+ * anything else, a file or a command say, is refused.
+ * @param {unknown} url - The link's address, as the panel sent it
+ * @returns {vscode.Uri|null} The address, or null when it isn't one to open
+ */
+export function externalLink(url) {
+  if (typeof url !== "string") {
+    return null;
+  }
+  try {
+    const uri = vscode.Uri.parse(url, true);
+    return uri.scheme === "https" && uri.authority ? uri : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Manages the About panel webview
@@ -30,9 +51,15 @@ class AboutPanel {
     this._panel.webview.onDidReceiveMessage(
       (message) => {
         switch (message.command) {
-          case "openExternal":
-            vscode.env.openExternal(vscode.Uri.parse(message.url));
+          case "openExternal": {
+            const link = externalLink(message.url);
+            if (link) {
+              vscode.env.openExternal(link);
+            } else {
+              logger.warn(`The About panel asked to open a link that isn't a web page: ${message.url}`);
+            }
             break;
+          }
         }
       },
       null,
@@ -64,6 +91,8 @@ class AboutPanel {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
+        // The logos, and nothing else of the extension's or the workspace's
+        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "media")],
       }
     );
 
@@ -141,16 +170,20 @@ class AboutPanel {
       )
     );
 
+    // Scripts and style elements run by nonce only, so the page's links open through
+    // its one script rather than handlers of their own. Style attributes are allowed,
+    // as the page's markup sets many of them.
+    const nonce = getNonce();
     return `<!DOCTYPE html>
         <html lang="en">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src ${
+            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src-elem 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src ${
               this._panel.webview.cspSource
-            } https:;">
+            }; form-action 'none'; base-uri 'none';">
             <title>About Ctrl-Q QVD Viewer</title>
-            <style>
+            <style nonce="${nonce}">
                 body {
                     font-family: var(--vscode-font-family);
                     font-size: var(--vscode-font-size);
@@ -365,11 +398,11 @@ class AboutPanel {
                     <div class="header-top">
                         <div class="header-left">
                             <img src="${ctrlqLogoUri}" alt="Ctrl-Q Logo" class="logo ctrl-q">
-                            <h1>${this.escapeHtml(displayName)}</h1>
-                            <div class="version">Version ${this.escapeHtml(
+                            <h1>${escapeHtml(displayName)}</h1>
+                            <div class="version">Version ${escapeHtml(
                               version
                             )}</div>
-                            <div class="description">${this.escapeHtml(
+                            <div class="description">${escapeHtml(
                               description
                             )}</div>
                         </div>
@@ -436,7 +469,7 @@ class AboutPanel {
                         <p><strong>📖 Learn More:</strong></p>
                         <p style="margin: 10px 0;">
                             For detailed profiling documentation including use cases, export options, and best practices, see the 
-                            <a href="#" onclick="openExternal('https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/blob/main/docs/PROFILING.md'); return false;" style="color: var(--vscode-textLink-foreground); text-decoration: underline;">Profiling Guide</a>.
+                            <a href="#" data-url="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/blob/main/docs/PROFILING.md" style="color: var(--vscode-textLink-foreground); text-decoration: underline;">Profiling Guide</a>.
                         </p>
                     </div>
                 </div>
@@ -523,11 +556,11 @@ class AboutPanel {
                         <p>The Butler family includes tools for automation, monitoring, DevOps, and data management for Qlik Sense environments.</p>
                         <p><strong>Explore the suite:</strong></p>
                         <ul style="margin-left: 20px; line-height: 1.8;">
-                            <li><strong><a href="#" onclick="openExternal('https://github.com/ptarmiganlabs/ctrl-q'); return false;" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Ctrl-Q CLI</a></strong> - Command-line tool for automating tedious and error prone Qlik Sense admin tasks</li>
-                            <li><strong><a href="#" onclick="openExternal('https://github.com/ptarmiganlabs/butler'); return false;" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler</a></strong> - Adding superpowers to Qlik Sense. Real-time task alerts, Windows service monitoring, key-value store and much more</li>
-                            <li><strong><a href="#" onclick="openExternal('https://github.com/ptarmiganlabs/butler-sos'); return false;" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler SOS</a></strong> - Monitor real-time operational Qlik Sense metrics in Grafana</li>
-                            <li><strong><a href="#" onclick="openExternal('https://github.com/ptarmiganlabs/butler-sheet-icons'); return false;" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler Sheet Icons</a></strong> - Automatic thumbnail management for Qlik Sense sheets</li>
-                            <li><strong><a href="#" onclick="openExternal('https://ptarmiganlabs.com/the-butler-family/'); return false;" style="color: var(--vscode-textLink-foreground); text-decoration: none;">And more...</a></strong> - Explore the full range of Butler tools and features</li>
+                            <li><strong><a href="#" data-url="https://github.com/ptarmiganlabs/ctrl-q" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Ctrl-Q CLI</a></strong> - Command-line tool for automating tedious and error prone Qlik Sense admin tasks</li>
+                            <li><strong><a href="#" data-url="https://github.com/ptarmiganlabs/butler" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler</a></strong> - Adding superpowers to Qlik Sense. Real-time task alerts, Windows service monitoring, key-value store and much more</li>
+                            <li><strong><a href="#" data-url="https://github.com/ptarmiganlabs/butler-sos" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler SOS</a></strong> - Monitor real-time operational Qlik Sense metrics in Grafana</li>
+                            <li><strong><a href="#" data-url="https://github.com/ptarmiganlabs/butler-sheet-icons" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler Sheet Icons</a></strong> - Automatic thumbnail management for Qlik Sense sheets</li>
+                            <li><strong><a href="#" data-url="https://ptarmiganlabs.com/the-butler-family/" style="color: var(--vscode-textLink-foreground); text-decoration: none;">And more...</a></strong> - Explore the full range of Butler tools and features</li>
                         </ul>
                     </div>
                 </div>
@@ -535,21 +568,19 @@ class AboutPanel {
                 <div class="section">
                     <h2>Resources & Links</h2>
                     <div class="link-section">
-                        <button class="link-button" onclick="openExternal('${this.escapeHtml(
-                          repository
-                        )}')">
+                        <button class="link-button" data-url="${escapeHtml(repository)}">
                             <svg class="button-icon" viewBox="0 0 16 16" fill="currentColor">
                                 <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
                             </svg>
                             GitHub Repository
                         </button>
-                        <button class="link-button" onclick="openExternal('https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues')">
+                        <button class="link-button" data-url="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues">
                             🐛 Report Issue
                         </button>
-                        <button class="link-button" onclick="openExternal('https://ptarmiganlabs.com/the-butler-family/')">
+                        <button class="link-button" data-url="https://ptarmiganlabs.com/the-butler-family/">
                             🛠️ Butler Suite
                         </button>
-                        <button class="link-button" onclick="openExternal('https://ptarmiganlabs.com')">
+                        <button class="link-button" data-url="https://ptarmiganlabs.com">
                             🌐 Ptarmigan Labs
                         </button>
                     </div>
@@ -558,46 +589,34 @@ class AboutPanel {
                 <div class="section">
                     <h2>Technical Information</h2>
                     <div class="tech-info">
-                        <p><strong>License:</strong> ${this.escapeHtml(
+                        <p><strong>License:</strong> ${escapeHtml(
                           license
                         )}</p>
                     </div>
                 </div>
                 
                 <div class="footer">
-                    <p>Made with ❤️ by <a href="#" onclick="openExternal('https://ptarmiganlabs.com'); return false;" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Ptarmigan Labs</a></p>
+                    <p>Made with ❤️ by <a href="#" data-url="https://ptarmiganlabs.com" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Ptarmigan Labs</a></p>
                     <p style="margin-top: 10px; font-size: 0.9em;">© 2025 Ptarmigan Labs. All rights reserved.</p>
                 </div>
             </div>
             
-            <script>
+            <script nonce="${nonce}">
                 const vscode = acquireVsCodeApi();
-                
-                function openExternal(url) {
-                    vscode.postMessage({
-                        command: 'openExternal',
-                        url: url
+
+                // Each link and button with a data-url opens its page in the browser
+                document.querySelectorAll('[data-url]').forEach((link) => {
+                    link.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        vscode.postMessage({
+                            command: 'openExternal',
+                            url: link.dataset.url
+                        });
                     });
-                }
+                });
             </script>
         </body>
         </html>`;
-  }
-
-  /**
-   * Escape HTML special characters
-   * @param {string} text - Text to escape
-   * @returns {string} Escaped text
-   */
-  escapeHtml(text) {
-    const map = {
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;",
-    };
-    return String(text).replace(/[&<>"']/g, (m) => map[m]);
   }
 }
 
