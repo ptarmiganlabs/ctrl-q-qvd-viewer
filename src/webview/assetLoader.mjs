@@ -3,6 +3,10 @@ import { join } from "path";
 
 /**
  * Utility functions for loading webview assets
+ *
+ * The libraries the webview inlines are copied from their npm packages into
+ * dist/webview when the extension is built: see copyWebviewLibsPlugin in
+ * esbuild.js.
  */
 
 /**
@@ -27,8 +31,8 @@ export function getNonce() {
 export function getTabulatorJs(extensionPath) {
   const tabulatorPath = join(
     extensionPath,
-    "media",
-    "tabulator",
+    "dist",
+    "webview",
     "tabulator.min.js"
   );
   return readFileSync(tabulatorPath, "utf8");
@@ -42,8 +46,8 @@ export function getTabulatorJs(extensionPath) {
 export function getTabulatorCss(extensionPath) {
   const tabulatorCssPath = join(
     extensionPath,
-    "media",
-    "tabulator",
+    "dist",
+    "webview",
     "tabulator.min.css"
   );
   return readFileSync(tabulatorCssPath, "utf8");
@@ -55,6 +59,6 @@ export function getTabulatorCss(extensionPath) {
  * @returns {string} Chart.js library content
  */
 export function getChartJs(extensionPath) {
-  const chartPath = join(extensionPath, "media", "chart.js", "chart.min.js");
+  const chartPath = join(extensionPath, "dist", "webview", "chart.umd.js");
   return readFileSync(chartPath, "utf8");
 }
