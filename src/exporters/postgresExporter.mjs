@@ -1,7 +1,7 @@
 import { existsSync, unlinkSync, writeFileSync } from "fs";
 import { isMissing, scanColumnTypes } from "./columnTypes.mjs";
 import { naiveDateText } from "./naiveDates.mjs";
-import { offsetText, zonedTimestamps } from "./zonedTimestamps.mjs";
+import { offsetText, zonedTimestampsFor } from "./zonedTimestamps.mjs";
 
 /**
  * Heap a PostgreSQL export builds from the rows, for the memory guard. It
@@ -25,11 +25,11 @@ export const memoryCost = { bytesPerCell: 24, bytesPerTextChar: 2 };
  * @param {string|null} [options.timeZone] - The time zone the timestamps were read in,
  *   to write each as the instant it was; without one they are wall clocks with no time zone
  * @returns {Promise<import('./zonedTimestamps.mjs').TimeShifts|undefined>} With a time
- *   zone, what reading the timestamps in it did
+ *   zone and rows, what reading their timestamps in it did
  */
 export async function exportToPostgres(data, filePath, maxRows, options) {
   // Before anything is written, so that a time zone Intl doesn't know leaves the file alone
-  const zoned = options?.timeZone ? zonedTimestamps(options.timeZone) : null;
+  const zoned = zonedTimestampsFor(options);
   try {
     const {
       createTable = true,
@@ -44,7 +44,7 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
       // Create empty SQL file with comment
       const content = `-- Empty dataset\n-- No data to export\n`;
       writeFileSync(filePath, content, "utf8");
-      return zoned?.summary();
+      return;
     }
 
     // Get column names from first row

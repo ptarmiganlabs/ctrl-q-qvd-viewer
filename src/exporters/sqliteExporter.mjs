@@ -5,7 +5,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { isMissing, scanColumnTypes } from './columnTypes.mjs';
 import { naiveDateText } from './naiveDates.mjs';
-import { utcText, zonedTimestamps } from './zonedTimestamps.mjs';
+import { utcText, zonedTimestampsFor } from './zonedTimestamps.mjs';
 
 // sql.js, once it has started
 let sqlJs = null;
@@ -52,11 +52,11 @@ function readSqlWasm() {
  *   to write each as the instant it was, in UTC; without one they are wall clocks with
  *   no time zone
  * @returns {Promise<import('./zonedTimestamps.mjs').TimeShifts|undefined>} With a time
- *   zone, what reading the timestamps in it did
+ *   zone and rows, what reading their timestamps in it did
  */
-export async function exportToSQLite(data, filePath, { timeZone = null } = {}) {
+export async function exportToSQLite(data, filePath, options = {}) {
   // Before anything is written, so that a time zone Intl doesn't know leaves the file alone
-  const zoned = timeZone ? zonedTimestamps(timeZone) : null;
+  const zoned = zonedTimestampsFor(options);
   try {
     // Initialize SQL.js once, handing it its WebAssembly file
     sqlJs ??= await initSqlJs({ wasmBinary: readSqlWasm() });
@@ -70,7 +70,7 @@ export async function exportToSQLite(data, filePath, { timeZone = null } = {}) {
       const buffer = Buffer.from(binaryArray);
       writeFileSync(filePath, buffer);
       db.close();
-      return zoned?.summary();
+      return;
     }
 
     // Get column names from first row

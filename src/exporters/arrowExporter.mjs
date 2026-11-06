@@ -2,7 +2,7 @@ import { promises as fs, existsSync, unlinkSync } from 'fs';
 import * as arrow from 'apache-arrow';
 import { isMissing, scanColumnTypes } from './columnTypes.mjs';
 import { naiveDateText } from './naiveDates.mjs';
-import { zonedTimestamps } from './zonedTimestamps.mjs';
+import { zonedTimestampsFor } from './zonedTimestamps.mjs';
 
 /**
  * Heap an Arrow export builds from the rows, for the memory guard. It needed 12
@@ -22,11 +22,11 @@ export const memoryCost = { bytesPerCell: 24, bytesPerTextChar: 2 };
  * @param {string|null} [options.timeZone] - The time zone the timestamps were read in,
  *   to write each as the instant it was; without one they are wall clocks with no time zone
  * @returns {Promise<import('./zonedTimestamps.mjs').TimeShifts|undefined>} With a time
- *   zone, what reading the timestamps in it did
+ *   zone and rows, what reading their timestamps in it did
  */
-export async function exportToArrow(data, filePath, { timeZone = null } = {}) {
+export async function exportToArrow(data, filePath, options = {}) {
   // Before anything is written, so that a time zone Intl doesn't know leaves the file alone
-  const zoned = timeZone ? zonedTimestamps(timeZone) : null;
+  const zoned = zonedTimestampsFor(options);
   try {
     if (data.length === 0) {
       // Create empty Arrow file
@@ -34,7 +34,7 @@ export async function exportToArrow(data, filePath, { timeZone = null } = {}) {
       const writer = arrow.RecordBatchFileWriter.writeAll(emptyTable);
       const buffer = Buffer.from(await writer.toUint8Array());
       await fs.writeFile(filePath, buffer);
-      return zoned?.summary();
+      return;
     }
 
     // First, analyze all columns to detect mixed types

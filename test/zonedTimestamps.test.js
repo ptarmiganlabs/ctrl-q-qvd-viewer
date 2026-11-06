@@ -72,13 +72,20 @@ suite("Zoned Timestamps Test Suite", () => {
     const repeated = wallClock(2016, 11, 6, 1, 30);
 
     // 02:30 CST is 03:30 CDT, and 01:30 showed first as CDT, then as CST
-    assert.strictEqual(new Date(chicago.instant(skipped, "at")).toISOString(), "2016-03-13T08:30:00.000Z");
-    assert.strictEqual(new Date(chicago.instant(repeated, "at")).toISOString(), "2016-11-06T06:30:00.000Z");
-    assert.strictEqual(chicago.offset(skipped), -5 * HOUR);
-    assert.strictEqual(chicago.offset(repeated), -5 * HOUR);
+    assert.deepStrictEqual(chicago.instantAndOffset(skipped, "at"), {
+      instant: Date.UTC(2016, 2, 13, 8, 30),
+      offset: -5 * HOUR,
+    });
+    assert.deepStrictEqual(chicago.instantAndOffset(repeated, "at"), {
+      instant: Date.UTC(2016, 10, 6, 6, 30),
+      offset: -5 * HOUR,
+    });
+    // Each side of a change has its own offset
+    assert.strictEqual(chicago.instantAndOffset(wallClock(2016, 3, 13, 1, 45)).offset, -6 * HOUR);
+    assert.strictEqual(chicago.instantAndOffset(wallClock(2016, 11, 6, 2, 0)).offset, -6 * HOUR);
 
     // Each timestamp counts, and each column notes its wall clocks once
-    chicago.instant(skipped, "at");
+    assert.strictEqual(chicago.instant(skipped, "at"), Date.UTC(2016, 2, 13, 8, 30));
     chicago.instant(repeated, "other");
     assert.deepStrictEqual(chicago.summary(), {
       timeZone: "America/Chicago",
@@ -110,8 +117,7 @@ suite("Zoned Timestamps Test Suite", () => {
   test("Wall clocks that already are UTC, or at a fixed offset, keep their time and nothing moves", () => {
     const skipped = wallClock(2016, 3, 13, 2, 30);
     const utc = zoned.zonedTimestamps("UTC");
-    assert.strictEqual(utc.instant(skipped), skipped.getTime());
-    assert.strictEqual(utc.offset(skipped), 0);
+    assert.deepStrictEqual(utc.instantAndOffset(skipped), { instant: skipped.getTime(), offset: 0 });
 
     const fixed = zoned.zonedTimestamps("-06:00");
     assert.strictEqual(new Date(fixed.instant(skipped)).toISOString(), "2016-03-13T08:30:00.000Z");

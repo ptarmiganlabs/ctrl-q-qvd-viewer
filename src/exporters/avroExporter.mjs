@@ -4,7 +4,7 @@ import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { isMissing, scanColumnTypes } from './columnTypes.mjs';
 import { DAY_MS, naiveDateText } from './naiveDates.mjs';
-import { zonedTimestamps } from './zonedTimestamps.mjs';
+import { zonedTimestampsFor } from './zonedTimestamps.mjs';
 
 // avsc leaves a logical type it doesn't know out of the file's schema. This one keeps
 // the annotation, which tells a reader that an int is a date, or a long a timestamp:
@@ -60,11 +60,11 @@ function writeAvroFile(records, type, filePath) {
  * @param {string|null} [options.timeZone] - The time zone the timestamps were read in,
  *   to write each as the instant it was; without one they are wall clocks with no time zone
  * @returns {Promise<import('./zonedTimestamps.mjs').TimeShifts|undefined>} With a time
- *   zone, what reading the timestamps in it did
+ *   zone and rows, what reading their timestamps in it did
  */
-export async function exportToAvro(data, filePath, { timeZone = null } = {}) {
+export async function exportToAvro(data, filePath, options = {}) {
   // Before anything is written, so that a time zone Intl doesn't know leaves the file alone
-  const zoned = timeZone ? zonedTimestamps(timeZone) : null;
+  const zoned = zonedTimestampsFor(options);
   try {
     if (data.length === 0) {
       // Create empty Avro file with minimal schema
@@ -75,7 +75,7 @@ export async function exportToAvro(data, filePath, { timeZone = null } = {}) {
       });
 
       await writeAvroFile([], type, filePath);
-      return zoned?.summary();
+      return;
     }
 
     // Infer schema by scanning all rows to determine compatible types

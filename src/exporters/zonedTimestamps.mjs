@@ -125,10 +125,11 @@ function dayOffsets(offsetAt, day) {
 /**
  * Read wall clocks as instants in a time zone
  * @param {string} timeZone - The zone, as resolveTimeZone() takes it
- * @returns {{timeZone: string, instant: function(Date, string=): number, offset: function(Date): number, summary: function(): TimeShifts}}
+ * @returns {{timeZone: string, instant: function(Date, string=): number, instantAndOffset: function(Date, string=): {instant: number, offset: number}, summary: function(): TimeShifts}}
  *   timeZone: Intl's name for the zone; instant: a timestamp's instant, in
- *   milliseconds, noting it under its column when it is moved or ambiguous; offset:
- *   the zone's offset from UTC at that instant; summary: what was moved or ambiguous
+ *   milliseconds, noting it under its column when it is moved or ambiguous;
+ *   instantAndOffset: that, and the zone's offset from UTC at the instant; summary:
+ *   what was moved or ambiguous
  * @throws {RangeError} For a zone Intl doesn't know
  */
 export function zonedTimestamps(timeZone) {
@@ -172,6 +173,25 @@ export function zonedTimestamps(timeZone) {
     }
   };
 
+  // A wall clock's instant by the compatible rule, from the offsets of its day, noting
+  // it when it is moved or ambiguous: the one place the rule is applied
+  const toInstant = (wallClock, offsets, column) => {
+    if (typeof offsets === "number") {
+      return wallClock - offsets;
+    }
+    // The day the offset changes. Wall clocks from the change's earlier one to its
+    // later one are skipped, going forward, or shown twice, going back; before them
+    // the old offset holds, and from their end the new one
+    const { before, after, at } = offsets;
+    if (wallClock >= at + Math.max(before, after)) {
+      return wallClock - after;
+    }
+    if (wallClock >= at + Math.min(before, after)) {
+      note(after > before ? "moved" : "ambiguous", column, wallClock);
+    }
+    return wallClock - before;
+  };
+
   const text = (wallClock) => naiveDateText(new Date(wallClock), false);
 
   return {
@@ -179,33 +199,18 @@ export function zonedTimestamps(timeZone) {
 
     instant(date, column) {
       const wallClock = date.getTime();
-      const offsets = offsetsOn(wallClock);
-      if (typeof offsets === "number") {
-        return wallClock - offsets;
-      }
-      // The day the offset changes. Wall clocks from the change's earlier one to its
-      // later one are skipped, going forward, or shown twice, going back; before them
-      // the old offset holds, and from their end the new one
-      const { before, after, at } = offsets;
-      if (wallClock >= at + Math.max(before, after)) {
-        return wallClock - after;
-      }
-      if (wallClock >= at + Math.min(before, after)) {
-        note(after > before ? "moved" : "ambiguous", column, wallClock);
-      }
-      return wallClock - before;
+      return toInstant(wallClock, offsetsOn(wallClock), column);
     },
 
-    offset(date) {
+    instantAndOffset(date, column) {
       const wallClock = date.getTime();
       const offsets = offsetsOn(wallClock);
+      const instant = toInstant(wallClock, offsets, column);
       if (typeof offsets === "number") {
-        return offsets;
+        return { instant, offset: offsets };
       }
-      const { before, after, at } = offsets;
-      // The instant instant() gives, without noting it again
-      const instant = wallClock >= at + Math.max(before, after) ? wallClock - after : wallClock - before;
-      return instant < at ? before : after;
+      // The offset on the side of the change the instant is on
+      return { instant, offset: instant < offsets.at ? offsets.before : offsets.after };
     },
 
     summary() {
@@ -221,6 +226,17 @@ export function zonedTimestamps(timeZone) {
       };
     },
   };
+}
+
+/**
+ * Read wall clocks as instants in the time zone an exporter's options name, if they name one
+ * @param {{timeZone?: string|null}} [options] - The exporter's options
+ * @returns {ReturnType<typeof zonedTimestamps>|null} The conversion, or null without a time zone
+ * @throws {RangeError} For a zone Intl doesn't know
+ */
+export function zonedTimestampsFor(options) {
+  const timeZone = options?.timeZone;
+  return timeZone ? zonedTimestamps(timeZone) : null;
 }
 
 /**
@@ -260,8 +276,7 @@ function offsetSuffix(offset) {
  * @returns {string} The text
  */
 export function offsetText(date, zoned, column) {
-  const instant = zoned.instant(date, column);
-  const offset = zoned.offset(date);
+  const { instant, offset } = zoned.instantAndOffset(date, column);
   const wallClock = instant + offset;
   const shown = wallClock === date.getTime() ? date : new Date(wallClock);
   return `${naiveDateText(shown, false)}${offsetSuffix(offset)}`;

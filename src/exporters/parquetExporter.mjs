@@ -2,7 +2,7 @@ import parquet from 'parquetjs';
 import { existsSync, unlinkSync } from 'fs';
 import { isMissing, scanColumnTypes } from './columnTypes.mjs';
 import { markTimestamps } from './parquetTimestamps.mjs';
-import { zonedTimestamps } from './zonedTimestamps.mjs';
+import { zonedTimestampsFor } from './zonedTimestamps.mjs';
 
 /**
  * Heap a Parquet export builds from the rows, for the memory guard. It writes
@@ -22,11 +22,11 @@ export const memoryCost = { bytesPerCell: 16, bytesPerTextChar: 0, writesAsItGoe
  * @param {string|null} [options.timeZone] - The time zone the timestamps were read in,
  *   to write each as the instant it was; without one they are wall clocks with no time zone
  * @returns {Promise<import('./zonedTimestamps.mjs').TimeShifts|undefined>} With a time
- *   zone, what reading the timestamps in it did
+ *   zone and rows, what reading their timestamps in it did
  */
-export async function exportToParquet(data, filePath, { timeZone = null } = {}) {
+export async function exportToParquet(data, filePath, options = {}) {
   // Before anything is written, so that a time zone Intl doesn't know leaves the file alone
-  const zoned = timeZone ? zonedTimestamps(timeZone) : null;
+  const zoned = zonedTimestampsFor(options);
   try {
     if (data.length === 0) {
       // Create empty parquet file with minimal schema
@@ -36,7 +36,7 @@ export async function exportToParquet(data, filePath, { timeZone = null } = {}) 
 
       const writer = await parquet.ParquetWriter.openFile(schema, filePath);
       await writer.close();
-      return zoned?.summary();
+      return;
     }
 
     // Infer schema by scanning all rows to determine compatible types
