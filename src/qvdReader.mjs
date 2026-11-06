@@ -76,14 +76,22 @@ function toCellValue(value) {
     return value;
   }
   // A double holds 15 significant digits exactly. With more, the number could differ
-  // from the text, as 12345678901234567891 reads as 12345678901234567000
-  const digits = value.replace("-", "").replace(".", "").replace(/^0+/, "");
-  if (digits.length > 15) {
-    return value;
+  // from the text, as 12345678901234567891 reads as 12345678901234567000. Zeros before
+  // the first digit and after the last don't count, and text of 15 characters or fewer
+  // can't have more, so only longer text is counted
+  if (value.length > 15) {
+    const digits = value
+      .replace("-", "")
+      .replace(".", "")
+      .replace(/^0+/, "")
+      .replace(/0+$/, "");
+    if (digits.length > 15) {
+      return value;
+    }
   }
   const number = Number(value);
-  // -0 would show as 0
-  return Object.is(number, -0) ? value : number;
+  // -0 would show as 0, and text such as 1 followed by 400 zeros is Infinity
+  return Object.is(number, -0) || !Number.isFinite(number) ? value : number;
 }
 
 /**
