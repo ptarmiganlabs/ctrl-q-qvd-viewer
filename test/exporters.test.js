@@ -8,6 +8,8 @@ const ExcelJS = require("exceljs");
 const Papa = require("papaparse");
 const parquet = require("parquetjs");
 const initSqlJs = require("sql.js");
+// parquetjs's own Thrift, to read the logical types parquetjs reads past
+const thrift = require("thrift");
 const yaml = require("js-yaml");
 const { buildOptions } = require("../esbuild.js");
 
@@ -181,6 +183,85 @@ async function readParquet(filePath) {
   } finally {
     await reader.close();
   }
+}
+
+/**
+ * Read the logical type of each Parquet column that has one: its footer's
+ * SchemaElement field 10, which parquetjs's reader skips
+ * @param {string} filePath - File path
+ * @returns {Object<string, string>} Such as {at: "TIMESTAMP(isAdjustedToUTC=false, MILLIS)"}
+ */
+function parquetLogicalTypes(filePath) {
+  const bytes = fs.readFileSync(filePath);
+  const footerLength = bytes.readUInt32LE(bytes.length - 8);
+  const footer = bytes.subarray(bytes.length - 8 - footerLength, bytes.length - 8);
+  const input = new thrift.TCompactProtocol(new thrift.TFramedTransport(footer));
+  // Call read for each field of the struct at hand, and skip the fields it doesn't read
+  const fields = (read) => {
+    input.readStructBegin();
+    for (;;) {
+      const { ftype, fid } = input.readFieldBegin();
+      if (ftype === thrift.Thrift.Type.STOP) {
+        break;
+      }
+      if (!read(fid, ftype)) {
+        input.skip(ftype);
+      }
+      input.readFieldEnd();
+    }
+    input.readStructEnd();
+  };
+
+  const types = {};
+  fields((metadataField) => {
+    // FileMetaData.schema
+    if (metadataField !== 2) {
+      return false;
+    }
+    const { size } = input.readListBegin();
+    for (let i = 0; i < size; i++) {
+      let name;
+      let logicalType;
+      fields((elementField) => {
+        if (elementField === 4) {
+          name = input.readString();
+          return true;
+        }
+        if (elementField !== 10) {
+          return false;
+        }
+        fields((kind) => {
+          // LogicalType.TIMESTAMP
+          if (kind !== 8) {
+            logicalType = `type ${kind}`;
+            return false;
+          }
+          let adjusted;
+          let unit;
+          fields((timestampField) => {
+            if (timestampField === 1) {
+              adjusted = input.readBool();
+              return true;
+            }
+            fields((unitField) => {
+              unit = ["", "MILLIS", "MICROS", "NANOS"][unitField];
+              return false;
+            });
+            return true;
+          });
+          logicalType = `TIMESTAMP(isAdjustedToUTC=${adjusted}, ${unit})`;
+          return true;
+        });
+        return true;
+      });
+      if (logicalType) {
+        types[name] = logicalType;
+      }
+    }
+    input.readListEnd();
+    return true;
+  });
+  return types;
 }
 
 /**
@@ -847,10 +928,14 @@ suite("Exporter Test Suite", () => {
     const rows = [{ when }, { when: "" }, { when: " " }];
     const file = (extension) => path.join(outputDir, `dates.${extension}`);
 
+    // A timestamp is milliseconds, marked as a timestamp with no time zone
     await parquetExporter.exportToParquet(rows, file("parquet"));
     assert.deepStrictEqual(await readParquet(file("parquet")), {
-      schema: { when: "TIMESTAMP_MILLIS?" },
-      rows: [{ when }, { when: null }, { when: null }],
+      schema: { when: "INT64?" },
+      rows: [{ when: when.getTime() }, { when: null }, { when: null }],
+    });
+    assert.deepStrictEqual(parquetLogicalTypes(file("parquet")), {
+      when: "TIMESTAMP(isAdjustedToUTC=false, MILLIS)",
     });
 
     await avroExporter.exportToAvro(rows, file("avro"));
@@ -908,8 +993,12 @@ suite("Exporter Test Suite", () => {
 
     await parquetExporter.exportToParquet(rows, file("parquet"));
     assert.deepStrictEqual(await readParquet(file("parquet")), {
-      schema: { day: "DATE", at: "TIMESTAMP_MILLIS" },
-      rows,
+      schema: { day: "DATE", at: "INT64" },
+      rows: rows.map((row) => ({ day: row.day, at: row.at.getTime() })),
+    });
+    // Not TIMESTAMP_MILLIS, which says UTC: pyarrow reads it as timestamp[ms, tz=UTC]
+    assert.deepStrictEqual(parquetLogicalTypes(file("parquet")), {
+      at: "TIMESTAMP(isAdjustedToUTC=false, MILLIS)",
     });
 
     await avroExporter.exportToAvro(rows, file("avro"));
@@ -1011,10 +1100,11 @@ suite("Exporter Test Suite", () => {
     const taxi = await read("chicago_taxi_rides/chicago_taxi_rides_2016_01.qvd", 100);
     const parquetPath = path.join(outputDir, "taxi.parquet");
     await parquetExporter.exportToParquet(taxi, parquetPath);
-    const { schema, rows } = await readParquet(parquetPath);
-    assert.strictEqual(schema.trip_start_timestamp, "TIMESTAMP_MILLIS");
-    assert.strictEqual(schema.trip_end_timestamp, "TIMESTAMP_MILLIS");
-    assert.deepStrictEqual(rows[0].trip_start_timestamp, new Date(Date.UTC(2016, 0, 13, 6, 15)));
+    const { rows } = await readParquet(parquetPath);
+    const logicalTypes = parquetLogicalTypes(parquetPath);
+    assert.strictEqual(logicalTypes.trip_start_timestamp, "TIMESTAMP(isAdjustedToUTC=false, MILLIS)");
+    assert.strictEqual(logicalTypes.trip_end_timestamp, "TIMESTAMP(isAdjustedToUTC=false, MILLIS)");
+    assert.strictEqual(rows[0].trip_start_timestamp, Date.UTC(2016, 0, 13, 6, 15));
 
     // Dates from 1756 on, in a field tagged $numeric and $integer
     const stockholm = await read("stockholm_temp/stockholm_temp.qvd", 1000);
