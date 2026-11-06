@@ -139,7 +139,9 @@ export function zonedTimestamps(timeZone) {
   const offsetAt = offsetReader(resolved);
   const days = new Map();
   const counts = { moved: 0, ambiguous: 0 };
-  const examples = {};
+  // Each column's first few wall clocks of each kind, in milliseconds until summary()
+  // writes them as text. A Map, as a column may be named constructor or __proto__
+  const examples = new Map();
 
   // The offsets of the day a wall clock is on
   const offsetsOn = (wallClock) => {
@@ -156,16 +158,21 @@ export function zonedTimestamps(timeZone) {
   };
 
   // Note a timestamp that was moved or is ambiguous, and the first few of each column's
-  const note = (kind, column, date) => {
+  const note = (kind, column, wallClock) => {
     counts[kind]++;
     const key = column ?? "";
-    examples[key] ??= { moved: [], ambiguous: [] };
-    const noted = examples[key][kind];
-    const text = naiveDateText(date, false);
-    if (noted.length < NOTED_WALL_CLOCKS && !noted.includes(text)) {
-      noted.push(text);
+    let noted = examples.get(key);
+    if (noted === undefined) {
+      noted = { moved: [], ambiguous: [] };
+      examples.set(key, noted);
+    }
+    const wallClocks = noted[kind];
+    if (wallClocks.length < NOTED_WALL_CLOCKS && !wallClocks.includes(wallClock)) {
+      wallClocks.push(wallClock);
     }
   };
+
+  const text = (wallClock) => naiveDateText(new Date(wallClock), false);
 
   return {
     timeZone: resolved,
@@ -184,7 +191,7 @@ export function zonedTimestamps(timeZone) {
         return wallClock - after;
       }
       if (wallClock >= at + Math.min(before, after)) {
-        note(after > before ? "moved" : "ambiguous", column, date);
+        note(after > before ? "moved" : "ambiguous", column, wallClock);
       }
       return wallClock - before;
     },
@@ -202,7 +209,16 @@ export function zonedTimestamps(timeZone) {
     },
 
     summary() {
-      return { timeZone: resolved, moved: counts.moved, ambiguous: counts.ambiguous, examples };
+      const noted = Array.from(examples, ([column, { moved, ambiguous }]) => [
+        column,
+        { moved: moved.map(text), ambiguous: ambiguous.map(text) },
+      ]);
+      return {
+        timeZone: resolved,
+        moved: counts.moved,
+        ambiguous: counts.ambiguous,
+        examples: Object.fromEntries(noted),
+      };
     },
   };
 }

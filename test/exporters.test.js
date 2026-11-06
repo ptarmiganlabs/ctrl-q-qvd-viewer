@@ -1393,6 +1393,31 @@ suite("Exporter Test Suite", () => {
     assert.deepStrictEqual(postgresShifts, shifts);
   });
 
+  test("Typed exports - a timestamp field named like a member every object has exports as any other", async () => {
+    // In the hour Chicago's clocks skipped, and the hour they showed twice, so that the
+    // conversion notes each under its field
+    const rows = [
+      {
+        constructor: new Date(Date.UTC(2016, 2, 13, 2, 30)),
+        toString: new Date(Date.UTC(2016, 10, 6, 1, 30)),
+      },
+    ];
+    const filePath = path.join(outputDir, "members.db");
+    const shifts = await sqliteExporter.exportToSQLite(rows, filePath, { timeZone: "America/Chicago" });
+    assert.deepStrictEqual(await querySqlite(filePath, 'SELECT "constructor", "toString" FROM data'), [
+      ["2016-03-13 08:30:00Z", "2016-11-06 06:30:00Z"],
+    ]);
+    assert.deepStrictEqual(shifts, {
+      timeZone: "America/Chicago",
+      moved: 1,
+      ambiguous: 1,
+      examples: {
+        constructor: { moved: ["2016-03-13 02:30:00"], ambiguous: [] },
+        toString: { moved: [], ambiguous: ["2016-11-06 01:30:00"] },
+      },
+    });
+  });
+
   test("Export - the time zone is asked only for timestamps, and only by formats that can store one", async () => {
     const rows = makeDateRows();
     const fields = ["day", "at"];

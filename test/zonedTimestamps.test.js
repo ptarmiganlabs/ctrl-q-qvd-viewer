@@ -91,6 +91,22 @@ suite("Zoned Timestamps Test Suite", () => {
     });
   });
 
+  test("A column named like a member every object has is noted as any other", () => {
+    const chicago = zoned.zonedTimestamps("America/Chicago");
+    const skipped = wallClock(2016, 3, 13, 2, 30);
+    for (const column of ["constructor", "toString", "__proto__"]) {
+      chicago.instant(skipped, column);
+    }
+    const { moved, examples } = chicago.summary();
+    assert.strictEqual(moved, 3);
+    const noted = { moved: ["2016-03-13 02:30:00"], ambiguous: [] };
+    assert.deepStrictEqual(Object.entries(examples), [
+      ["constructor", noted],
+      ["toString", noted],
+      ["__proto__", noted],
+    ]);
+  });
+
   test("Wall clocks that already are UTC, or at a fixed offset, keep their time and nothing moves", () => {
     const skipped = wallClock(2016, 3, 13, 2, 30);
     const utc = zoned.zonedTimestamps("UTC");
