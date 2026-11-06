@@ -1,8 +1,9 @@
-import { QvdDataFrame } from 'qvdjs';
+import { QvdDataFrame, QvdDual } from 'qvdjs';
 import { realpath, stat } from 'fs/promises';
 import { dirname } from 'path';
 import { createReadQueue } from './readQueue.mjs';
 import { toCellValue } from './cellValue.mjs';
+import { findDateColumns } from './qvdDates.mjs';
 import {
   CONVERSION_BYTES_PER_CELL,
   HELD_BYTES_PER_CELL,
@@ -58,6 +59,21 @@ const PRICINGS = 3;
 const FILE_CHANGED = Symbol("file changed");
 
 /**
+ * A cell's value in a row object: its Date in a column of dates, or what
+ * toCellValue() makes of it, a dual's text included
+ * @param {*} value - The cell as qvdjs reads it
+ * @param {Map<*, Date>|null|undefined} columnDates - Its column's dates, if it holds dates
+ * @returns {*} The value
+ */
+function rowValue(value, columnDates) {
+  const date = columnDates?.get(value);
+  if (date) {
+    return date;
+  }
+  return toCellValue(value instanceof QvdDual ? value.text : value);
+}
+
+/**
  * Turn qvdjs's rows into one object per row, keyed by field name
  * Yields to the event loop between chunks, so other extensions keep running,
  * and lets each of qvdjs's rows go once it is converted, so the whole of both
@@ -65,15 +81,17 @@ const FILE_CHANGED = Symbol("file changed");
  * @param {Array<Array>} rows - qvdjs's rows, one value per field
  * @param {Array<string>} columns - Field names, in file order
  * @param {AbortSignal} [signal] - Gives the conversion up between chunks
+ * @param {Array<Map<*, Date>|null>} [dates] - For each column of dates, the Date of
+ *   each of its values, as findDateColumns() gives them
  * @returns {Promise<Array<Object>>} The rows as objects
  */
-export async function toRowObjects(rows, columns, signal) {
+export async function toRowObjects(rows, columns, signal, dates = null) {
   const rowsPerChunk = Math.max(1, Math.floor(CELLS_PER_CHUNK / Math.max(1, columns.length)));
   const objects = [];
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     objects.push(
-      Object.fromEntries(columns.map((col, idx) => [col, toCellValue(row[idx])]))
+      Object.fromEntries(columns.map((col, idx) => [col, rowValue(row[idx], dates?.[idx])]))
     );
     rows[i] = undefined;
     if ((i + 1) % rowsPerChunk === 0 && i + 1 < rows.length) {
@@ -255,6 +273,9 @@ class QvdReader {
    * @param {boolean} [options.holdCallerBytes=true] - Whether the rows' booking includes
    *   the caller's work from the start. A caller that waits on the user first, as Export
    *   does for its dialogs, books its work itself when it begins.
+   * @param {boolean} [options.dates=false] - Whether a field of dates or timestamps reads
+   *   as Dates, for an export to a format with date types, rather than as the text Qlik
+   *   shows. Each Date holds the QVD's wall clock in its UTC fields.
    * @returns {Promise<{metadata: object, data: Array, error: string|null, errorName: string|null, errorReason: string|null, refusal: import('./memoryGuard.mjs').Refusal|null, release: function(): void}>}
    *   errorName and errorReason are qvdjs's error class and context.reason, such as
    *   "memory", "option" for a maxRows or cost that isn't a count, or "aborted" for a
@@ -265,7 +286,14 @@ class QvdReader {
   async read(
     filePath,
     maxRows = 25,
-    { signal, bytesPerCell = 0, bytesPerRow = 0, chunkRows = 0, holdCallerBytes = true } = {}
+    {
+      signal,
+      bytesPerCell = 0,
+      bytesPerRow = 0,
+      chunkRows = 0,
+      holdCallerBytes = true,
+      dates = false,
+    } = {}
   ) {
     try {
       signal?.throwIfAborted();
@@ -314,6 +342,7 @@ class QvdReader {
               // The caller's work is held with the rows unless it books that itself
               callerHeldBytes: holdCallerBytes ? callerBytes : 0,
               costBound,
+              dates,
             }),
           { signal }
         );
@@ -369,11 +398,12 @@ class QvdReader {
    * @param {number} plan.reserveBytes - Heap left for a small read beside this one
    * @param {number} plan.callerHeldBytes - Heap the rows' booking holds for the caller's work
    * @param {number} plan.costBound - An upper bound on what the read costs
+   * @param {boolean} plan.dates - Whether a field of dates or timestamps reads as Dates
    * @returns {Promise<object|symbol>} As read() describes, or FILE_CHANGED
    */
   async #readNow(filePath, maxRows, plan) {
     const { allowedDir, realFilePath, signal, budget, header, fields } = plan;
-    const { conversionBytes, callerBytes, reserveBytes, callerHeldBytes, costBound } = plan;
+    const { conversionBytes, callerBytes, reserveBytes, callerHeldBytes, costBound, dates } = plan;
 
     // A file rewritten since it was priced is priced again
     if (header?.key && (await fileVersion(realFilePath)) !== header.key) {
@@ -404,8 +434,9 @@ class QvdReader {
         ...(maxRows === 0 ? {} : { maxRows }),
         allowedDir,
         // Read a dual value (a date, a formatted number) as the text Qlik displays,
-        // as qvdjs 0.x did. Since 1.0 qvdjs reads it as its number by default.
-        duals: "text",
+        // as qvdjs 0.x did. Since 1.0 qvdjs reads it as its number by default. A read
+        // for dates takes both halves: a date's number, and the others' text.
+        duals: dates ? "both" : "text",
         ...(factor === null ? {} : { memorySafetyFactor: factor }),
         ...(signal ? { signal } : {}),
       };
@@ -491,8 +522,15 @@ class QvdReader {
         }),
       };
 
-      // Convert data from array of arrays to array of objects
-      const data = await toRowObjects(df.data, columns, signal);
+      // Convert data from array of arrays to array of objects, with a field of
+      // dates or timestamps as Dates when asked
+      let dateColumns = null;
+      if (dates) {
+        const tagsByName = new Map(metadata.fields.map((field) => [field.name, field.tags]));
+        const tags = columns.map((column) => tagsByName.get(column) ?? []);
+        dateColumns = await findDateColumns(df.data, tags, signal);
+      }
+      const data = await toRowObjects(df.data, columns, signal, dateColumns);
 
       // Given up after the conversion's last check: nobody is waiting for these
       // rows, so nothing is booked for them

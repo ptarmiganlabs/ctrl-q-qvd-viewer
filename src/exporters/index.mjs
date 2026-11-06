@@ -26,6 +26,9 @@ const MEMORY_COSTS = {
   yaml: yamlCost,
 };
 
+// The formats with date types, whose exports read a QVD's dates and timestamps as dates
+const DATE_FORMATS = new Set(["arrow", "avro", "excel", "parquet", "postgres", "sqlite"]);
+
 /**
  * Main DataExporter class that coordinates all export operations
  */
@@ -71,6 +74,16 @@ class DataExporter {
    */
   static memoryCost(format) {
     return Object.hasOwn(MEMORY_COSTS, format) ? MEMORY_COSTS[format] : null;
+  }
+
+  /**
+   * Whether a format's export writes a QVD's dates and timestamps as dates. Every other
+   * format writes the text Qlik shows, as the grid does.
+   * @param {string} format - The export format
+   * @returns {boolean} True for a format with date types
+   */
+  static writesDates(format) {
+    return DATE_FORMATS.has(format);
   }
 
   /**

@@ -998,4 +998,45 @@ suite("Exporter Test Suite", () => {
     ]);
     assert.deepStrictEqual(rows[0].day, makeDateRows()[0].day, "The rows should stay as they were");
   });
+
+  test("Typed exports - a QVD's dates and timestamps come out as dates, as an export reads them", async () => {
+    const read = async (name, maxRows) => {
+      const qvdPath = path.join(__dirname, "..", "test-data", name);
+      const result = await new QvdReader().read(qvdPath, maxRows, { dates: true });
+      assert.strictEqual(result.error, null);
+      return result.data;
+    };
+
+    // Timestamps, one field tagged $timestamp and one with no tags
+    const taxi = await read("chicago_taxi_rides/chicago_taxi_rides_2016_01.qvd", 100);
+    const parquetPath = path.join(outputDir, "taxi.parquet");
+    await parquetExporter.exportToParquet(taxi, parquetPath);
+    const { schema, rows } = await readParquet(parquetPath);
+    assert.strictEqual(schema.trip_start_timestamp, "TIMESTAMP_MILLIS");
+    assert.strictEqual(schema.trip_end_timestamp, "TIMESTAMP_MILLIS");
+    assert.deepStrictEqual(rows[0].trip_start_timestamp, new Date(Date.UTC(2016, 0, 13, 6, 15)));
+
+    // Dates from 1756 on, in a field tagged $numeric and $integer
+    const stockholm = await read("stockholm_temp/stockholm_temp.qvd", 1000);
+    const sqlPath = path.join(outputDir, "stockholm.sql");
+    await postgresExporter.exportToPostgres(stockholm, sqlPath, 2, {});
+    const lines = fs.readFileSync(sqlPath, "utf8").split("\n");
+    assert.ok(lines.includes('  "date" DATE NOT NULL,'), "The column should be a DATE");
+    assert.ok(lines[lines.indexOf("VALUES") + 1].startsWith("  ('1756-01-01', "));
+
+    // Excel can't show them, so they are text
+    const excelPath = path.join(outputDir, "stockholm.xlsx");
+    await excelExporter.exportToExcel(stockholm, excelPath);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(excelPath);
+    assert.strictEqual(workbook.getWorksheet("Data").getRow(2).getCell(1).value, "1756-01-01");
+
+    // Every format with date types reads them so, and none other
+    assert.deepStrictEqual(
+      DataExporter.getExportFormats()
+        .map(({ name }) => name)
+        .filter((name) => DataExporter.writesDates(name)),
+      ["arrow", "avro", "excel", "parquet", "postgres", "sqlite"]
+    );
+  });
 });
