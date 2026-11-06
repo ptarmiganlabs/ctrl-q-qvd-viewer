@@ -1230,33 +1230,14 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             
             <!-- Data Tab -->
             <div id="data-tab" class="tab-content active">
-                ${
-                  hasMoreRows
-                    ? `
-                <div class="info-banner">
+                <!-- Filled in by updateLoadedRowsBanner() once the rows are known -->
+                <div class="info-banner" id="loaded-rows-banner" style="display: none;">
+                    <div id="loaded-rows-text"></div>
                     <div>
-                        📊 Showing ${data.length.toLocaleString()} of ${totalRows.toLocaleString()} rows 
-                        (${((data.length / totalRows) * 100).toFixed(
-                          1
-                        )}% of file loaded)
-                    </div>
-                    <div>
-                        <button class="load-button" id="loadMoreBtn">
-                            Load More (next ${Math.min(
-                              data.length,
-                              totalRows - data.length
-                            ).toLocaleString()} rows)
-                        </button>
-                        <button class="load-button" id="loadAllBtn">
-                            Load All Remaining (${(
-                              totalRows - data.length
-                            ).toLocaleString()} rows)
-                        </button>
+                        <button class="load-button" id="loadMoreBtn">Load More</button>
+                        <button class="load-button" id="loadAllBtn">Load All Remaining</button>
                     </div>
                 </div>
-                `
-                    : ""
-                }
                 ${
                   dataError
                     ? `
@@ -1391,20 +1372,6 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                                 : ""
                             }
                         </div>
-                        ${
-                          data.length < totalRows
-                            ? `
-                        <div class="info-banner" style="margin-top: 12px;">
-                            ℹ️ <strong>Data Loaded:</strong> Profiling will analyze ${data.length.toLocaleString()} of ${totalRows.toLocaleString()} total rows (limited for performance).
-                            ${
-                              totalRows <= 100000
-                                ? `<button class="load-button" onclick="vscode.postMessage({command: 'loadMore', loadAll: true})">📥 Load All Rows</button> for more accurate profiling.`
-                                : `This limit is configurable in <button class="load-button" onclick="vscode.postMessage({command: 'openSettings'})">⚙️ Settings</button>.`
-                            }
-                        </div>
-                        `
-                            : ""
-                        }
                         <div class="profiling-buttons">
                             <button class="header-button" id="run-profiling-btn">▶️ Run Profiling</button>
                             <button class="header-button" id="clear-profiling-btn">✕ Clear Results</button>
@@ -1435,7 +1402,9 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
     <script nonce="${nonce}">
         const vscode = acquireVsCodeApi();
         const totalRowsInFile = ${totalRows};
-        const currentLoadedRows = ${data.length};
+        // Updated when the rows arrive via postMessage
+        let currentLoadedRows = ${data.length};
+        let hasMoreRows = ${hasMoreRows};
         
         // Logging helper - sends logs to extension
         const logger = {
@@ -1477,7 +1446,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
         window.addEventListener('DOMContentLoaded', function() {
             ${
               embedData
-                ? "initializeTables();"
+                ? "initializeTables();\n            updateLoadedRowsBanner();"
                 : "// Tables will be initialized after receiving data via postMessage"
             }
             setupEventListeners();
@@ -1680,12 +1649,14 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                             // Clear the placeholder and set real data
                             tableData.length = 0;
                             tableData.push(...message.data);
+                            currentLoadedRows = message.data.length;
                         }
                         
-                        // Update hasMoreRows if provided
-                        if (message.hasMoreRows !== undefined) {
-                            window.hasMoreRows = message.hasMoreRows;
-                        }
+                        // Update hasMoreRows, from the message if it says
+                        hasMoreRows = message.hasMoreRows !== undefined
+                            ? message.hasMoreRows
+                            : currentLoadedRows < totalRowsInFile;
+                        updateLoadedRowsBanner();
                         
                         // Hide loading indicator
                         const loadingIndicator = document.getElementById('loading-indicator');
@@ -2122,6 +2093,32 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                 command: 'exportData',
                 format: format
             });
+        }
+        
+        // Show how many rows are loaded, or hide the banner once they all are
+        function updateLoadedRowsBanner() {
+            const banner = document.getElementById('loaded-rows-banner');
+            if (!banner) return;
+            if (!hasMoreRows) {
+                banner.style.display = 'none';
+                return;
+            }
+            
+            const remainingRows = totalRowsInFile - currentLoadedRows;
+            // The loadMore handler in messageHandler.mjs doubles the loaded rows, up to 100,000
+            const nextBatch = Math.min(currentLoadedRows * 2, 100000, totalRowsInFile) - currentLoadedRows;
+            
+            document.getElementById('loaded-rows-text').textContent =
+                \`📊 Showing \${currentLoadedRows.toLocaleString()} of \${totalRowsInFile.toLocaleString()} rows (\${((currentLoadedRows / totalRowsInFile) * 100).toFixed(1)}% of file loaded)\`;
+            
+            const loadMoreBtn = document.getElementById('loadMoreBtn');
+            loadMoreBtn.textContent = \`Load More (next \${nextBatch.toLocaleString()} rows)\`;
+            loadMoreBtn.style.display = nextBatch > 0 ? '' : 'none';
+            
+            document.getElementById('loadAllBtn').textContent =
+                \`Load All Remaining (\${remainingRows.toLocaleString()} rows)\`;
+            
+            banner.style.display = '';
         }
         
         function loadMoreRows() {
