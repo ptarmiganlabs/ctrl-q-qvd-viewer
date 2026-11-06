@@ -59,8 +59,9 @@ function calculateLengthStats(stringValues) {
   }
 
   const lengths = stringValues.map((v) => v.length);
-  const min = Math.min(...lengths);
-  const max = Math.max(...lengths);
+  // Not Math.min(...lengths): spreading overflows the stack from about 120,000 values
+  const min = lengths.reduce((acc, len) => Math.min(acc, len));
+  const max = lengths.reduce((acc, len) => Math.max(acc, len));
   const sum = lengths.reduce((acc, len) => acc + len, 0);
   const average = sum / lengths.length;
 
