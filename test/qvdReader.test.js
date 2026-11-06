@@ -131,6 +131,21 @@ suite("QVD Reader Test Suite", () => {
     ]);
   });
 
+  test("Reader - text too small for a double to hold stays text, and zeros are 0", async () => {
+    const zeros = (count) => `0.${"0".repeat(count)}`;
+    await assertReadsAs([
+      // Below 2^-1022 a double holds fewer digits: these would be 1.2345678901233e-311,
+      // 0 and -0
+      [`${zeros(310)}123456789012345`, `${zeros(310)}123456789012345`],
+      [`${zeros(400)}1`, `${zeros(400)}1`],
+      [`-${zeros(400)}1`, `-${zeros(400)}1`],
+      // Just below 2^-1022
+      [`${zeros(307)}222507385850720`, `${zeros(307)}222507385850720`],
+      ["0", 0],
+      ["0.00", 0],
+    ]);
+  });
+
   test("Reader - text whose number would show in exponent form stays text", async () => {
     await assertReadsAs([
       ["0.0000001", "0.0000001"],
