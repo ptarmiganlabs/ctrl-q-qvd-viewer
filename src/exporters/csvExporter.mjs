@@ -2,8 +2,8 @@ import Papa from "papaparse";
 import { writeFileAtomically } from "./atomicWrite.mjs";
 
 // Rows turned into CSV text at a time, so a large export never holds the whole
-// file as one string
-const CHUNK_ROWS = 10000;
+// file as one string. The memory guard prices a CSV export by its largest chunk.
+export const CHUNK_ROWS = 10000;
 
 // Text that Excel, LibreOffice and Google Sheets would run as a formula: = or @
 // first, a tab or carriage return first, or + or - followed by anything but a

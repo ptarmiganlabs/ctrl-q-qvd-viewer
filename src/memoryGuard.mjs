@@ -16,6 +16,8 @@
  * that a container's memory limit binds here as it binds there.
  */
 
+import { CHUNK_ROWS as CSV_CHUNK_ROWS } from "./exporters/csvExporter.mjs";
+
 /**
  * The smallest factor handed to qvdjs. Zero would switch its check off.
  */
@@ -47,17 +49,19 @@ const BYTES_PER_TEXT_CHAR = 2;
 /**
  * Heap an export builds from the rows, per cell, by format: about one and a
  * half times what each needed for the taxi file. Measured by the smallest heap
- * that let 200,000 or 1,000,000 rows export: Excel 730, YAML 226, XML 107,
- * CSV 104, JSON 35, PostgreSQL 13, Arrow 12 and Qlik inline 7.8 bytes per cell.
- * Arrow's file buffers, outside the V8 heap, aren't counted. Parquet and Avro
- * write as they go, and SQLite keeps its database in sql.js's WebAssembly
- * memory, outside the V8 heap too. JSON also stops at V8's longest string,
- * with a catchable error, at about 1.6 million rows of 20 fields.
+ * that let 200,000 or 1,000,000 rows export: Excel 730, YAML 226, CSV 108 (every
+ * row in one chunk), XML 107, JSON 35, PostgreSQL 13, Arrow 12 and Qlik inline
+ * 7.8 bytes per cell. CSV writes a chunk of rows at a time, so only its largest
+ * chunk is priced (EXPORT_CHUNK_ROWS). Arrow's file buffers, outside the V8
+ * heap, aren't counted. Parquet and Avro write as they go, and SQLite keeps its
+ * database in sql.js's WebAssembly memory, outside the V8 heap too. JSON also
+ * stops at V8's longest string, with a catchable error, at about 1.6 million
+ * rows of 20 fields.
  */
 export const EXPORT_BYTES_PER_CELL = {
   arrow: 24,
   avro: 16,
-  csv: 160,
+  csv: 168,
   excel: 1100,
   json: 64,
   parquet: 16,
@@ -73,14 +77,15 @@ export const EXPORT_BYTES_PER_CELL = {
  * its cost per cell: what the formats that write the text into one string, or
  * keep it in a document, cost as values get longer. About twice what each
  * needed for 50,000 rows of four 400-character values, since text outside
- * Latin-1 takes two bytes a character: Excel 2.3, YAML 1.9, XML and Qlik inline
- * 1.0, JSON and PostgreSQL 0.9, Arrow 0.6 and CSV 0.4 bytes per character.
- * Parquet, Avro and SQLite added nothing to the V8 heap.
+ * Latin-1 takes two bytes a character: Excel 2.3, YAML 1.9, CSV 1.8 (of the
+ * chunk it writes at a time), XML and Qlik inline 1.0, JSON and PostgreSQL 0.9
+ * and Arrow 0.6 bytes per character. Parquet, Avro and SQLite added nothing to
+ * the V8 heap.
  */
 export const EXPORT_BYTES_PER_TEXT_CHAR = {
   arrow: 2,
   avro: 0,
-  csv: 1,
+  csv: 4,
   excel: 5,
   json: 2,
   parquet: 0,
@@ -90,6 +95,13 @@ export const EXPORT_BYTES_PER_TEXT_CHAR = {
   xml: 3,
   yaml: 4,
 };
+
+/**
+ * Rows an export turns into text at a time, by format, so that its heap is its
+ * largest chunk's rather than its whole output's. The formats not listed build
+ * their whole output at once, or are priced as if they did.
+ */
+export const EXPORT_CHUNK_ROWS = { csv: CSV_CHUNK_ROWS };
 
 /**
  * Heap profiling builds, per value of each profiled field: about one and a half
@@ -211,17 +223,28 @@ export function heldTextBytes(fields, rows) {
 }
 
 /**
- * A format's cost from one of the tables above, or 0 for a name that isn't a format
- * @param {Object<string, number>} table - EXPORT_BYTES_PER_CELL or EXPORT_BYTES_PER_TEXT_CHAR
+ * A format's figure from one of the tables above, or 0 for a name that isn't a format
+ * @param {Object<string, number>} table - EXPORT_BYTES_PER_CELL, EXPORT_BYTES_PER_TEXT_CHAR or EXPORT_CHUNK_ROWS
  * @param {string} format - The export format
- * @returns {number} Bytes
+ * @returns {number} Bytes, or rows for EXPORT_CHUNK_ROWS
  */
 export function exportCost(table, format) {
   return Object.hasOwn(table, format) ? table[format] : 0;
 }
 
 /**
+ * Rows an export writes at a time
+ * @param {string} format - The export format
+ * @returns {number} Rows, or 0 for a format that builds its whole output at once
+ */
+export function exportChunkRows(format) {
+  return exportCost(EXPORT_CHUNK_ROWS, format);
+}
+
+/**
  * Heap an export of these rows builds: per cell, and per character of their text
+ * A format that writes a chunk of rows at a time holds one chunk's work at a
+ * time, so it is priced by its largest chunk.
  * @param {string} format - The export format
  * @param {Array<Object>} rows - The rows read
  * @param {number} columnCount - Fields per row
@@ -230,19 +253,24 @@ export function exportCost(table, format) {
  */
 export function exportHeapBytes(format, rows, columnCount, limit = 0) {
   const count = limit > 0 ? Math.min(limit, rows.length) : rows.length;
-  let chars = 0;
-  for (let i = 0; i < count; i++) {
-    const row = rows[i];
-    for (const key in row) {
-      const value = row[key];
-      if (typeof value === "string") {
-        chars += value.length;
+  const chunkRows = exportChunkRows(format) || count;
+  const perCell = exportCost(EXPORT_BYTES_PER_CELL, format);
+  const perChar = exportCost(EXPORT_BYTES_PER_TEXT_CHAR, format);
+  let bytes = 0;
+  for (let start = 0; start < count; start += chunkRows) {
+    const end = Math.min(start + chunkRows, count);
+    let chars = 0;
+    for (let i = start; i < end; i++) {
+      const row = rows[i];
+      for (const key in row) {
+        const value = row[key];
+        if (typeof value === "string") {
+          chars += value.length;
+        }
       }
     }
+    bytes = Math.max(bytes, (end - start) * columnCount * perCell + chars * perChar);
   }
-  const bytes =
-    count * columnCount * exportCost(EXPORT_BYTES_PER_CELL, format) +
-    chars * exportCost(EXPORT_BYTES_PER_TEXT_CHAR, format);
   return { bytes, rows: count };
 }
 
@@ -257,6 +285,11 @@ function size(bytes) {
 }
 
 /**
+ * The formats that write as they go, as the user sees them
+ */
+const LEAN_FORMATS = ["CSV", "Parquet", "Avro"];
+
+/**
  * Say why an export is refused for memory
  * @param {string} formatLabel - The format, as the user sees it
  * @param {number} rows - Rows to export
@@ -265,10 +298,11 @@ function size(bytes) {
  * @returns {string} The message
  */
 export function describeExportRefusal(formatLabel, rows, neededBytes, leftBytes) {
+  const others = LEAN_FORMATS.filter((label) => label !== formatLabel);
   return (
     `Exporting ${rows.toLocaleString()} rows to ${formatLabel} needs about ${size(neededBytes)} ` +
     `of memory, and about ${size(leftBytes)} is left in what VS Code gives its extensions. ` +
-    "Parquet and Avro write as they go, and need much less."
+    `${others.slice(0, -1).join(", ")} and ${others.at(-1)} write as they go, and need much less.`
   );
 }
 

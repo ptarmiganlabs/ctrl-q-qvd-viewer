@@ -225,6 +225,8 @@ class QvdReader {
    * @param {AbortSignal} [options.signal] - Gives the read up, queued or running: its editor was closed
    * @param {number} [options.bytesPerCell=0] - Heap the caller builds from the rows per cell, such as an export's
    * @param {number} [options.bytesPerRow=0] - Heap the caller builds from the rows per row, such as profiling's
+   * @param {number} [options.chunkRows=0] - Rows the caller builds from at a time, such as
+   *   a CSV export's; 0 for every row at once
    * @param {boolean} [options.holdCallerBytes=true] - Whether the rows' booking includes
    *   the caller's work from the start. A caller that waits on the user first, as Export
    *   does for its dialogs, books its work itself when it begins.
@@ -237,7 +239,7 @@ class QvdReader {
   async read(
     filePath,
     maxRows = 25,
-    { signal, bytesPerCell = 0, bytesPerRow = 0, holdCallerBytes = true } = {}
+    { signal, bytesPerCell = 0, bytesPerRow = 0, chunkRows = 0, holdCallerBytes = true } = {}
   ) {
     try {
       signal?.throwIfAborted();
@@ -246,6 +248,7 @@ class QvdReader {
       requireCount(maxRows, "maxRows", true);
       requireCount(bytesPerCell, "bytesPerCell");
       requireCount(bytesPerRow, "bytesPerRow");
+      requireCount(chunkRows, "chunkRows", true);
       // Configure allowedDir to the parent directory of the file being opened
       // This allows qvdjs to read files from anywhere while still maintaining
       // path traversal protection within that directory.
@@ -259,7 +262,9 @@ class QvdReader {
       const header = await headerOf(filePath, realFilePath, allowedDir, signal);
       const rows = maxRows === 0 ? header.rowCount : Math.min(maxRows, header.rowCount);
       const cells = rows * header.columnCount;
-      const callerBytes = cells * bytesPerCell + rows * bytesPerRow;
+      // What the caller builds, for as many rows as it builds from at once
+      const callerRows = chunkRows > 0 ? Math.min(chunkRows, rows) : rows;
+      const callerBytes = callerRows * (header.columnCount * bytesPerCell + bytesPerRow);
       const small = readCostBound(header, cells, callerBytes) <= SMALL_READ_BYTES;
       const budget = await budgetFor(filePath, allowedDir, header, signal);
 

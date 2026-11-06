@@ -9,6 +9,7 @@ import {
   EXPORT_BYTES_PER_CELL,
   PROFILE_BYTES_PER_VALUE,
   describeExportRefusal,
+  exportChunkRows,
   exportCost,
   exportHeapBytes,
   tryBookHeap,
@@ -96,6 +97,8 @@ export function setupMessageHandler(
           let result = await qvdReader.read(filePath, 0, {
             signal,
             bytesPerCell: exportCost(EXPORT_BYTES_PER_CELL, message.format),
+            // A CSV export builds from a chunk of rows at a time
+            chunkRows: exportChunkRows(message.format),
             holdCallerBytes: false,
           }); // Read all data
           releaseExportedRows = result.release;

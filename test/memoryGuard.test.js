@@ -94,6 +94,10 @@ suite("Memory Guard Test Suite", () => {
     assert.ok(guard.PROFILE_BYTES_PER_VALUE >= 181 * 1.5);
     assert.ok(guard.EXPORT_BYTES_PER_CELL.excel >= 730 * 1.5);
     assert.ok(guard.EXPORT_BYTES_PER_TEXT_CHAR.excel >= 2.3 * 2);
+    // A CSV export needed 108 per cell with every row in one chunk, and 1.8 per
+    // character of the chunk it writes at a time
+    assert.ok(guard.EXPORT_BYTES_PER_CELL.csv >= 108 * 1.5);
+    assert.ok(guard.EXPORT_BYTES_PER_TEXT_CHAR.csv >= 1.8 * 2);
   });
 
   test("Every export format has a cost per cell and per character", () => {
@@ -103,6 +107,11 @@ suite("Memory Guard Test Suite", () => {
       for (const bytes of Object.values(table)) {
         assert.ok(Number.isFinite(bytes) && bytes >= 0);
       }
+    }
+    // Chunks only for formats, and of whole rows
+    for (const [name, rows] of Object.entries(guard.EXPORT_CHUNK_ROWS)) {
+      assert.ok(formats.includes(name), name);
+      assert.ok(Number.isInteger(rows) && rows > 0, name);
     }
   });
 
@@ -170,10 +179,31 @@ suite("Memory Guard Test Suite", () => {
     });
   });
 
+  test("A CSV export is priced by its largest chunk, as it writes one at a time", () => {
+    const chunk = guard.exportChunkRows("csv");
+    assert.ok(chunk > 0);
+    // Two chunks and a row, the second chunk with the most text
+    const rows = Array.from({ length: 2 * chunk + 1 }, (_, i) => ({
+      id: i,
+      note: i >= chunk && i < 2 * chunk ? "x".repeat(10) : "y",
+    }));
+    assert.deepStrictEqual(guard.exportHeapBytes("csv", rows, 2), {
+      rows: rows.length,
+      bytes: chunk * 2 * guard.EXPORT_BYTES_PER_CELL.csv + chunk * 10 * guard.EXPORT_BYTES_PER_TEXT_CHAR.csv,
+    });
+    // A format that builds its whole output at once has no chunks
+    assert.strictEqual(guard.exportChunkRows("excel"), 0);
+    assert.strictEqual(guard.exportChunkRows("constructor"), 0);
+  });
+
   test("A refused export says what it needs and what is left", () => {
     const message = guard.describeExportRefusal("Excel", 300000, 6.5 * 2 ** 30, 380 * 2 ** 20);
     assert.ok(message.startsWith(`Exporting ${(300000).toLocaleString()} rows to Excel needs about 6.5 GiB`));
     assert.ok(message.includes("about 380 MiB is left"));
+    assert.ok(message.endsWith(" CSV, Parquet and Avro write as they go, and need much less."));
+    // A format that writes as it goes isn't suggested for itself
+    const csv = guard.describeExportRefusal("CSV", 10, 2 ** 20, 0);
+    assert.ok(csv.endsWith(" Parquet and Avro write as they go, and need much less."));
   });
 
   test("A refused read of every row says how many rows would fit", () => {
@@ -252,6 +282,8 @@ suite("Memory Guard Test Suite", () => {
     }
     const cost = await reader.read(colors, 10, { bytesPerCell: NaN });
     assert.strictEqual(cost.errorReason, "option");
+    const chunk = await reader.read(colors, 10, { chunkRows: 1.5 });
+    assert.strictEqual(chunk.errorReason, "option");
   });
 
   test("A read's rows book their objects and text until released", async () => {
@@ -293,6 +325,17 @@ suite("Memory Guard Test Suite", () => {
   test("A read is refused when what the caller builds won't fit", async () => {
     const result = await new QvdReader().read(inventoryParts, 0, { bytesPerCell: 1e6 });
     assert.strictEqual(result.errorReason, "memory");
+  });
+
+  test("A caller that builds from a few rows at a time is priced for those rows", async () => {
+    const reader = new QvdReader();
+    // At 1 MB a cell, every row of sets.qvd won't fit, and ten rows at a time do
+    const whole = await reader.read(sets, 0, { bytesPerCell: 1e6 });
+    assert.strictEqual(whole.errorReason, "memory");
+    const chunked = await reader.read(sets, 0, { bytesPerCell: 1e6, chunkRows: 10 });
+    assert.strictEqual(chunked.error, null);
+    assert.strictEqual(chunked.data.length, chunked.totalRows);
+    chunked.release();
   });
 
   test("A large read waits while the large lane is busy", async () => {
