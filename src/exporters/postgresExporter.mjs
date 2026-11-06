@@ -183,7 +183,9 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
           return `  (${values.join(", ")})${isLast ? ";" : ","}`;
         });
 
-        sqlContent.push(...valueRows);
+        for (const valueRow of valueRows) {
+          sqlContent.push(valueRow);
+        }
         sqlContent.push(``);
       }
 

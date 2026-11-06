@@ -30,6 +30,20 @@ export default [
     },
   },
   {
+    // The extension's code handles whole QVD files, so a spread call can meet one element per row
+    files: ["src/**/*.js", "src/**/*.mjs"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: ":matches(CallExpression, NewExpression) > SpreadElement",
+          message:
+            "A spread argument passes one argument per element, which overflows the stack from about 120,000. Use a loop or reduce instead.",
+        },
+      ],
+    },
+  },
+  {
     // Scripts the webviews inline: plain browser scripts, run after Chart.js and Tabulator
     files: ["src/webview/client/**/*.js"],
     languageOptions: {
