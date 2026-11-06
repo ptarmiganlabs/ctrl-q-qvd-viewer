@@ -1516,12 +1516,15 @@ export function getVisualAnalysisHtml(
             // Initialize bins
             const bins = Array(binCount).fill(0);
             const binLabels = [];
-            
+            // Bin edges for the table: a label like -999.0--947.6 can't be split on '-'
+            const binRanges = [];
+
             // Create bin labels
             for (let i = 0; i < binCount; i++) {
                 const binStart = min + i * binWidth;
                 const binEnd = min + (i + 1) * binWidth;
                 binLabels.push(\`\${binStart.toFixed(1)}-\${binEnd.toFixed(1)}\`);
+                binRanges.push({ from: binStart.toFixed(1), to: binEnd.toFixed(1) });
             }
             
             // Count values in each bin using distribution counts
@@ -1599,16 +1602,12 @@ export function getVisualAnalysisHtml(
             });
             
             // Update table with histogram data (using totalCount already declared above)
-            const histogramData = binLabels.map((label, i) => {
-                // Split the range label into from and to
-                const [from, to] = label.split('-');
-                return {
-                    from: from,
-                    to: to,
-                    count: bins[i],
-                    percentage: totalCount > 0 ? ((bins[i] / totalCount) * 100).toFixed(2) : '0.00'
-                };
-            });
+            const histogramData = binRanges.map((range, i) => ({
+                from: range.from,
+                to: range.to,
+                count: bins[i],
+                percentage: totalCount > 0 ? ((bins[i] / totalCount) * 100).toFixed(2) : '0.00'
+            }));
             
             if (currentTable) {
                 currentTable.destroy();
