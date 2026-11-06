@@ -1655,7 +1655,10 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         if (message.data) {
                             // Clear the placeholder and set real data
                             tableData.length = 0;
-                            tableData.push(...message.data);
+                            // One row at a time: push(...rows) overflows the stack from about 125,000 rows
+                            for (const row of message.data) {
+                                tableData.push(row);
+                            }
                             currentLoadedRows = message.data.length;
                         }
                         
