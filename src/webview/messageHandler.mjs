@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { basename, dirname, extname, join } from "path";
 import { writeFileSync } from "fs";
 import DataExporter from "../exporters/index.mjs";
+import { describeTimeShifts } from "../exporters/zonedTimestamps.mjs";
 import { PROFILE_BYTES_PER_VALUE, profileFields, generateQvsScript } from "../qvdProfiler.mjs";
 import { getVisualAnalysisHtml } from "./templates/visualAnalysisTemplate.mjs";
 import { getLoadMoreRowCount } from "./loadMore.mjs";
@@ -216,6 +217,8 @@ export function setupMessageHandler(
           const workspaceFolder =
             vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
           const columnCount = result.columns.length;
+          // What reading the timestamps in a time zone did, when the export named one
+          let timeShifts = null;
           const savedPath = await DataExporter.exportData(
             result.data,
             format,
@@ -246,6 +249,9 @@ export function setupMessageHandler(
                 }
                 return booking.release;
               },
+              report: (shifts) => {
+                timeShifts = shifts;
+              },
             }
           );
           // The rows, and the exporter's copy, are done with: later reads may have the heap
@@ -253,8 +259,16 @@ export function setupMessageHandler(
           releaseExportedRows();
 
           if (savedPath) {
+            // Timestamps DST moved or left ambiguous are told, and the first few logged
+            const note = timeShifts ? describeTimeShifts(timeShifts) : "";
+            if (timeShifts) {
+              logger.log(
+                `Exported the timestamps as instants, read in ${timeShifts.timeZone}`,
+                note ? timeShifts : null
+              );
+            }
             const action = await vscode.window.showInformationMessage(
-              `Data exported to ${savedPath}`,
+              note ? `Data exported to ${savedPath}. ${note}` : `Data exported to ${savedPath}`,
               "Open Folder"
             );
 

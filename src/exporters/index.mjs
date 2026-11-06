@@ -303,6 +303,9 @@ class DataExporter {
    *   Called with the rows and the row limit once every question is answered, just before
    *   the export is written. It returns a release, or a promise of one, called when the
    *   export ends, or throws to refuse the export.
+   * @param {function(import('./zonedTimestamps.mjs').TimeShifts): void} [options.report] -
+   *   Called once an export that read its timestamps in a time zone is written, with
+   *   what reading them in it did
    * @returns {Promise<string|null>} Path to saved file or null if cancelled
    * @throws {Error} For a time zone in the settings that VS Code doesn't know, naming
    *   the setting in its setting property, when the export would use it
@@ -315,7 +318,7 @@ class DataExporter {
     workspaceFolder,
     maxRows,
     fields,
-    { reserve } = {}
+    { reserve, report } = {}
   ) {
     const config = Object.hasOwn(FORMATS, format) ? FORMATS[format] : null;
     if (!config) {
@@ -501,6 +504,7 @@ class DataExporter {
 
     try {
       // Perform export
+      let timeShifts;
       if (format === "qlik") {
         // Pass delimiter to Qlik exporter
         await config.exporter(
@@ -511,9 +515,9 @@ class DataExporter {
         );
       } else if (format === "postgres") {
         // Pass options to PostgreSQL exporter
-        await config.exporter(data, fileUri.fsPath, maxRows, { ...postgresOptions, timeZone });
+        timeShifts = await config.exporter(data, fileUri.fsPath, maxRows, { ...postgresOptions, timeZone });
       } else if (config.zones) {
-        await config.exporter(data, fileUri.fsPath, { timeZone });
+        timeShifts = await config.exporter(data, fileUri.fsPath, { timeZone });
       } else if (format === "csv") {
         // The header row comes from the QVD's fields, so it has every field, in QVD order,
         // even when there are no rows
@@ -527,6 +531,9 @@ class DataExporter {
       } else {
         // Other formats don't need delimiter or maxRows
         await config.exporter(data, fileUri.fsPath);
+      }
+      if (timeZone !== null && timeShifts) {
+        report?.(timeShifts);
       }
     } finally {
       release();

@@ -250,3 +250,33 @@ export function offsetText(date, zoned, column) {
   const shown = wallClock === date.getTime() ? date : new Date(wallClock);
   return `${naiveDateText(shown, false)}${offsetSuffix(offset)}`;
 }
+
+/**
+ * Say what reading the timestamps in their zone did with those that DST makes
+ * impossible or ambiguous there
+ * @param {TimeShifts} shifts - What the conversion did
+ * @returns {string} The sentences, or "" when there were none
+ */
+export function describeTimeShifts({ timeZone, moved, ambiguous }) {
+  const parts = [];
+  if (moved > 0) {
+    parts.push(
+      `${moved.toLocaleString()} fell in time its clocks skipped going forward, and ` +
+        `${moved === 1 ? "was" : "were"} moved past it`
+    );
+  }
+  if (ambiguous > 0) {
+    parts.push(
+      `${ambiguous.toLocaleString()} fell in time its clocks showed twice going back, and ` +
+        `${ambiguous === 1 ? "was" : "were"} taken as the first`
+    );
+  }
+  if (parts.length === 0) {
+    return "";
+  }
+  let text = `Of the timestamps read in ${timeZone}, ${parts.join(", and ")}.`;
+  if (moved > 0) {
+    text += ` A clock there never shows a skipped time, so check that they were read in ${timeZone}.`;
+  }
+  return text;
+}
