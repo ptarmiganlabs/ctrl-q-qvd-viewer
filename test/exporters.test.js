@@ -318,6 +318,59 @@ suite("Exporter Test Suite", () => {
     );
   });
 
+  test("CSV export - writing in chunks gives the same file as in one go", async () => {
+    const rows = makeRows(25);
+
+    assert.strictEqual(
+      await exportCsvText(rows, "chunks.csv", { chunkRows: 4 }),
+      await exportCsvText(rows, "one-chunk.csv", { chunkRows: rows.length })
+    );
+  });
+
+  test("CSV export - a failed export leaves the file it would replace as it was", async () => {
+    const filePath = path.join(outputDir, "keep.csv");
+    fs.writeFileSync(filePath, "previous export");
+    const failing = {
+      toString() {
+        throw new Error("value can't be written");
+      },
+    };
+
+    // The first chunk is written before the second fails
+    await assert.rejects(
+      csvExporter.exportToCSV([{ a: 1 }, { a: failing }], filePath, { chunkRows: 1 }),
+      (error) => {
+        assert.strictEqual(error.message, "CSV export failed: value can't be written");
+        assert.strictEqual(error.cause.message, "value can't be written");
+        return true;
+      }
+    );
+
+    assert.strictEqual(fs.readFileSync(filePath, "utf8"), "previous export");
+    assert.deepStrictEqual(
+      fs.readdirSync(outputDir).filter((name) => name.endsWith(".tmp")),
+      [],
+      "The temporary file should be removed"
+    );
+  });
+
+  test("CSV export - replacing a file keeps its permissions and symlinks", async function () {
+    if (process.platform === "win32") {
+      this.skip();
+    }
+    const real = path.join(outputDir, "real.csv");
+    const link = path.join(outputDir, "link.csv");
+    fs.writeFileSync(real, "previous export");
+    fs.chmodSync(real, 0o600);
+    fs.symlinkSync(real, link);
+
+    await csvExporter.exportToCSV([{ a: 1 }], link);
+
+    assert.ok(fs.lstatSync(link).isSymbolicLink(), "The link should still be a link");
+    assert.strictEqual(fs.readFileSync(real, "utf8"), '"a"\n"1"');
+    assert.strictEqual(fs.statSync(real).mode & 0o777, 0o600);
+  });
+
   test("SQLite export - rows can be read back", async () => {
     const rows = makeRows(1000);
     const filePath = path.join(outputDir, "rows.db");
