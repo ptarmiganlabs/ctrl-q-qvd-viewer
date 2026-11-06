@@ -7,8 +7,10 @@ import { findDateColumns } from './qvdDates.mjs';
 import {
   CONVERSION_BYTES_PER_CELL,
   HELD_BYTES_PER_CELL,
+  HELD_BYTES_PER_DATE,
   bookHeap,
   bookedBytes,
+  dateValueBytes,
   describeCallerRefusal,
   describeReadRefusal,
   heldTextBytes,
@@ -104,9 +106,9 @@ export async function toRowObjects(rows, columns, signal, dates = null) {
 
 /**
  * A file's header, as far as pricing a read needs it
- * @typedef {{key: string|null, rowCount: number, columnCount: number, fields: Array<{name: string, symbols: number, bytes: number}>}} Header
+ * @typedef {{key: string|null, rowCount: number, columnCount: number, fields: Array<{name: string, symbols: number, bytes: number, tags: Array<string>}>}} Header
  *   key: which version of the file it is, or null when the file can't be looked at;
- *   fields: each field's name, symbol count and symbol area's size in bytes
+ *   fields: each field's name, symbol count, symbol area's size in bytes, and tags
  */
 
 /**
@@ -117,6 +119,19 @@ export async function toRowObjects(rows, columns, signal, dates = null) {
 async function fileVersion(realFilePath) {
   const stats = await stat(realFilePath).catch(() => null);
   return stats ? `${stats.ino}:${stats.size}:${stats.mtimeMs}` : null;
+}
+
+/**
+ * A field's tags, such as $numeric and $timestamp, as a list
+ * @param {object} field - The field, as qvdjs reads it from the header
+ * @returns {Array<string>} Its tags, none for a field without
+ */
+function tagsOf(field) {
+  const tags = field.tags?.String;
+  if (!tags) {
+    return [];
+  }
+  return Array.isArray(tags) ? tags : [tags];
 }
 
 /**
@@ -143,6 +158,7 @@ async function headerOf(filePath, realFilePath, allowedDir, signal) {
       name: field.fieldName,
       symbols: Number(field.noOfSymbols) || 0,
       bytes: Number(field.length) || 0,
+      tags: tagsOf(field),
     })),
   };
   if (key) {
@@ -322,7 +338,9 @@ class QvdReader {
         // What the caller builds, for as many rows as it builds from at once
         const callerRows = chunkRows > 0 ? Math.min(chunkRows, rows) : rows;
         const callerBytes = callerRows * (header.columnCount * bytesPerCell + bytesPerRow);
-        const costBound = readCostBound(header, cells, callerBytes);
+        // A read for dates also finds a Date for each distinct value of its date fields
+        const dateBytes = dates ? dateValueBytes(header.fields, rows) : 0;
+        const costBound = readCostBound(header, cells, callerBytes) + dateBytes;
         const small = costBound <= SMALL_READ_BYTES;
         const budget = await budgetFor(filePath, allowedDir, header, signal);
 
@@ -335,7 +353,7 @@ class QvdReader {
               budget,
               header: pricing < PRICINGS ? header : null,
               fields: header.fields,
-              conversionBytes: cells * CONVERSION_BYTES_PER_CELL,
+              conversionBytes: cells * CONVERSION_BYTES_PER_CELL + dateBytes,
               callerBytes,
               // Room for a small read beside a large one
               reserveBytes: small ? 0 : SMALL_READ_BYTES,
@@ -486,16 +504,6 @@ class QvdReader {
         profilingData: fileMetadata.profilingData || "",
         lineage: fileMetadata.lineage || [],
         fields: allFieldMetadata.map((field) => {
-          // Handle Tags - normalize the structure
-          let tagsArray = [];
-          if (field.tags) {
-            if (field.tags.String) {
-              tagsArray = Array.isArray(field.tags.String)
-                ? field.tags.String
-                : [field.tags.String];
-            }
-          }
-
           return {
             name: field.fieldName || "",
             type: field.type || "",
@@ -516,7 +524,7 @@ class QvdReader {
                   thou: field.numberFormat.Thou || "",
                 }
               : null,
-            tags: tagsArray,
+            tags: tagsOf(field),
             comment: field.comment || "",
           };
         }),
@@ -539,9 +547,11 @@ class QvdReader {
       // The rows hold this until the caller releases them, or drops them: their
       // objects, the text they keep alive, which a field of numbers doesn't, and
       // the caller's work when it is held with them
+      const heldDates = (dateColumns ?? []).reduce((sum, dates) => sum + (dates?.size ?? 0), 0);
       const heldBytes =
         data.length * columns.length * HELD_BYTES_PER_CELL +
         heldTextBytes(fields, data.length, textShares(data, columns)) +
+        heldDates * HELD_BYTES_PER_DATE +
         callerHeldBytes;
       const release = bookHeap(heldBytes, data);
 
