@@ -270,17 +270,16 @@ function generateQualityAssessment(metrics) {
     qualityScore -= 10;
   }
 
-  // The fill rate counts nulls too, which the checks above have covered
-  if (completeness.emptyStringCount > 0) {
-    if (completeness.fillRate < 50) {
-      issues.push("Critical: Low fill rate with many empty strings");
-      qualityScore -= 20;
-    } else if (completeness.fillRate < 80) {
-      warnings.push(
-        `Fill rate is ${completeness.fillRate.toFixed(1)}% (many empty strings)`
-      );
-      qualityScore -= 5;
-    }
+  // The fill rate counts the nulls too, which the checks above have covered, so it is
+  // an issue only where the empty strings take it below a threshold the nulls don't
+  if (completeness.fillRate < 50 && completeness.nonNullPercentage >= 50) {
+    issues.push("Critical: Low fill rate with many empty strings");
+    qualityScore -= 20;
+  } else if (completeness.fillRate < 80 && completeness.nonNullPercentage >= 80) {
+    warnings.push(
+      `Fill rate is ${completeness.fillRate.toFixed(1)}% (many empty strings)`
+    );
+    qualityScore -= 5;
   }
 
   // Distribution checks

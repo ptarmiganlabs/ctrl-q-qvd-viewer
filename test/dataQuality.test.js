@@ -147,6 +147,44 @@ suite("Data Quality Metrics Test Suite", () => {
         assessment.warnings.join(", ")
       );
     });
+
+    test("Profiling doesn't count missing values against the fill rate a second time", () => {
+      // One empty string, which isn't what makes the field incomplete
+      const data = makeFieldRows([
+        [null, 60],
+        ["", 1],
+        ["a", 30],
+        ["b", 9],
+      ]);
+
+      const [field] = qvdProfiler.profileFields(data, ["field"]).fields;
+      const { assessment } = field.qualityMetrics;
+
+      assert.deepStrictEqual(assessment.issues, [
+        "Critical: More than 50% of values are missing",
+      ]);
+      assert.strictEqual(assessment.qualityScore, 60);
+      assert.strictEqual(assessment.qualityLevel, "Fair");
+    });
+
+    test("Profiling still flags empty strings that take the fill rate below a threshold", () => {
+      // 45 nulls alone would be a warning, but with 30 empty strings a quarter of the
+      // rows hold a value
+      const data = makeFieldRows([
+        [null, 45],
+        ["", 30],
+        ["a", 13],
+        ["b", 12],
+      ]);
+
+      const [field] = qvdProfiler.profileFields(data, ["field"]).fields;
+      const { assessment } = field.qualityMetrics;
+
+      assert.deepStrictEqual(assessment.issues, [
+        "Critical: Low fill rate with many empty strings",
+      ]);
+      assert.deepStrictEqual(assessment.warnings, ["45.0% of values are missing"]);
+    });
   });
 
   suite("Cardinality Analysis", () => {
