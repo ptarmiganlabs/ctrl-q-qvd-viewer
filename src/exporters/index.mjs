@@ -1,5 +1,5 @@
 import { join } from 'path';
-import { CalendarDate, isBlank } from '../cellValue.mjs';
+import { CalendarDate } from '../cellValue.mjs';
 import { exportToCSV, memoryCost as csvCost } from './csvExporter.mjs';
 import { exportToJSON, memoryCost as jsonCost } from './jsonExporter.mjs';
 import { exportToExcel, memoryCost as excelCost } from './excelExporter.mjs';
@@ -15,6 +15,9 @@ import { resolveTimeZone, timeZoneNames } from './zonedTimestamps.mjs';
 
 // The setting that names the time zone a QVD's timestamps were read in
 const TIME_ZONE_SETTING = "exportTimeZone";
+
+// Cells the search for a timestamp looks at between yields to the event loop
+const CELLS_PER_YIELD = 1000000;
 
 // Each export format: its name as the user sees it, its file's extension and the save
 // dialog's filter, whether it is in beta, its exporter, what its export builds on the
@@ -135,26 +138,27 @@ const FORMATS = {
 };
 
 /**
- * Whether rows hold a column of timestamps, rather than only dates or no dates at all
- * A column's values are all dates or all timestamps, as the reader makes them, so the
- * first that isn't empty says which.
+ * Whether the rows to export hold a timestamp: a Date with its time of day, rather than
+ * a CalendarDate, a date alone. A column with one is a column of timestamps, as every
+ * typed exporter types it, whatever its other values. Without one, every cell is
+ * looked at, so this yields to the event loop as it goes.
  * @param {Array<Object>} rows - Array of row objects
- * @returns {boolean} True if a column holds timestamps
+ * @param {number} count - Rows to export, from the first
+ * @returns {Promise<boolean>} True at the first timestamp found
  */
-function holdsTimestamps(rows) {
-  const columns = new Set(rows.length > 0 ? Object.keys(rows[0]) : []);
-  for (const row of rows) {
+async function holdsTimestamps(rows, count) {
+  const columns = count > 0 ? Object.keys(rows[0]) : [];
+  const rowsPerYield = Math.max(1, Math.floor(CELLS_PER_YIELD / Math.max(1, columns.length)));
+  for (let i = 0; i < count; i++) {
+    const row = rows[i];
     for (const key of columns) {
       const value = row[key];
-      if (value !== null && value !== undefined && !isBlank(value)) {
-        if (value instanceof Date && !(value instanceof CalendarDate)) {
-          return true;
-        }
-        columns.delete(key);
+      if (value instanceof Date && !(value instanceof CalendarDate)) {
+        return true;
       }
     }
-    if (columns.size === 0) {
-      return false;
+    if ((i + 1) % rowsPerYield === 0) {
+      await new Promise((resolve) => setImmediate(resolve));
     }
   }
   return false;
@@ -325,10 +329,14 @@ class DataExporter {
       throw new Error(`Unsupported export format: ${format}`);
     }
 
+    // Qlik inline and PostgreSQL export as many rows as the user chose, from the first
+    const limited = format === "qlik" || format === "postgres";
+    const exportedRows = limited && maxRows > 0 ? Math.min(maxRows, data.length) : data.length;
+
     // A format that can write instants asks which time zone the timestamps were read
-    // in, when there are timestamps: dates have no time zone. The zone the settings
-    // name is offered first, once it is known to be one
-    const asksTimeZone = config.zones && holdsTimestamps(data);
+    // in, when the rows it exports hold timestamps: dates have no time zone. The zone
+    // the settings name is offered first, once it is known to be one
+    const asksTimeZone = config.zones && (await holdsTimestamps(data, exportedRows));
     const defaultTimeZone = asksTimeZone ? settingsTimeZone(vscode) : null;
 
     // Handle Qlik inline format with delimiter selection BEFORE file dialog
@@ -499,7 +507,6 @@ class DataExporter {
     }
 
     // The heap the export needs, booked now the questions are answered
-    const limited = format === "qlik" || format === "postgres";
     const release = reserve ? await reserve(data, limited ? maxRows : 0) : () => {};
 
     try {

@@ -1418,6 +1418,39 @@ suite("Exporter Test Suite", () => {
     });
   });
 
+  test("Export - the time zone is asked about any timestamp in the rows exported, and only those", async () => {
+    // A column whose first value is a date alone, and whose second is a timestamp
+    const rows = [{ at: new CalendarDate(Date.UTC(2016, 0, 13)) }, { at: new Date(Date.UTC(2016, 0, 13, 6, 15)) }];
+    // No CREATE TABLE, and UTC when asked for a time zone
+    const answers = (items, options) =>
+      options.title === "PostgreSQL Export - CREATE TABLE"
+        ? items.find((item) => item.value === false)
+        : items.find((item) => item.value === "UTC");
+
+    // Both rows: the second is a timestamp, so the column is one of timestamps
+    const bothPath = path.join(outputDir, "both.sql");
+    const both = zoneDialogsTo(bothPath, answers);
+    await DataExporter.exportData(rows, "postgres", "both", both.vscode, outputDir, 0, ["at"]);
+    assert.deepStrictEqual(
+      both.picks.map(({ options }) => options.title),
+      ["PostgreSQL Export - CREATE TABLE", "Time Zone of the Timestamps"]
+    );
+    assert.deepStrictEqual(sqlValueLines(bothPath), [
+      "  ('2016-01-13 00:00:00+00'),",
+      "  ('2016-01-13 06:15:00+00');",
+    ]);
+
+    // The first row alone holds a date alone, so there is nothing to ask about
+    const firstPath = path.join(outputDir, "first.sql");
+    const first = zoneDialogsTo(firstPath, answers);
+    await DataExporter.exportData(rows, "postgres", "first", first.vscode, outputDir, 1, ["at"]);
+    assert.deepStrictEqual(
+      first.picks.map(({ options }) => options.title),
+      ["PostgreSQL Export - CREATE TABLE"]
+    );
+    assert.deepStrictEqual(sqlValueLines(firstPath), ["  ('2016-01-13');"]);
+  });
+
   test("Export - the time zone is asked only for timestamps, and only by formats that can store one", async () => {
     const rows = makeDateRows();
     const fields = ["day", "at"];
