@@ -62,6 +62,43 @@ suite("Read Queue Test Suite", () => {
     assert.strictEqual(await queue.run(async () => 1), 1);
   });
 
+  test("A task aborted before its turn is skipped, and the next one still runs", async () => {
+    const queue = createReadQueue();
+    const events = [];
+    const controller = new AbortController();
+
+    const first = queue.run(recordedTask(events, "first", 30));
+    const skipped = queue.run(recordedTask(events, "skipped", 1), { signal: controller.signal });
+    const next = queue.run(recordedTask(events, "next", 1));
+    controller.abort();
+
+    // Its caller hears at once, without waiting for the task before it
+    await assert.rejects(skipped, { name: "AbortError" });
+    events.push("skipped rejected");
+    assert.deepStrictEqual(await Promise.all([first, next]), ["first", "next"]);
+    assert.deepStrictEqual(events, [
+      "start first",
+      "skipped rejected",
+      "end first",
+      "start next",
+      "end next",
+    ]);
+  });
+
+  test("Aborting a running task lets the next one start, even if it never settles", async () => {
+    const queue = createReadQueue();
+    const controller = new AbortController();
+
+    // A read of a file on a share that stopped answering
+    const stuck = queue.run(() => new Promise(() => {}), { signal: controller.signal });
+    const next = queue.run(async () => "next");
+    await new Promise((resolve) => setImmediate(resolve));
+    controller.abort();
+
+    await assert.rejects(stuck, { name: "AbortError" });
+    assert.strictEqual(await next, "next");
+  });
+
   test("Size counts the tasks queued and running", async () => {
     const queue = createReadQueue();
     let finishFirst;

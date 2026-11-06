@@ -25,11 +25,12 @@ function recordingWebview(messages) {
 }
 
 /**
- * An editor provider whose reader refuses every read for memory
- * @param {string} error - The refusal's message
+ * An editor provider whose reader fails every read
+ * @param {string} error - The failure's message
+ * @param {string} [errorReason] - Its reason, a memory refusal unless given
  * @returns {object} The provider
  */
-function refusingProvider(error) {
+function refusingProvider(error, errorReason = "memory") {
   const provider = new QvdEditorProvider({
     extensionPath: root,
     extensionUri: vscode.Uri.file(root),
@@ -41,8 +42,9 @@ function refusingProvider(error) {
       columns: [],
       totalRows: 0,
       error,
-      errorName: "QvdValidationError",
-      errorReason: "memory",
+      errorName: errorReason === "aborted" ? "AbortError" : "QvdValidationError",
+      errorReason,
+      release: () => {},
     }),
   };
   return provider;
@@ -79,6 +81,18 @@ suite("Load Refused Test Suite", () => {
     await provider.updateWebview("refused.qvd", webview, 5000);
 
     assert.ok(webview.html.includes("needs more memory than VS Code gives its extensions"));
+    assert.deepStrictEqual(messages, []);
+  });
+
+  test("A read given up because its editor closed leaves the page alone", async () => {
+    const provider = refusingProvider("The read was given up, because its editor was closed.", "aborted");
+    const messages = [];
+    const webview = recordingWebview(messages);
+    webview.html = "<p>the page</p>";
+
+    await provider.updateWebview("closed.qvd", webview, 0, { keepPageOnMemoryRefusal: true });
+
+    assert.strictEqual(webview.html, "<p>the page</p>");
     assert.deepStrictEqual(messages, []);
   });
 });

@@ -5,6 +5,7 @@ import DataExporter from "../exporters/index.mjs";
 import { profileFields, generateQvsScript } from "../qvdProfiler.mjs";
 import { getVisualAnalysisHtml } from "./templates/visualAnalysisTemplate.mjs";
 import { getLoadMoreRowCount } from "./loadMore.mjs";
+import { EXPORT_BYTES_PER_CELL, PROFILE_BYTES_PER_VALUE } from "../memoryGuard.mjs";
 import logger from "../logger.mjs";
 
 /**
@@ -15,6 +16,7 @@ import logger from "../logger.mjs";
  * @param {object} context - The extension context
  * @param {Function} updateWebviewFn - Function to update the webview
  * @param {number} maxRows - Maximum rows to display
+ * @param {AbortSignal} [signal] - Aborted once the editor is closed, giving its reads up
  */
 export function setupMessageHandler(
   webviewPanel,
@@ -22,7 +24,8 @@ export function setupMessageHandler(
   qvdReader,
   context,
   updateWebviewFn,
-  maxRows
+  maxRows,
+  signal
 ) {
   webviewPanel.webview.onDidReceiveMessage(async (message) => {
     switch (message.command) {
@@ -59,6 +62,7 @@ export function setupMessageHandler(
           : getLoadMoreRowCount(currentRows);
         await updateWebviewFn(filePath, webviewPanel.webview, newMaxRows, {
           keepPageOnMemoryRefusal: true,
+          signal,
         });
         break;
       case "copyToClipboard":
@@ -67,8 +71,18 @@ export function setupMessageHandler(
         break;
       case "exportData":
         // Export data to selected format
+        let releaseExportedRows = () => {};
         try {
-          const result = await qvdReader.read(filePath, 0); // Read all data
+          // What the exporter builds from the rows is priced too, so that an
+          // export too large for memory is refused rather than aborting
+          let result = await qvdReader.read(filePath, 0, {
+            signal,
+            bytesPerCell: EXPORT_BYTES_PER_CELL[message.format] ?? 0,
+          }); // Read all data
+          releaseExportedRows = result.release;
+          if (result.errorReason === "aborted") {
+            break;
+          }
           if (result.error) {
             vscode.window.showErrorMessage(
               `Failed to read QVD for export: ${result.error}`
@@ -146,6 +160,9 @@ export function setupMessageHandler(
             workspaceFolder,
             maxRows
           );
+          // The rows, and the exporter's copy, are done with: later reads may have the heap
+          result = null;
+          releaseExportedRows();
 
           if (savedPath) {
             const action = await vscode.window.showInformationMessage(
@@ -163,12 +180,23 @@ export function setupMessageHandler(
           }
         } catch (error) {
           vscode.window.showErrorMessage(`Export failed: ${error.message}`);
+        } finally {
+          releaseExportedRows();
         }
         break;
       case "profileFields":
         // Profile selected fields and return distribution data
+        let releaseProfiledRows = () => {};
         try {
-          const result = await qvdReader.read(filePath, 0); // Read all data
+          // What profiling builds from each profiled field is priced too
+          const result = await qvdReader.read(filePath, 0, {
+            signal,
+            bytesPerRow: PROFILE_BYTES_PER_VALUE * (message.fieldNames?.length || 1),
+          }); // Read all data
+          releaseProfiledRows = result.release;
+          if (result.errorReason === "aborted") {
+            break;
+          }
           if (result.error) {
             webviewPanel.webview.postMessage({
               command: "profilingError",
@@ -182,6 +210,7 @@ export function setupMessageHandler(
             message.fieldNames,
             message.maxUniqueValues || 1000
           );
+          releaseProfiledRows();
 
           webviewPanel.webview.postMessage({
             command: "profilingResults",
@@ -192,6 +221,8 @@ export function setupMessageHandler(
             command: "profilingError",
             error: `Profiling failed: ${error.message}`,
           });
+        } finally {
+          releaseProfiledRows();
         }
         break;
       case "exportProfilingQvs":
