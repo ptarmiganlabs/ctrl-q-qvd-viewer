@@ -114,6 +114,20 @@ suite("String Analysis Test Suite", () => {
       assert.strictEqual(analysis.valueCount, 1);
       assert.strictEqual(analysis.nullCount, 2); // Empty strings counted as null
     });
+
+    test("Should handle more values than a function call can take", () => {
+      // More than the about 120,000 arguments a spread can pass, with the
+      // shortest and longest values near the end
+      const data = Array.from({ length: 200000 }, () => ({ text: "abc" }));
+      data[150000] = { text: "a" };
+      data[199999] = { text: "abcdefghij" };
+
+      const analysis = qvdStringAnalysis.calculateStringAnalysis(data, "text");
+
+      assert.strictEqual(analysis.valueCount, 200000);
+      assert.strictEqual(analysis.lengthStats.min, 1);
+      assert.strictEqual(analysis.lengthStats.max, 10);
+    });
   });
 
   suite("Pattern Detection", () => {
