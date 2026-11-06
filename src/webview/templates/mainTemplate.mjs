@@ -462,24 +462,26 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             text-align: center;
         }
         
-        .tabulator-footer .tabulator-page:not(.disabled) {
+        .tabulator-footer .tabulator-page:not(:disabled) {
             cursor: pointer;
         }
-        
-        .tabulator-footer .tabulator-page:not(.disabled):hover {
+
+        .tabulator-footer .tabulator-page:not(:disabled):hover {
             background-color: var(--vscode-button-hoverBackground) !important;
             border-color: var(--vscode-focusBorder, var(--vscode-button-border)) !important;
         }
-        
+
         .tabulator-footer .tabulator-page.active {
             background-color: var(--vscode-button-hoverBackground) !important;
             border-color: var(--vscode-focusBorder) !important;
             font-weight: 700 !important;
         }
-        
-        .tabulator-footer .tabulator-page.disabled {
+
+        /* Tabulator disables a page button with the disabled attribute. Its own hover rule
+           gives disabled buttons a pointer too, and outranks this one without !important */
+        .tabulator-footer .tabulator-page:disabled {
             opacity: 0.4 !important;
-            cursor: not-allowed;
+            cursor: not-allowed !important;
         }
         
         /* Override Tabulator's hardcoded #555 color for paginator */
