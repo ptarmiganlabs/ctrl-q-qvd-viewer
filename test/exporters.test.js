@@ -306,6 +306,30 @@ suite("Exporter Test Suite", () => {
     );
   });
 
+  test("CSV export - text a spreadsheet would run as a formula gets an apostrophe", async () => {
+    const values = ["=1+1", "@SUM(A1)", "+A1", "-2+3", "\tx", "-5", "-1,234.50", "+46 70 123 45 67", "x=1"];
+    const rows = [Object.fromEntries(values.map((value, i) => [`f${i}`, value]))];
+    rows[0].number = -5;
+    const fields = [...Object.keys(rows[0]), "=Total"];
+
+    const [header, line] = (await exportCsvText(rows, "formulas.csv", { fields })).split("\n");
+
+    assert.ok(header.endsWith(`"'=Total"`), "A field name is a cell too");
+    assert.deepStrictEqual(
+      Papa.parse(line).data[0],
+      ["'=1+1", "'@SUM(A1)", "'+A1", "'-2+3", "'\tx", "-5", "-1,234.50", "+46 70 123 45 67", "x=1", "-5", ""],
+      "Numbers, and text that only looks like one, should be left alone"
+    );
+  });
+
+  test("CSV export - formula escaping can be turned off", async () => {
+    const text = await exportCsvText([{ a: "=1+1", b: "+A1" }], "raw.csv", {
+      escapeFormulas: false,
+    });
+
+    assert.strictEqual(text, ['"a","b"', '"=1+1","+A1"'].join("\n"));
+  });
+
   test("CSV export - an invalid date is an empty cell, and a one-column null isn't a blank line", async () => {
     assert.strictEqual(
       await exportCsvText([{ d: new Date(NaN), n: 1 }], "bad-date.csv"),

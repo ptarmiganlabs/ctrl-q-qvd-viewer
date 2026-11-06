@@ -302,7 +302,12 @@ class DataExporter {
     } else if (format === "csv") {
       // The header row comes from the QVD's fields, so it has every field, in QVD order,
       // even when there are no rows
-      await config.exporter(data, fileUri.fsPath, { fields });
+      const vscodeConfig =
+        vscode.workspace.getConfiguration("ctrl-q-qvd-viewer");
+      await config.exporter(data, fileUri.fsPath, {
+        fields,
+        escapeFormulas: vscodeConfig.get("csvEscapeFormulas", true),
+      });
     } else {
       // Other formats don't need delimiter or maxRows
       await config.exporter(data, fileUri.fsPath);
