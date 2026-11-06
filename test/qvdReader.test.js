@@ -123,6 +123,39 @@ suite("QVD Reader Test Suite", () => {
     ]);
   });
 
+  test("Reader - NaN and Infinity stored in a QVD are empty cells", async () => {
+    // qvdjs refuses to write them, so write stand-ins and replace their bytes
+    const filePath = path.join(outputDir, "non-finite.qvd");
+    const stored = [Math.PI, Math.E, Math.SQRT2, 42.25];
+    await new QvdDataFrame(stored.map((number) => [number]), ["value"]).toQvd(filePath, {
+      allowedDir: outputDir,
+    });
+    const bytes = fs.readFileSync(filePath);
+    const doubleBytes = (number) => {
+      const buffer = Buffer.alloc(8);
+      buffer.writeDoubleLE(number);
+      return buffer;
+    };
+    for (const [standIn, number] of [
+      [Math.PI, NaN],
+      [Math.E, Infinity],
+      [Math.SQRT2, -Infinity],
+    ]) {
+      const at = bytes.indexOf(doubleBytes(standIn));
+      assert.ok(at > 0 && bytes.lastIndexOf(doubleBytes(standIn)) === at, `${standIn} once`);
+      doubleBytes(number).copy(bytes, at);
+    }
+    fs.writeFileSync(filePath, bytes);
+
+    const result = await new QvdReader().read(filePath, 0);
+
+    assert.strictEqual(result.error, null);
+    assert.deepStrictEqual(
+      result.data.map((row) => row.value),
+      [null, null, null, 42.25]
+    );
+  });
+
   test("Reader - blank text stays text", async () => {
     await assertReadsAs([
       ["", ""],

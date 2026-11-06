@@ -8,11 +8,16 @@ const PLAIN_DECIMAL = /^-?(0|[1-9]\d*)(\.\d+)?$/;
 /**
  * Turn text that is a plain decimal number, such as 42, -7 or 3.14, into that number.
  * Other text stays text: codes with a leading zero, an exponent or a hex prefix, text
- * with spaces around it, blank text, and numbers a double can't hold exactly.
+ * with spaces around it, blank text, and numbers a double can't hold exactly. A number
+ * the file stores as NaN or Infinity is an empty cell.
  * @param {*} value - A cell's value as qvdjs reads it, with a dual's text for a dual
- * @returns {*} The number, or the value as it was
+ * @returns {*} The number, null, or the value as it was
  */
 function toCellValue(value) {
+  // Qlik has no NaN or Infinity: where JavaScript gives one, as for 1/0, Qlik gives NULL
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
   if (typeof value !== "string" || !PLAIN_DECIMAL.test(value)) {
     return value;
   }
