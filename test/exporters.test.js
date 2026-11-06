@@ -330,6 +330,16 @@ suite("Exporter Test Suite", () => {
     assert.strictEqual(text, ['"a","b"', '"=1+1","+A1"'].join("\n"));
   });
 
+  test("CSV export - a byte order mark comes first when asked for", async () => {
+    const text = await exportCsvText([{ name: "Ölstuga" }], "bom.csv", {
+      byteOrderMark: true,
+    });
+
+    assert.strictEqual(text, '\uFEFF"name"\n"Ölstuga"');
+    // Papa Parse, like Excel and Qlik, reads the mark as the encoding, not as text
+    assert.deepStrictEqual(Papa.parse(text, { header: true }).meta.fields, ["name"]);
+  });
+
   test("CSV export - an invalid date is an empty cell, and a one-column null isn't a blank line", async () => {
     assert.strictEqual(
       await exportCsvText([{ d: new Date(NaN), n: 1 }], "bad-date.csv"),

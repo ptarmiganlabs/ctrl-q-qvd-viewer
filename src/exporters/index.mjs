@@ -307,6 +307,7 @@ class DataExporter {
       await config.exporter(data, fileUri.fsPath, {
         fields,
         escapeFormulas: vscodeConfig.get("csvEscapeFormulas", true),
+        byteOrderMark: vscodeConfig.get("csvByteOrderMark", false),
       });
     } else {
       // Other formats don't need delimiter or maxRows

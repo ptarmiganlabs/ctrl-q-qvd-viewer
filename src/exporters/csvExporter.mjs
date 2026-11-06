@@ -51,13 +51,14 @@ function toCell(value, escapeFormulas) {
  * Export data to CSV format
  *
  * The file starts with the header row, as readers that take column names from the
- * first line expect. CSV has no comment syntax, so nothing comes before it. With no
- * field names and no rows, the file is empty.
+ * first line expect. CSV has no comment syntax, so nothing but an optional byte
+ * order mark comes before it. With no field names and no rows, the file is empty.
  * @param {Array<Object>} data - Array of row objects
  * @param {string} filePath - Destination file path
  * @param {object} [options] - CSV options
  * @param {Array<string>} [options.fields] - Column names in order, such as the QVD's fields. Defaults to every row's keys, in the order they first appear
  * @param {boolean} [options.escapeFormulas=true] - Put an apostrophe before text that a spreadsheet would run as a formula
+ * @param {boolean} [options.byteOrderMark=false] - Start with a UTF-8 byte order mark, which Excel needs to read non-ASCII text
  * @param {number} [options.chunkRows] - Rows turned into text at a time
  * @returns {Promise<void>}
  */
@@ -65,6 +66,7 @@ export async function exportToCSV(data, filePath, options = {}) {
   const {
     fields = fieldsOf(data),
     escapeFormulas = true,
+    byteOrderMark = false,
     chunkRows = CHUNK_ROWS,
   } = options;
   // A null in a file with one column would make a blank line, which readers skip,
@@ -75,6 +77,9 @@ export async function exportToCSV(data, filePath, options = {}) {
 
   try {
     await writeFileAtomically(filePath, async (file) => {
+      if (byteOrderMark) {
+        await file.writeFile("\uFEFF");
+      }
       if (fields.length === 0) {
         return;
       }
