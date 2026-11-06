@@ -6,6 +6,7 @@ import {
 } from "../assetLoader.mjs";
 import { escapeHtml } from "./errorTemplate.mjs";
 import { createHelpIconHtml } from "../qualityMetricHelp.mjs";
+import { computeHistogram } from "../histogram.mjs";
 
 /**
  * Generate HTML for visual analysis webview
@@ -1479,6 +1480,9 @@ export function getVisualAnalysisHtml(
     <script nonce="${nonce}">
         const fieldResult = ${JSON.stringify(fieldResult)};
         
+        // Histogram binning, shared with the QVD editor: see histogram.mjs
+        const computeHistogram = ${computeHistogram.toString()};
+        
         // Create chart
         const ctx = document.getElementById('profiling-chart').getContext('2d');
         let currentChart = null;
@@ -1489,67 +1493,19 @@ export function getVisualAnalysisHtml(
                 currentChart.destroy();
             }
             
-            const stats = fieldResult.statistics;
-            
-            // Extract numeric values from distribution (unique values only, no expansion)
-            const uniqueNumericValues = [];
-            fieldResult.distributions.forEach(dist => {
-                const value = parseFloat(dist.value);
-                if (!isNaN(value)) {
-                    uniqueNumericValues.push(value);
-                }
-            });
-            
-            if (uniqueNumericValues.length === 0) {
+            // Bin the field's numeric values, excluding nulls
+            const histogram = computeHistogram(fieldResult.distributions, fieldResult.totalRows - fieldResult.nullCount);
+            if (!histogram) {
                 return;
             }
-            
-            // Use min/max from the actual values in distribution, not theoretical stats
-            const min = Math.min(...uniqueNumericValues);
-            const max = Math.max(...uniqueNumericValues);
-            
-            // Use total count for bin calculation (excluding nulls)
-            const totalCount = fieldResult.totalRows - fieldResult.nullCount;
-            const binCount = Math.min(20, Math.ceil(Math.sqrt(totalCount)));
-            const binWidth = (max - min) / binCount;
-            
-            // Initialize bins
-            const bins = Array(binCount).fill(0);
-            // Enough decimals to tell neighbouring bin edges apart: one past binWidth's first significant digit
-            const decimals = binWidth > 0 && isFinite(binWidth)
-                ? Math.min(20, Math.max(1, 1 - Math.floor(Math.log10(binWidth))))
-                : 1;
-            const binRanges = [];
 
-            // Work out each bin's edges, for the chart labels and the table
-            for (let i = 0; i < binCount; i++) {
-                const binStart = min + i * binWidth;
-                const binEnd = min + (i + 1) * binWidth;
-                binRanges.push({ from: binStart.toFixed(decimals), to: binEnd.toFixed(decimals) });
-            }
-            
-            // Count values in each bin using distribution counts
-            fieldResult.distributions.forEach(dist => {
-                const value = parseFloat(dist.value);
-                if (!isNaN(value)) {
-                    let binIndex;
-                    if (binWidth === 0) {
-                        binIndex = 0;
-                    } else {
-                        binIndex = Math.floor((value - min) / binWidth);
-                        if (binIndex >= binCount) binIndex = binCount - 1;
-                    }
-                    bins[binIndex] += dist.count;
-                }
-            });
-            
             currentChart = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: binRanges.map(range => \`\${range.from} – \${range.to}\`),
+                    labels: histogram.labels,
                     datasets: [{
                         label: 'Frequency',
-                        data: bins,
+                        data: histogram.counts,
                         backgroundColor: 'rgba(75, 192, 192, 0.6)',
                         borderColor: 'rgba(75, 192, 192, 1)',
                         borderWidth: 1
@@ -1602,20 +1558,12 @@ export function getVisualAnalysisHtml(
                 }
             });
             
-            // Update table with histogram data (using totalCount already declared above)
-            const histogramData = binRanges.map((range, i) => ({
-                from: range.from,
-                to: range.to,
-                count: bins[i],
-                percentage: totalCount > 0 ? ((bins[i] / totalCount) * 100).toFixed(2) : '0.00'
-            }));
-            
             if (currentTable) {
                 currentTable.destroy();
             }
             
             currentTable = new Tabulator('#profiling-table', {
-                data: histogramData,
+                data: histogram.rows,
                 columns: [
                     { title: 'From', field: 'from', headerSort: true, widthGrow: 1 },
                     { title: 'To', field: 'to', headerSort: true, widthGrow: 1 },

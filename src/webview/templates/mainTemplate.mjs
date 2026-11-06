@@ -9,6 +9,7 @@ import { escapeHtml } from "./errorTemplate.mjs";
 import DataExporter from "../../exporters/index.mjs";
 import { metricHelpContent } from "../qualityMetricHelp.mjs";
 import { getLoadMoreRowCount } from "../loadMore.mjs";
+import { computeHistogram } from "../histogram.mjs";
 
 /**
  * Generate HTML for webview with tabbed interface and Tabulator
@@ -1436,6 +1437,9 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
         const availableFields = ${JSON.stringify(
           metadata && metadata.fields ? metadata.fields.map((f) => f.name) : []
         )};
+        
+        // Histogram binning, shared with the visual-analysis panel: see histogram.mjs
+        const computeHistogram = ${computeHistogram.toString()};
         
         let currentContextCell = null;
         let dataTable, schemaTable, metadataTable, lineageTable;
@@ -3202,68 +3206,20 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         chart.destroy();
                     }
                     
-                    const stats = fieldResult.statistics;
-                    
-                    // Extract numeric values from distribution (don't expand by count to avoid stack overflow)
-                    const uniqueNumericValues = [];
-                    fieldResult.distributions.forEach(dist => {
-                        const value = parseFloat(dist.value);
-                        if (!isNaN(value)) {
-                            uniqueNumericValues.push(value);
-                        }
-                    });
-                    
-                    if (uniqueNumericValues.length === 0) {
+                    // Bin the field's numeric values, excluding nulls
+                    const histogram = computeHistogram(fieldResult.distributions, fieldResult.totalRows - fieldResult.nullCount);
+                    if (!histogram) {
                         logger.error('No numeric values found for histogram');
                         return;
                     }
-                    
-                    // Calculate min/max from actual values we have
-                    const min = Math.min(...uniqueNumericValues);
-                    const max = Math.max(...uniqueNumericValues);
-                    
-                    // Use statistics count for bin calculation
-                    const totalCount = fieldResult.totalRows - fieldResult.nullCount;
-                    const binCount = Math.min(20, Math.ceil(Math.sqrt(totalCount)));
-                    const binWidth = (max - min) / binCount;
-                    
-                    // Initialize bins
-                    const bins = Array(binCount).fill(0);
-                    // Enough decimals to tell neighbouring bin edges apart: one past binWidth's first significant digit
-                    const decimals = binWidth > 0 && isFinite(binWidth)
-                        ? Math.min(20, Math.max(1, 1 - Math.floor(Math.log10(binWidth))))
-                        : 1;
-                    const binRanges = [];
 
-                    // Work out each bin's edges, for the chart labels and the table
-                    for (let i = 0; i < binCount; i++) {
-                        const binStart = min + i * binWidth;
-                        const binEnd = min + (i + 1) * binWidth;
-                        binRanges.push({ from: binStart.toFixed(decimals), to: binEnd.toFixed(decimals) });
-                    }
-                    
-                    // Count values in each bin using the distribution counts
-                    fieldResult.distributions.forEach(dist => {
-                        const value = parseFloat(dist.value);
-                        if (!isNaN(value)) {
-                            let binIndex;
-                            if (binWidth === 0) {
-                                binIndex = 0;
-                            } else {
-                                binIndex = Math.floor((value - min) / binWidth);
-                                if (binIndex >= binCount) binIndex = binCount - 1;
-                            }
-                            bins[binIndex] += dist.count;
-                        }
-                    });
-                    
                     chart = new Chart(ctx, {
                         type: 'bar',
                         data: {
-                            labels: binRanges.map(range => \`\${range.from} – \${range.to}\`),
+                            labels: histogram.labels,
                             datasets: [{
                                 label: 'Frequency',
-                                data: bins,
+                                data: histogram.counts,
                                 backgroundColor: 'rgba(75, 192, 192, 0.6)',
                                 borderColor: 'rgba(75, 192, 192, 1)',
                                 borderWidth: 1
@@ -3322,20 +3278,12 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         profilingCharts[chartIndex] = chart;
                     }
                     
-                    // Update table with histogram data (using totalCount already declared above)
-                    const histogramData = binRanges.map((range, i) => ({
-                        from: range.from,
-                        to: range.to,
-                        count: bins[i],
-                        percentage: totalCount > 0 ? ((bins[i] / totalCount) * 100).toFixed(2) : '0.00'
-                    }));
-                    
                     if (profilingTable) {
                         profilingTable.destroy();
                     }
                     
                     profilingTable = new Tabulator(\`#profiling-table-\${index}\`, {
-                        data: histogramData,
+                        data: histogram.rows,
                         columns: [
                             { title: 'From', field: 'from', headerSort: true, widthGrow: 1 },
                             { title: 'To', field: 'to', headerSort: true, widthGrow: 1 },
