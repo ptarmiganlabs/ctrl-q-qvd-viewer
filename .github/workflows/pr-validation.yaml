@@ -5,8 +5,16 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
+  # On Windows too, where a file another program holds, such as a QVD a Qlik reload
+  # is storing, can't be opened. The package is built and checked on Linux only,
+  # where ci.yaml publishes it from.
   validate:
-    runs-on: ubuntu-latest
+    strategy:
+      # A failure on one system doesn't cancel the other's run
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -29,6 +37,7 @@ jobs:
         run: npm run lint
 
       - name: Setup virtual display for VS Code tests
+        if: runner.os == 'Linux'
         run: |
           /usr/bin/Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
 
@@ -38,11 +47,13 @@ jobs:
           DISPLAY: ':99.0'
 
       - name: Check package can be built
+        if: runner.os == 'Linux'
         run: |
           npm install -g @vscode/vsce
           vsce package
 
       - name: Security scan - Check for sensitive files in package
+        if: runner.os == 'Linux'
         run: |
           echo "🔍 Scanning extension package for sensitive files..."
 
@@ -124,6 +135,7 @@ jobs:
           fi
 
       - name: Check for breaking changes
+        if: runner.os == 'Linux'
         run: |
           echo "Checking for breaking changes..."
           if git log --format=%B -n 1 | grep -i "BREAKING CHANGE"; then
