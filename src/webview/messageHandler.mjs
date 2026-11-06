@@ -179,6 +179,7 @@ export function setupMessageHandler(
             vscode,
             workspaceFolder,
             maxRows,
+            result.columns,
             {
               // Priced from the rows to be written, their text included, once
               // every dialog is answered: an export that won't fit is refused

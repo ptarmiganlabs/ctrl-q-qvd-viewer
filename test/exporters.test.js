@@ -4,17 +4,22 @@ const os = require("os");
 const path = require("path");
 const avro = require("avsc");
 const esbuild = require("esbuild");
+const Papa = require("papaparse");
 const initSqlJs = require("sql.js");
 const { buildOptions } = require("../esbuild.js");
 
 // Import exporter modules
 let avroExporter;
+let csvExporter;
 let sqliteExporter;
 let DataExporter;
+// QvdReader is async because it's a CJS wrapper around ESM
+let QvdReader;
 let outputDir;
 
 /**
- * Enough of the VS Code API for an export that asks only for where to save
+ * Enough of the VS Code API for an export that asks only for where to save, with
+ * every setting at its default
  * @param {string} filePath - What the save dialog answers
  * @returns {object} The API
  */
@@ -22,6 +27,7 @@ function saveDialogTo(filePath) {
   return {
     Uri: { file: (fsPath) => ({ fsPath }) },
     window: { showSaveDialog: async () => ({ fsPath: filePath }) },
+    workspace: { getConfiguration: () => ({ get: (_key, fallback) => fallback }) },
   };
 }
 
@@ -46,6 +52,31 @@ function makeRows(count) {
 }
 
 /**
+ * Build two rows with the field names and values that CSV has to quote or escape:
+ * spaces and % in names, a comma, quotes, a line break and non-ASCII text in a value,
+ * and a number, a boolean, a null and a date
+ * @returns {Array<Object>} Array of row objects
+ */
+function makeAwkwardRows() {
+  return [
+    {
+      "Order Date": new Date(Date.UTC(2024, 0, 2)),
+      "%CustomerKey": 'Å, "quoted"\nvalue',
+      Amount: 12.5,
+      Active: true,
+      Note: null,
+    },
+    {
+      "Order Date": new Date(Date.UTC(2024, 0, 3)),
+      "%CustomerKey": "Ölstuga",
+      Amount: -3,
+      Active: false,
+      Note: "x",
+    },
+  ];
+}
+
+/**
  * Decode an Avro object container file held in memory
  * @param {Buffer} bytes - File contents
  * @returns {Promise<{header: boolean, records: Array<Object>}>} Whether the file had a header, and its records
@@ -63,6 +94,19 @@ function decodeAvro(bytes) {
     decoder.on("end", () => resolve({ header, records }));
     decoder.end(bytes);
   });
+}
+
+/**
+ * Export rows to CSV in the output directory and read the file back
+ * @param {Array<Object>} rows - Array of row objects
+ * @param {string} name - File name in the output directory
+ * @param {object} [options] - CSV options
+ * @returns {Promise<string>} The file's text
+ */
+async function exportCsvText(rows, name, options) {
+  const filePath = path.join(outputDir, name);
+  await csvExporter.exportToCSV(rows, filePath, options);
+  return fs.readFileSync(filePath, "utf8");
 }
 
 /**
@@ -108,8 +152,10 @@ suite("Exporter Test Suite", () => {
   suiteSetup(async () => {
     // Import the ESM modules
     avroExporter = await import("../src/exporters/avroExporter.mjs");
+    csvExporter = await import("../src/exporters/csvExporter.mjs");
     sqliteExporter = await import("../src/exporters/sqliteExporter.mjs");
     ({ default: DataExporter } = await import("../src/exporters/index.mjs"));
+    QvdReader = await require("../src/qvdReader.cjs");
     outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-viewer-export-"));
   });
 
@@ -121,7 +167,7 @@ suite("Exporter Test Suite", () => {
     const filePath = path.join(outputDir, "refused.csv");
     let reserved;
     await assert.rejects(
-      DataExporter.exportData(makeRows(10), "csv", "refused", saveDialogTo(filePath), outputDir, 0, {
+      DataExporter.exportData(makeRows(10), "csv", "refused", saveDialogTo(filePath), outputDir, 0, ["id"], {
         reserve: (rows, limit) => {
           reserved = { rows: rows.length, limit };
           throw new Error("Exporting 10 rows to CSV needs about 1 MiB of memory");
@@ -137,11 +183,12 @@ suite("Exporter Test Suite", () => {
   test("An export's reservation is released once it is written", async () => {
     const filePath = path.join(outputDir, "reserved.csv");
     let released = 0;
-    const saved = await DataExporter.exportData(makeRows(10), "csv", "reserved", saveDialogTo(filePath), outputDir, 0, {
+    const saved = await DataExporter.exportData(makeRows(10), "csv", "reserved", saveDialogTo(filePath), outputDir, 0, ["name", "id"], {
       reserve: () => () => released++,
     });
     assert.strictEqual(saved, filePath);
-    assert.ok(fs.statSync(filePath).size > 0);
+    // The fields reach the CSV exporter, in their order, as the header row
+    assert.strictEqual(fs.readFileSync(filePath, "utf8").split("\n")[0], '"name","id"');
     assert.strictEqual(released, 1);
   });
 
@@ -192,6 +239,215 @@ suite("Exporter Test Suite", () => {
       ],
       "Missing values should be null, and extra columns left out"
     );
+  });
+
+  test("CSV export - the file starts with the header row", async () => {
+    const text = await exportCsvText(makeAwkwardRows(), "awkward.csv");
+
+    // Written out by hand rather than by a CSV library, so a quoting mistake shared by
+    // the writer and a reader can't hide. Every value is quoted, dates as ISO text,
+    // nulls are empty, and quotes inside a value are doubled. No BOM, no trailing newline.
+    assert.strictEqual(
+      text,
+      [
+        '"Order Date","%CustomerKey","Amount","Active","Note"',
+        '"2024-01-02T00:00:00.000Z","Å, ""quoted""\nvalue","12.5","true",',
+        '"2024-01-03T00:00:00.000Z","Ölstuga","-3","false","x"',
+      ].join("\n")
+    );
+  });
+
+  test("CSV export - a reader takes the column names from the first line", async () => {
+    const rows = makeAwkwardRows();
+    const parsed = Papa.parse(await exportCsvText(rows, "header.csv"), { header: true });
+
+    assert.deepStrictEqual(parsed.errors, []);
+    assert.deepStrictEqual(parsed.meta.fields, Object.keys(rows[0]));
+    assert.deepStrictEqual(
+      parsed.data.map((row) => row["%CustomerKey"]),
+      rows.map((row) => row["%CustomerKey"]),
+      "Values with a comma, quotes and a line break should come back unchanged"
+    );
+  });
+
+  test("CSV export - exporting the same rows twice gives the same file", async () => {
+    const first = await exportCsvText(makeAwkwardRows(), "first.csv");
+    // Let the clock move on, so a timestamp in the file would differ
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const second = await exportCsvText(makeAwkwardRows(), "second.csv");
+
+    assert.strictEqual(
+      second,
+      first,
+      "Nothing that changes between runs, such as a timestamp, should be in the file"
+    );
+  });
+
+  test("CSV export - columns follow the given fields, not the rows' keys", async () => {
+    // JavaScript puts integer-like keys first, so Object.keys gives 2019, 2020, Name
+    const rows = [
+      { Name: "a", 2019: 1, 2020: 2 },
+      { Name: "b", 2020: 4, Extra: "x" },
+    ];
+
+    assert.strictEqual(
+      await exportCsvText(rows, "fields.csv", { fields: ["Name", "2019", "2020"] }),
+      ['"Name","2019","2020"', '"a","1","2"', '"b",,"4"'].join("\n"),
+      "A missing value should be empty, and a key that isn't a field left out"
+    );
+  });
+
+  test("CSV export - without fields, columns are every row's keys", async () => {
+    // A later row may have a column the first row does not
+    const rows = [{ a: 1 }, { a: 2, b: "y" }];
+
+    assert.strictEqual(
+      await exportCsvText(rows, "keys.csv"),
+      ['"a","b"', '"1",', '"2","y"'].join("\n")
+    );
+  });
+
+  test("CSV export - with no rows, the header row is still written", async () => {
+    assert.strictEqual(
+      await exportCsvText([], "no-rows.csv", { fields: ["id", "name"] }),
+      '"id","name"'
+    );
+    // With neither rows nor field names there is nothing to write
+    assert.strictEqual(await exportCsvText([], "nothing.csv"), "");
+  });
+
+  test("CSV export - a QVD comes out as the CSV it was made from", async () => {
+    const legoDir = path.join(__dirname, "..", "test-data", "lego");
+    const result = await new QvdReader().read(path.join(legoDir, "colors.qvd"), 0);
+    assert.strictEqual(result.error, null);
+
+    const exported = Papa.parse(
+      await exportCsvText(result.data, "colors.csv", { fields: result.columns }),
+      { header: true }
+    );
+    const source = Papa.parse(
+      fs.readFileSync(path.join(legoDir, "colors.csv"), "utf8").trimEnd(),
+      { header: true }
+    );
+
+    assert.deepStrictEqual(exported.errors, []);
+    assert.deepStrictEqual(exported.meta.fields, source.meta.fields);
+    assert.strictEqual(exported.data.length, result.metadata.noOfRecords);
+    // The reader turns these colour codes into numbers (#154). Once that is fixed,
+    // they come out as in colors.csv and this list goes.
+    const readAsNumbers = {
+      75: "0",
+      132: "0",
+      133: "0",
+      373: "8.45e+86",
+      1001: "93910000",
+      1007: "Infinity",
+    };
+    assert.deepStrictEqual(
+      exported.data,
+      source.data.map((row) =>
+        row.id in readAsNumbers ? { ...row, rgb: readAsNumbers[row.id] } : row
+      )
+    );
+  });
+
+  test("CSV export - text a spreadsheet would run as a formula gets an apostrophe", async () => {
+    const values = ["=1+1", "@SUM(A1)", "+A1", "-2+3", "\tx", "-5", "-1,234.50", "+46 70 123 45 67", "x=1"];
+    const rows = [Object.fromEntries(values.map((value, i) => [`f${i}`, value]))];
+    rows[0].number = -5;
+    const fields = [...Object.keys(rows[0]), "=Total"];
+
+    const [header, line] = (await exportCsvText(rows, "formulas.csv", { fields })).split("\n");
+
+    assert.ok(header.endsWith(`"'=Total"`), "A field name is a cell too");
+    assert.deepStrictEqual(
+      Papa.parse(line).data[0],
+      ["'=1+1", "'@SUM(A1)", "'+A1", "'-2+3", "'\tx", "-5", "-1,234.50", "+46 70 123 45 67", "x=1", "-5", ""],
+      "Numbers, and text that only looks like one, should be left alone"
+    );
+  });
+
+  test("CSV export - formula escaping can be turned off", async () => {
+    const text = await exportCsvText([{ a: "=1+1", b: "+A1" }], "raw.csv", {
+      escapeFormulas: false,
+    });
+
+    assert.strictEqual(text, ['"a","b"', '"=1+1","+A1"'].join("\n"));
+  });
+
+  test("CSV export - a byte order mark comes first when asked for", async () => {
+    const text = await exportCsvText([{ name: "Ölstuga" }], "bom.csv", {
+      byteOrderMark: true,
+    });
+
+    assert.strictEqual(text, '\uFEFF"name"\n"Ölstuga"');
+    // Papa Parse, like Excel and Qlik, reads the mark as the encoding, not as text
+    assert.deepStrictEqual(Papa.parse(text, { header: true }).meta.fields, ["name"]);
+  });
+
+  test("CSV export - an invalid date is an empty cell, and a one-column null isn't a blank line", async () => {
+    assert.strictEqual(
+      await exportCsvText([{ d: new Date(NaN), n: 1 }], "bad-date.csv"),
+      ['"d","n"', ',"1"'].join("\n")
+    );
+    // Readers skip blank lines, which would drop the row
+    assert.strictEqual(
+      await exportCsvText([{ only: "a" }, { only: null }, { only: "c" }], "one-column.csv"),
+      ['"only"', '"a"', '""', '"c"'].join("\n")
+    );
+  });
+
+  test("CSV export - writing in chunks gives the same file as in one go", async () => {
+    const rows = makeRows(25);
+
+    assert.strictEqual(
+      await exportCsvText(rows, "chunks.csv", { chunkRows: 4 }),
+      await exportCsvText(rows, "one-chunk.csv", { chunkRows: rows.length })
+    );
+  });
+
+  test("CSV export - a failed export leaves the file it would replace as it was", async () => {
+    const filePath = path.join(outputDir, "keep.csv");
+    fs.writeFileSync(filePath, "previous export");
+    const failing = {
+      toString() {
+        throw new Error("value can't be written");
+      },
+    };
+
+    // The first chunk is written before the second fails
+    await assert.rejects(
+      csvExporter.exportToCSV([{ a: 1 }, { a: failing }], filePath, { chunkRows: 1 }),
+      (error) => {
+        assert.strictEqual(error.message, "CSV export failed: value can't be written");
+        assert.strictEqual(error.cause.message, "value can't be written");
+        return true;
+      }
+    );
+
+    assert.strictEqual(fs.readFileSync(filePath, "utf8"), "previous export");
+    assert.deepStrictEqual(
+      fs.readdirSync(outputDir).filter((name) => name.endsWith(".tmp")),
+      [],
+      "The temporary file should be removed"
+    );
+  });
+
+  test("CSV export - replacing a file keeps its permissions and symlinks", async function () {
+    if (process.platform === "win32") {
+      this.skip();
+    }
+    const real = path.join(outputDir, "real.csv");
+    const link = path.join(outputDir, "link.csv");
+    fs.writeFileSync(real, "previous export");
+    fs.chmodSync(real, 0o600);
+    fs.symlinkSync(real, link);
+
+    await csvExporter.exportToCSV([{ a: 1 }], link);
+
+    assert.ok(fs.lstatSync(link).isSymbolicLink(), "The link should still be a link");
+    assert.strictEqual(fs.readFileSync(real, "utf8"), '"a"\n"1"');
+    assert.strictEqual(fs.statSync(real).mode & 0o777, 0o600);
   });
 
   test("SQLite export - rows can be read back", async () => {

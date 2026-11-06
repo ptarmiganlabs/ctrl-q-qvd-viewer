@@ -100,6 +100,16 @@
             "Auto-detect - Automatically choose the best delimiter based on data content"
           ],
           "description": "Default delimiter for Qlik Sense inline load script exports. You can override this during each export."
+        },
+        "ctrl-q-qvd-viewer.csvEscapeFormulas": {
+          "type": "boolean",
+          "default": true,
+          "description": "In CSV exports, put an apostrophe before text that Excel, LibreOffice or Google Sheets would run as a formula: text starting with =, @, a tab or a carriage return, or with + or - followed by something other than a number. Numbers such as -5 and +46 70 123 45 67 are left alone. Turn this off if the files are only read by programs, not opened in a spreadsheet."
+        },
+        "ctrl-q-qvd-viewer.csvByteOrderMark": {
+          "type": "boolean",
+          "default": false,
+          "description": "Start CSV exports with a UTF-8 byte order mark. Excel on Windows needs it to show å, ä, ö and other non-ASCII text correctly. Some other readers, such as Python's csv module, then read it as part of the first column name."
         }
       }
     }
