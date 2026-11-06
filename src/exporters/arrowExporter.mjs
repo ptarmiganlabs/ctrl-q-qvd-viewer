@@ -1,5 +1,6 @@
 import { promises as fs, existsSync, unlinkSync } from 'fs';
 import * as arrow from 'apache-arrow';
+import { isBlank, settleBlanks } from './blankCells.mjs';
 
 /**
  * Export data to Apache Arrow format
@@ -27,6 +28,7 @@ export async function exportToArrow(data, filePath) {
     columnNames.forEach((key) => {
       columnTypes[key] = {
         hasNull: false,
+        hasBlank: false,
         hasNumber: false,
         hasString: false,
         hasBoolean: false,
@@ -43,6 +45,8 @@ export async function exportToArrow(data, filePath) {
 
         if (value === null || value === undefined) {
           typeInfo.hasNull = true;
+        } else if (isBlank(value)) {
+          typeInfo.hasBlank = true;
         } else if (value instanceof Date) {
           typeInfo.hasDate = true;
         } else if (typeof value === "object") {
@@ -57,6 +61,9 @@ export async function exportToArrow(data, filePath) {
       }
     }
 
+    // Blank text next to numbers, booleans or dates is a missing value
+    columnNames.forEach((key) => settleBlanks(columnTypes[key]));
+
     // Normalize data to ensure type consistency within each column
     const normalizedData = data.map((row) => {
       const normalizedRow = {};
@@ -65,7 +72,11 @@ export async function exportToArrow(data, filePath) {
         const value = row[key];
         const typeInfo = columnTypes[key];
 
-        if (value === null || value === undefined) {
+        if (
+          value === null ||
+          value === undefined ||
+          (typeInfo.blanksAreNull && isBlank(value))
+        ) {
           normalizedRow[key] = null;
         } else if (
           typeInfo.hasString ||

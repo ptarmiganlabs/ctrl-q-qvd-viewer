@@ -5,12 +5,17 @@ const path = require("path");
 const avro = require("avsc");
 const esbuild = require("esbuild");
 const Papa = require("papaparse");
+const parquet = require("parquetjs");
 const initSqlJs = require("sql.js");
 const { buildOptions } = require("../esbuild.js");
 
 // Import exporter modules
+let arrow;
+let arrowExporter;
 let avroExporter;
 let csvExporter;
+let parquetExporter;
+let postgresExporter;
 let sqliteExporter;
 // QvdReader is async because it's a CJS wrapper around ESM
 let QvdReader;
@@ -62,23 +67,84 @@ function makeAwkwardRows() {
 }
 
 /**
+ * Build rows with blank text next to integers, next to booleans, among text, and on its own
+ * @returns {Array<Object>} Array of row objects
+ */
+function makeBlankRows() {
+  return [
+    { parent_id: 3, flag: true, code: "a", note: "" },
+    { parent_id: "", flag: " ", code: "", note: " " },
+    { parent_id: " \t", flag: false, code: "c", note: null },
+  ];
+}
+
+// makeBlankRows() as a typed format should store it: the blanks next to integers and
+// booleans as nulls, and the others as the text they are
+const BLANK_ROWS_STORED = [
+  { parent_id: 3, flag: true, code: "a", note: "" },
+  { parent_id: null, flag: null, code: "", note: " " },
+  { parent_id: null, flag: false, code: "c", note: null },
+];
+
+/**
  * Decode an Avro object container file held in memory
  * @param {Buffer} bytes - File contents
- * @returns {Promise<{header: boolean, records: Array<Object>}>} Whether the file had a header, and its records
+ * @returns {Promise<{header: boolean, schema: Object, records: Array<Object>}>} Whether the file had a header, its schema, and its records
  */
 function decodeAvro(bytes) {
   return new Promise((resolve, reject) => {
     let header = false;
+    let schema;
     const records = [];
     const decoder = new avro.streams.BlockDecoder();
-    decoder.on("metadata", () => {
+    decoder.on("metadata", (type) => {
       header = true;
+      schema = type.schema();
     });
     decoder.on("data", (record) => records.push(record));
     decoder.on("error", reject);
-    decoder.on("end", () => resolve({ header, records }));
+    decoder.on("end", () => resolve({ header, schema, records }));
     decoder.end(bytes);
   });
+}
+
+/**
+ * Read a Parquet file's schema and rows
+ * @param {string} filePath - File path
+ * @returns {Promise<{schema: Object<string, string>, rows: Array<Object>}>} Each column's type, ending in ? if the column is optional, and the rows
+ */
+async function readParquet(filePath) {
+  const reader = await parquet.ParquetReader.openFile(filePath);
+  try {
+    const schema = {};
+    for (const [name, field] of Object.entries(reader.getSchema().fields)) {
+      const optional = field.repetitionType === "OPTIONAL" ? "?" : "";
+      schema[name] = `${field.originalType ?? field.primitiveType}${optional}`;
+    }
+    const rows = [];
+    const cursor = reader.getCursor();
+    let row;
+    while ((row = await cursor.next())) {
+      // parquetjs leaves a null out of the row
+      rows.push(Object.fromEntries(Object.keys(schema).map((name) => [name, row[name] ?? null])));
+    }
+    return { schema, rows };
+  } finally {
+    await reader.close();
+  }
+}
+
+/**
+ * Read an Arrow file's schema and rows
+ * @param {string} filePath - File path
+ * @returns {{schema: Object<string, string>, rows: Array<Object>}} Each column's type, and the rows
+ */
+function readArrow(filePath) {
+  const table = arrow.tableFromIPC(fs.readFileSync(filePath));
+  return {
+    schema: Object.fromEntries(table.schema.fields.map((field) => [field.name, String(field.type)])),
+    rows: table.toArray().map((row) => ({ ...row.toJSON() })),
+  };
 }
 
 /**
@@ -136,8 +202,12 @@ suite("Exporter Test Suite", () => {
   // Load the modules and create an output directory before running tests
   suiteSetup(async () => {
     // Import the ESM modules
+    arrow = await import("apache-arrow");
+    arrowExporter = await import("../src/exporters/arrowExporter.mjs");
     avroExporter = await import("../src/exporters/avroExporter.mjs");
     csvExporter = await import("../src/exporters/csvExporter.mjs");
+    parquetExporter = await import("../src/exporters/parquetExporter.mjs");
+    postgresExporter = await import("../src/exporters/postgresExporter.mjs");
     sqliteExporter = await import("../src/exporters/sqliteExporter.mjs");
     QvdReader = await require("../src/qvdReader.cjs");
     outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-viewer-export-"));
@@ -145,6 +215,21 @@ suite("Exporter Test Suite", () => {
 
   suiteTeardown(() => {
     fs.rmSync(outputDir, { recursive: true, force: true });
+  });
+
+  test("Arrow export - blank text next to numbers or booleans is null, and text elsewhere", async () => {
+    const filePath = path.join(outputDir, "blanks.arrow");
+
+    await arrowExporter.exportToArrow(makeBlankRows(), filePath);
+    const { schema, rows } = readArrow(filePath);
+
+    assert.deepStrictEqual(schema, {
+      parent_id: "Float64",
+      flag: "Bool",
+      code: "Dictionary<Int32, Utf8>",
+      note: "Dictionary<Int32, Utf8>",
+    });
+    assert.deepStrictEqual(rows, BLANK_ROWS_STORED);
   });
 
   test("Avro export - file is complete when the export resolves", async () => {
@@ -193,6 +278,27 @@ suite("Exporter Test Suite", () => {
         { a: 3, b: "z" },
       ],
       "Missing values should be null, and extra columns left out"
+    );
+  });
+
+  test("Avro export - blank text next to numbers or booleans is null, and text elsewhere", async () => {
+    const filePath = path.join(outputDir, "blanks.avro");
+
+    await avroExporter.exportToAvro(makeBlankRows(), filePath);
+    const { schema, records } = await decodeAvro(fs.readFileSync(filePath));
+
+    assert.deepStrictEqual(
+      schema.fields.map((field) => [field.name, field.type]),
+      [
+        ["parent_id", ["null", "long"]],
+        ["flag", ["null", "boolean"]],
+        ["code", "string"],
+        ["note", ["null", "string"]],
+      ]
+    );
+    assert.deepStrictEqual(
+      records.map((record) => ({ ...record })),
+      BLANK_ROWS_STORED
     );
   });
 
@@ -405,6 +511,42 @@ suite("Exporter Test Suite", () => {
     assert.strictEqual(fs.statSync(real).mode & 0o777, 0o600);
   });
 
+  test("Parquet export - blank text next to numbers or booleans is null, and text elsewhere", async () => {
+    const filePath = path.join(outputDir, "blanks.parquet");
+
+    await parquetExporter.exportToParquet(makeBlankRows(), filePath);
+    const { schema, rows } = await readParquet(filePath);
+
+    assert.deepStrictEqual(schema, {
+      parent_id: "INT64?",
+      flag: "BOOLEAN?",
+      code: "UTF8",
+      note: "UTF8?",
+    });
+    assert.deepStrictEqual(rows, BLANK_ROWS_STORED);
+  });
+
+  test("PostgreSQL export - blank text next to numbers or booleans is NULL, and text elsewhere", async () => {
+    const filePath = path.join(outputDir, "blanks.sql");
+
+    await postgresExporter.exportToPostgres(makeBlankRows(), filePath, 0, {});
+    const lines = fs.readFileSync(filePath, "utf8").split("\n");
+
+    const create = lines.indexOf('CREATE TABLE "qvd_data" (');
+    assert.deepStrictEqual(lines.slice(create + 1, create + 5), [
+      '  "parent_id" BIGINT,',
+      '  "flag" BOOLEAN,',
+      '  "code" TEXT NOT NULL,',
+      '  "note" TEXT',
+    ]);
+    const values = lines.indexOf("VALUES");
+    assert.deepStrictEqual(lines.slice(values + 1, values + 4), [
+      "  (3, TRUE, 'a', ''),",
+      "  (NULL, NULL, '', ' '),",
+      "  (NULL, FALSE, 'c', NULL);",
+    ]);
+  });
+
   test("SQLite export - rows can be read back", async () => {
     const rows = makeRows(1000);
     const filePath = path.join(outputDir, "rows.db");
@@ -424,6 +566,32 @@ suite("Exporter Test Suite", () => {
         row,
         [3, 3.25, "Item 3", 0, null, rows[3].created.toISOString()],
         "Row should round-trip, with booleans as 0/1 and dates as ISO strings"
+      );
+    } finally {
+      db.close();
+    }
+  });
+
+  test("SQLite export - blank text next to numbers or booleans is NULL, and text elsewhere", async () => {
+    const filePath = path.join(outputDir, "blanks.db");
+
+    await sqliteExporter.exportToSQLite(makeBlankRows(), filePath);
+
+    const SQL = await initSqlJs();
+    const db = new SQL.Database(fs.readFileSync(filePath));
+    try {
+      assert.strictEqual(
+        db.exec("SELECT sql FROM sqlite_master WHERE name = 'data'")[0].values[0][0],
+        'CREATE TABLE data ("parent_id" INTEGER, "flag" INTEGER, "code" TEXT, "note" TEXT)'
+      );
+      assert.deepStrictEqual(
+        db.exec("SELECT parent_id, flag, code, note FROM data")[0].values,
+        [
+          [3, 1, "a", ""],
+          [null, null, "", " "],
+          [null, 0, "c", null],
+        ],
+        "Booleans should be stored as 0/1"
       );
     } finally {
       db.close();

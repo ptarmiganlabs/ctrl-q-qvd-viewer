@@ -2,6 +2,7 @@ import avro from 'avsc';
 import { createWriteStream, existsSync, unlinkSync } from 'fs';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
+import { isBlank, settleBlanks } from './blankCells.mjs';
 
 /**
  * Write records to an Avro object container file
@@ -50,6 +51,7 @@ export async function exportToAvro(data, filePath) {
     columnNames.forEach((key) => {
       columnTypes[key] = {
         hasNull: false,
+        hasBlank: false,
         hasNumber: false,
         hasString: false,
         hasBoolean: false,
@@ -66,6 +68,8 @@ export async function exportToAvro(data, filePath) {
 
         if (value === null || value === undefined) {
           typeInfo.hasNull = true;
+        } else if (isBlank(value)) {
+          typeInfo.hasBlank = true;
         } else if (typeof value === "number") {
           typeInfo.hasNumber = true;
           if (!Number.isInteger(value)) {
@@ -80,6 +84,9 @@ export async function exportToAvro(data, filePath) {
         }
       }
     }
+
+    // Blank text next to numbers, booleans or dates is a missing value
+    columnNames.forEach((key) => settleBlanks(columnTypes[key]));
 
     // Determine Avro type for each field based on collected type information
     const fields = columnNames.map((key) => {
@@ -123,7 +130,11 @@ export async function exportToAvro(data, filePath) {
           const value = row[key];
           const typeInfo = columnTypes[key];
 
-          if (value === null || value === undefined) {
+          if (
+            value === null ||
+            value === undefined ||
+            (typeInfo.blanksAreNull && isBlank(value))
+          ) {
             processedRow[key] = null;
           } else if (value instanceof Date) {
             processedRow[key] = value.getTime();

@@ -3,6 +3,7 @@ import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { createRequire } from 'module';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { isBlank, settleBlanks } from './blankCells.mjs';
 
 // sql.js, once it has started
 let sqlJs = null;
@@ -62,6 +63,7 @@ export async function exportToSQLite(data, filePath) {
     columnNames.forEach((key) => {
       columnTypes[key] = {
         hasNull: false,
+        hasBlank: false,
         hasNumber: false,
         hasString: false,
         hasBoolean: false,
@@ -78,6 +80,8 @@ export async function exportToSQLite(data, filePath) {
 
         if (value === null || value === undefined) {
           typeInfo.hasNull = true;
+        } else if (isBlank(value)) {
+          typeInfo.hasBlank = true;
         } else if (typeof value === "number") {
           typeInfo.hasNumber = true;
           if (!Number.isInteger(value)) {
@@ -92,6 +96,9 @@ export async function exportToSQLite(data, filePath) {
         }
       }
     }
+
+    // Blank text next to numbers, booleans or dates is a missing value
+    columnNames.forEach((key) => settleBlanks(columnTypes[key]));
 
     // Determine SQLite type for each column based on collected type information
     const columns = columnNames
@@ -130,7 +137,11 @@ export async function exportToSQLite(data, filePath) {
         const typeInfo = columnTypes[col];
 
         // Convert values based on schema expectations
-        if (value === null || value === undefined) {
+        if (
+          value === null ||
+          value === undefined ||
+          (typeInfo.blanksAreNull && isBlank(value))
+        ) {
           return null;
         } else if (typeInfo.hasString) {
           // If schema expects TEXT, convert everything to string

@@ -1,4 +1,5 @@
 import { existsSync, unlinkSync, writeFileSync } from "fs";
+import { isBlank, settleBlanks } from "./blankCells.mjs";
 
 /**
  * Export data to PostgreSQL SQL format
@@ -38,6 +39,7 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
     columnNames.forEach((key) => {
       columnTypes[key] = {
         hasNull: false,
+        hasBlank: false,
         hasNumber: false,
         hasString: false,
         hasBoolean: false,
@@ -55,6 +57,8 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
 
         if (value === null || value === undefined) {
           typeInfo.hasNull = true;
+        } else if (isBlank(value)) {
+          typeInfo.hasBlank = true;
         } else if (typeof value === "number") {
           typeInfo.hasNumber = true;
           if (!Number.isInteger(value)) {
@@ -70,6 +74,9 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
         }
       }
     }
+
+    // Blank text next to numbers, booleans or dates is a missing value
+    columnNames.forEach((key) => settleBlanks(columnTypes[key]));
 
     // Build SQL content
     let sqlContent = [];
@@ -161,7 +168,11 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
             const typeInfo = columnTypes[col];
 
             // Format value based on type
-            if (value === null || value === undefined) {
+            if (
+              value === null ||
+              value === undefined ||
+              (typeInfo.blanksAreNull && isBlank(value))
+            ) {
               return "NULL";
             } else if (typeInfo.hasString) {
               // Escape single quotes for SQL
