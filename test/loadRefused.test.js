@@ -65,10 +65,44 @@ suite("Load Refused Test Suite", () => {
     const webview = recordingWebview(messages);
     webview.html = "<p>the page with its rows</p>";
 
-    await provider.updateWebview("refused.qvd", webview, 0, { keepPageOnMemoryRefusal: true });
+    await provider.updateWebview("refused.qvd", webview, 0, { keepPageOnFailure: true });
 
     assert.strictEqual(webview.html, "<p>the page with its rows</p>");
     assert.deepStrictEqual(messages, [{ command: "loadRefused" }]);
+  });
+
+  test("Load More on a file that has gone keeps the page, and says why", async () => {
+    // The API as the provider imports it: on VS Code 1.101.0 that is another object than require() gives
+    const api = await import("vscode");
+    const showWarningMessage = api.window.showWarningMessage;
+    const warnings = [];
+    const provider = new QvdEditorProvider({
+      extensionPath: root,
+      extensionUri: vscode.Uri.file(root),
+    });
+    const messages = [];
+    const webview = recordingWebview(messages);
+    webview.html = "<p>the page with its rows</p>";
+    const gone = path.join(root, "test-data", "lego", "gone-since-it-opened.qvd");
+
+    try {
+      api.window.showWarningMessage = async (message, ...items) => {
+        warnings.push({ message, items });
+        return undefined;
+      };
+      await provider.updateWebview(gone, webview, 10000, { keepPageOnFailure: true });
+    } finally {
+      api.window.showWarningMessage = showWarningMessage;
+    }
+
+    assert.strictEqual(webview.html, "<p>the page with its rows</p>");
+    assert.deepStrictEqual(messages, [{ command: "loadRefused" }]);
+    assert.deepStrictEqual(warnings, [
+      {
+        message: `The file can't be found. There is no file at ${gone}.`,
+        items: ["Show Logs"],
+      },
+    ]);
   });
 
   test("Opening a file refused for memory shows the error page", async () => {
@@ -142,7 +176,7 @@ suite("Load Refused Test Suite", () => {
     const webview = recordingWebview(messages);
     webview.html = "<p>the page</p>";
 
-    await provider.updateWebview("closed.qvd", webview, 0, { keepPageOnMemoryRefusal: true });
+    await provider.updateWebview("closed.qvd", webview, 0, { keepPageOnFailure: true });
 
     assert.strictEqual(webview.html, "<p>the page</p>");
     assert.deepStrictEqual(messages, []);

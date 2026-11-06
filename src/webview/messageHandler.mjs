@@ -5,7 +5,7 @@ import DataExporter from "../exporters/index.mjs";
 import { describeTimeShifts } from "../exporters/zonedTimestamps.mjs";
 import { PROFILE_BYTES_PER_VALUE, profileFields, generateQvsScript } from "../qvdProfiler.mjs";
 import { getVisualAnalysisHtml } from "./templates/visualAnalysisTemplate.mjs";
-import { getLoadMoreRowCount } from "./loadMore.mjs";
+import { getLoadMoreRowCount, LOAD_MORE_MAX_ROWS, previewRowsFromSetting } from "./loadMore.mjs";
 import {
   describeExportRefusal,
   describeProfileRefusal,
@@ -97,19 +97,40 @@ export function setupMessageHandler(
         vscode.commands.executeCommand("ctrl-q-qvd-viewer.about");
         break;
       case "openSettings":
+        // The one setting a page names, such as the rows a failed read was asked for,
+        // as long as it is the extension's own; otherwise all of the extension's
         vscode.commands.executeCommand(
           "workbench.action.openSettings",
-          "ctrl-q-qvd-viewer"
+          typeof message.setting === "string" && message.setting.startsWith("ctrl-q-qvd-viewer.")
+            ? message.setting
+            : "ctrl-q-qvd-viewer"
         );
         break;
+      case "showLogs":
+        logger.show();
+        break;
+      case "retry": {
+        // Read the file again, as opening it would: with the rows the setting asks for
+        // now, so that a setting put right takes effect, or the rows the page offered.
+        // A retry that fails too replaces the page with why.
+        const offered = Number.isInteger(message.rows) && message.rows > 0;
+        const rows = offered
+          ? Math.min(message.rows, LOAD_MORE_MAX_ROWS)
+          : previewRowsFromSetting(
+              vscode.workspace.getConfiguration("ctrl-q-qvd-viewer").get("maxPreviewRows")
+            );
+        await updateWebviewFn(filePath, webviewPanel.webview, rows, { signal });
+        break;
+      }
       case "loadMore":
         // Load more rows - double the current amount or load all if requested
         const currentRows = message.currentRows || maxRows;
         const newMaxRows = message.loadAll
           ? 0
           : getLoadMoreRowCount(currentRows);
+        // A read that fails keeps the rows shown, and says why
         await updateWebviewFn(filePath, webviewPanel.webview, newMaxRows, {
-          keepPageOnMemoryRefusal: true,
+          keepPageOnFailure: true,
           signal,
         });
         break;

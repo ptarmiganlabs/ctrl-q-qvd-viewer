@@ -6,14 +6,21 @@ import {
   getChartJs,
   getHistogramViewJs,
 } from "../assetLoader.mjs";
-import { escapeHtml } from "./errorTemplate.mjs";
+import {
+  escapeHtml,
+  failureNoticeHtml,
+  FAILURE_BUTTONS_JS,
+  FAILURE_NOTICE_CSS,
+} from "./errorTemplate.mjs";
 import DataExporter from "../../exporters/index.mjs";
 import { metricHelpContent } from "../qualityMetricHelp.mjs";
 import { getLoadMoreRowCount } from "../loadMore.mjs";
 
 /**
  * Generate HTML for webview with tabbed interface and Tabulator
- * @param {object} result - The QVD read result
+ * @param {object} result - The QVD read result. Its dataError, when the file's rows
+ *   couldn't be read but its header could, is why, as describeReadFailure() says it:
+ *   the page then shows the header, with that in the Data tab
  * @param {object} webview - The webview object
  * @param {object} context - The extension context
  * @param {object} options - Options for HTML generation
@@ -23,7 +30,8 @@ import { getLoadMoreRowCount } from "../loadMore.mjs";
 export function getHtmlForWebview(result, webview, context, options = {}) {
   const { metadata, data, totalRows, dataError, fileSize } = result;
   const embedData = options.embedData !== false; // Default to true for backwards compatibility
-  const hasMoreRows = data.length < totalRows;
+  // Rows that couldn't be read aren't offered again: the notice in the Data tab retries
+  const hasMoreRows = !dataError && data.length < totalRows;
   const nonce = getNonce();
 
   // Inline Tabulator for easier CSP compliance
@@ -1178,6 +1186,9 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
         .profiling-table-container {
             margin-top: 15px;
         }
+
+        /* Why the file's rows couldn't be read, in the Data tab */
+        ${FAILURE_NOTICE_CSS}
     </style>
 </head>
 <body>
@@ -1241,15 +1252,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         <button class="load-button" id="loadAllBtn">Load All Remaining</button>
                     </div>
                 </div>
-                ${
-                  dataError
-                    ? `
-                <div class="info-banner" style="border-left-color: var(--vscode-inputValidation-warningBorder);">
-                    ⚠️ Unable to load data: ${escapeHtml(dataError)}
-                </div>
-                `
-                    : ""
-                }
+                ${dataError ? failureNoticeHtml(dataError, { headerShown: true }) : ""}
                 <div class="search-container">
                     <input type="text" class="search-input" id="data-search" placeholder="🔍 Search in data..." />
                     <button class="clear-search-btn" id="clear-data-search">✕ Clear</button>
@@ -1466,7 +1469,12 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             initQvdStructureChart();
         });
         
+        // Buttons of the notice that says why the file's rows couldn't be read
+        ${FAILURE_BUTTONS_JS}
+
         function setupEventListeners() {
+            wireFailureButtons(vscode);
+
             // Tab switching
             document.querySelectorAll('.tab-button').forEach(button => {
                 button.addEventListener('click', function(e) {
@@ -1681,7 +1689,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         break;
 
                     case 'loadRefused':
-                        // The read was too large, and the extension kept this page: put the load buttons back
+                        // The read failed, and the extension kept this page: put the load buttons back
                         updateLoadedRowsBanner();
                         break;
 

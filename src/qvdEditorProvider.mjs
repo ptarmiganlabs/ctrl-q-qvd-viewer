@@ -1,12 +1,23 @@
 import * as vscode from "vscode";
 import { statSync } from "fs";
-import QvdReader from "./qvdReader.mjs";
+import { stat } from "fs/promises";
+import QvdReader, { errorFacts } from "./qvdReader.mjs";
 import { getErrorHtml } from "./webview/templates/errorTemplate.mjs";
 import { getHtmlForWebview } from "./webview/templates/mainTemplate.mjs";
 import { setupMessageHandler } from "./webview/messageHandler.mjs";
 import { getLoadMoreRowCount, previewRowsFromSetting } from "./webview/loadMore.mjs";
+import { describeReadFailure } from "./webview/readFailure.mjs";
 import { splitRowsIntoBatches } from "./webview/rowBatches.mjs";
 import logger from "./logger.mjs";
+
+/**
+ * A thrown error as a failed read, for the page that says why
+ * @param {Error} error - What was thrown
+ * @returns {object} The fields of a failed read that describeReadFailure() looks at
+ */
+function failedReadOf(error) {
+  return { error: error?.message ?? String(error), ...errorFacts(error), refusal: null };
+}
 
 /**
  * Provider for QVD file custom editor with tabbed interface and Tabulator
@@ -101,7 +112,7 @@ class QvdEditorProvider {
       );
       // Show error in webview
       webviewPanel.webview.html = getErrorHtml(
-        `Failed to open QVD file: ${error.message}`
+        describeReadFailure(failedReadOf(error), { filePath: document.uri.fsPath })
       );
       // Re-throw so VS Code knows there was an error
       throw error;
@@ -113,15 +124,15 @@ class QvdEditorProvider {
    * @param {string} filePath - The QVD file path
    * @param {object} webview - The webview to fill
    * @param {number} maxRows - Rows to read, 0 for every row
-   * @param {{keepPageOnMemoryRefusal?: boolean, signal?: AbortSignal}} [options] -
-   *   keepPageOnMemoryRefusal: when the read is refused as too large for memory, keep the
-   *   page and say so in a warning, instead of replacing it with the error page. For Load
-   *   More and Load All, where the rows already shown are still worth having.
+   * @param {{keepPageOnFailure?: boolean, signal?: AbortSignal}} [options] -
+   *   keepPageOnFailure: when the read fails, keep the page and say why in a warning,
+   *   instead of replacing it. For Load More and Load All, where the rows already shown
+   *   are still worth having, and the load buttons, put back, retry.
    *   signal: gives the read up once the editor is closed.
    * @returns {Promise<{rowsSent: Promise<void>}|undefined>} Resolves once the HTML
    *   is set; rowsSent settles once every row has been posted to the webview
    */
-  async updateWebview(filePath, webview, maxRows, { keepPageOnMemoryRefusal = false, signal } = {}) {
+  async updateWebview(filePath, webview, maxRows, { keepPageOnFailure = false, signal } = {}) {
     const totalStart = performance.now();
     logger.log("⏱️ [TIMING] updateWebview started");
     try {
@@ -143,14 +154,13 @@ class QvdEditorProvider {
       }
 
       if (result.error) {
-        logger.error(`Error reading QVD file: ${filePath}`, result.error);
-        if (keepPageOnMemoryRefusal && result.errorReason === "memory") {
-          // The rows already shown stay, and the page puts its load buttons back
-          vscode.window.showWarningMessage(result.error);
-          await webview.postMessage({ command: "loadRefused" });
-          return;
-        }
-        webview.html = getErrorHtml(result.error);
+        logger.error(`Error reading QVD file: ${filePath}`, {
+          error: result.error,
+          name: result.errorName,
+          reason: result.errorReason,
+          code: result.errorCode,
+        });
+        await this.showFailure(filePath, webview, result, { keepPage: keepPageOnFailure, signal });
         return;
       }
 
@@ -210,7 +220,7 @@ class QvdEditorProvider {
       const rowsSent = this.postRows(webview, result)
         .catch((error) => {
           logger.error(`Exception while sending rows of QVD file: ${filePath}`, error);
-          webview.html = getErrorHtml(error.message);
+          webview.html = getErrorHtml(describeReadFailure(failedReadOf(error), { filePath }));
         })
         // The webview has the rows now: the heap they booked here is free for other reads
         .finally(() => result.release?.());
@@ -222,8 +232,69 @@ class QvdEditorProvider {
       return { rowsSent };
     } catch (error) {
       logger.error(`Exception while processing QVD file: ${filePath}`, error);
-      webview.html = getErrorHtml(error.message);
+      await this.showFailure(filePath, webview, failedReadOf(error), {
+        keepPage: keepPageOnFailure,
+        signal,
+      });
     }
+  }
+
+  /**
+   * Say why a read failed
+   * On Load More and Load All the page stays, and a warning says why. Otherwise the
+   * page is replaced: by the viewer with the file's header and the failure in its
+   * Data tab, when only the file's rows failed and its header still reads, and by
+   * the error page when not.
+   * @param {string} filePath - The QVD file path
+   * @param {object} webview - The webview
+   * @param {object} result - The failed read, as QvdReader.read() gives it
+   * @param {{keepPage?: boolean, signal?: AbortSignal}} [options] - keepPage: keep the
+   *   page, and put its load buttons back; signal: aborted once the editor is closed
+   * @returns {Promise<void>} Resolves once the page says why
+   */
+  async showFailure(filePath, webview, result, { keepPage = false, signal } = {}) {
+    const failure = describeReadFailure(result, { filePath });
+
+    if (keepPage) {
+      // The rows already shown stay, and the page puts its load buttons back
+      vscode.window
+        .showWarningMessage(`${failure.title}. ${failure.summary}`, "Show Logs")
+        .then((action) => {
+          if (action === "Show Logs") {
+            logger.show();
+          }
+        });
+      await webview.postMessage({ command: "loadRefused" });
+      return;
+    }
+
+    if (failure.dataOnly) {
+      let header = null;
+      try {
+        header = await this.qvdReader.readHeader(filePath, { signal });
+      } catch (error) {
+        logger.log(`The header of ${filePath} can't be read either: ${error?.message ?? error}`);
+      }
+      if (signal?.aborted) {
+        // The editor is closed: there is no page left to show anything on
+        return;
+      }
+      if (header) {
+        const fileSize = await stat(filePath).then(
+          (stats) => stats.size,
+          () => 0
+        );
+        webview.html = getHtmlForWebview(
+          { ...header, data: [], dataError: failure, fileSize },
+          webview,
+          this.context,
+          { embedData: true }
+        );
+        return;
+      }
+    }
+
+    webview.html = getErrorHtml(failure);
   }
 
   /**
