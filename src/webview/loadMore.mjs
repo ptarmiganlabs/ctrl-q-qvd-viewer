@@ -3,6 +3,15 @@
  */
 export const LOAD_MORE_MAX_ROWS = 100000;
 
+// The settings' section, and the setting in it that says how many rows a file opens with
+const SETTINGS = "ctrl-q-qvd-viewer";
+const PREVIEW_ROWS = "maxPreviewRows";
+
+/**
+ * The setting that says how many rows a file opens with, as VS Code names it
+ */
+export const PREVIEW_ROWS_SETTING = `${SETTINGS}.${PREVIEW_ROWS}`;
+
 /**
  * How many rows to read when the user clicks Load More: twice the rows already
  * loaded, up to LOAD_MORE_MAX_ROWS
@@ -27,4 +36,14 @@ export function previewRowsFromSetting(value) {
     return 5000;
   }
   return Math.min(LOAD_MORE_MAX_ROWS, Math.max(100, Math.round(value)));
+}
+
+/**
+ * The rows to open a file with, from the maxPreviewRows setting as it is now:
+ * on open, and on a retry, which reads the file again as opening it would
+ * @param {object} vscode - The VS Code API
+ * @returns {number} As previewRowsFromSetting() gives it
+ */
+export function previewRows(vscode) {
+  return previewRowsFromSetting(vscode.workspace.getConfiguration(SETTINGS).get(PREVIEW_ROWS));
 }

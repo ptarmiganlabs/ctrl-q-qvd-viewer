@@ -106,9 +106,10 @@ export async function toRowObjects(rows, columns, signal, dates = null) {
 
 /**
  * A file's header, as far as pricing a read needs it
- * @typedef {{key: string|null, rowCount: number, columnCount: number, fields: Array<{name: string, symbols: number, bytes: number, tags: Array<string>}>}} Header
+ * @typedef {{key: string|null, rowCount: number, columnCount: number, fields: Array<{name: string, symbols: number, bytes: number, tags: Array<string>}>, view: {metadata: object, columns: Array<string>}}} Header
  *   key: which version of the file it is, or null when the file can't be looked at;
- *   fields: each field's name, symbol count, symbol area's size in bytes, and tags
+ *   fields: each field's name, symbol count, symbol area's size in bytes, and tags;
+ *   view: the header as the viewer shows it, for a file whose rows then fail to read
  */
 
 /**
@@ -160,6 +161,10 @@ async function headerOf(filePath, realFilePath, allowedDir, signal) {
       bytes: Number(field.length) || 0,
       tags: tagsOf(field),
     })),
+    view: {
+      metadata: viewerMetadata(metadata.fileMetadata || {}, metadata.fields),
+      columns: metadata.columns,
+    },
   };
   if (key) {
     headers.delete(realFilePath);
@@ -238,12 +243,50 @@ function readCostBound(header, cells, callerBytes) {
 }
 
 /**
+ * The operating system's code for why a file couldn't be opened or read
+ * qvdjs puts it in a QvdIOError's context.code, with Node's own error as its cause,
+ * and an error from Node itself carries it as its code. qvdjs's own codes, such as
+ * QVD_IO_ERROR, and Node's ERR_ codes are not the system's.
+ * @param {Error} error - What was thrown
+ * @returns {string|null} Such as ENOENT, EACCES or EBUSY; null when there is none
+ */
+function systemCodeOf(error) {
+  for (const code of [error?.context?.code, error?.cause?.code, error?.code]) {
+    if (typeof code === "string" && /^E[A-Z0-9]+$/.test(code)) {
+      return code;
+    }
+  }
+  return null;
+}
+
+/**
+ * What a failed read's error says about itself, so that a caller can tell a
+ * missing or locked file, a refusal and damage apart
+ * @param {Error} error - What was thrown
+ * @returns {{errorName: string|null, errorReason: string|null, errorCode: string|null, errorOption: string|null}}
+ *   errorName: the error's class, such as QvdIOError, QvdCorruptedError or AbortError;
+ *   errorReason: qvdjs's context.reason, such as "memory" or "option", or "aborted"
+ *   for a read given up; errorCode: the system's code, such as ENOENT; errorOption:
+ *   the option refused, when errorReason is "option"
+ */
+export function errorFacts(error) {
+  const reason = error?.name === "AbortError" ? "aborted" : error?.context?.reason ?? null;
+  return {
+    errorName: error?.name ?? null,
+    errorReason: reason,
+    errorCode: systemCodeOf(error),
+    errorOption: reason === "option" ? error.context.option ?? null : null,
+  };
+}
+
+/**
  * The result of a read that failed
  * @param {Error} error - Why
  * @returns {object} As QvdReader.read() describes
  */
 function failedRead(error) {
-  const aborted = error?.name === "AbortError";
+  const facts = errorFacts(error);
+  const aborted = facts.errorReason === "aborted";
   const refusal = aborted ? null : memoryRefusalOf(error);
   let message;
   if (aborted) {
@@ -260,11 +303,64 @@ function failedRead(error) {
     totalRows: 0,
     dataError: null,
     error: message,
-    // qvdjs's error class and reason, so a caller can tell a refusal from damage
-    errorName: error?.name ?? null,
-    errorReason: aborted ? "aborted" : error?.context?.reason ?? null,
+    ...facts,
     refusal,
     release: () => {},
+  };
+}
+
+/**
+ * A file's metadata as the viewer shows it, from qvdjs's account of its header
+ * @param {object} fileMetadata - The file's own metadata, as qvdjs gives it
+ * @param {Array<object>} fields - Each field's, as qvdjs gives them
+ * @returns {object} The metadata
+ */
+function viewerMetadata(fileMetadata, fields) {
+  return {
+    qvBuildNo: fileMetadata.qvBuildNo || "",
+    creatorDoc: fileMetadata.creatorDoc || "",
+    createUtcTime: fileMetadata.createUtcTime || "",
+    sourceCreateUtcTime: fileMetadata.sourceCreateUtcTime || "",
+    sourceFileUtcTime: fileMetadata.sourceFileUtcTime || "",
+    sourceFileSize: fileMetadata.sourceFileSize || "",
+    staleUtcTime: fileMetadata.staleUtcTime || "",
+    tableName: fileMetadata.tableName || "",
+    tableCreator: fileMetadata.tableCreator || "",
+    compression: fileMetadata.compression || "",
+    recordByteSize: fileMetadata.recordByteSize || "",
+    noOfRecords: parseInt(fileMetadata.noOfRecords) || 0,
+    offset: parseInt(fileMetadata.offset) || 0,
+    length: parseInt(fileMetadata.length) || 0,
+    comment: fileMetadata.comment || "",
+    encryptionInfo: fileMetadata.encryptionInfo || "",
+    tableTags: fileMetadata.tableTags || "",
+    profilingData: fileMetadata.profilingData || "",
+    lineage: fileMetadata.lineage || [],
+    fields: fields.map((field) => {
+      return {
+        name: field.fieldName || "",
+        type: field.type || "",
+        extent: field.extent || "",
+        noOfSymbols: parseInt(field.noOfSymbols) || 0,
+        offset: parseInt(field.offset) || 0,
+        length: parseInt(field.length) || 0,
+        bitOffset: parseInt(field.bitOffset) || 0,
+        bitWidth: parseInt(field.bitWidth) || 0,
+        bias: parseInt(field.bias) || 0,
+        numberFormat: field.numberFormat
+          ? {
+              type: field.numberFormat.Type || "",
+              nDec: field.numberFormat.nDec || "",
+              useThou: field.numberFormat.UseThou || "",
+              fmt: field.numberFormat.Fmt || "",
+              dec: field.numberFormat.Dec || "",
+              thou: field.numberFormat.Thou || "",
+            }
+          : null,
+        tags: tagsOf(field),
+        comment: field.comment || "",
+      };
+    }),
   };
 }
 
@@ -292,12 +388,15 @@ class QvdReader {
    * @param {boolean} [options.dates=false] - Whether a field of dates or timestamps reads
    *   as Dates, for an export to a format with date types, rather than as the text Qlik
    *   shows. Each Date holds the QVD's wall clock in its UTC fields.
-   * @returns {Promise<{metadata: object, data: Array, error: string|null, errorName: string|null, errorReason: string|null, refusal: import('./memoryGuard.mjs').Refusal|null, release: function(): void}>}
+   * @returns {Promise<{metadata: object, data: Array, error: string|null, errorName: string|null, errorReason: string|null, errorCode: string|null, errorOption: string|null, refusal: import('./memoryGuard.mjs').Refusal|null, release: function(): void}>}
    *   errorName and errorReason are qvdjs's error class and context.reason, such as
    *   "memory", "option" for a maxRows or cost that isn't a count, or "aborted" for a
-   *   read given up. refusal, for a memory refusal, says whether the rows or what the
-   *   caller builds from them didn't fit. release() ends the heap the rows have booked:
-   *   call it once done with them, so that later reads may use it.
+   *   read given up. errorCode is the system's code for a file that couldn't be opened
+   *   or read, such as ENOENT, EACCES, EISDIR, EBUSY or EPERM, and errorOption the
+   *   option refused, as errorFacts() gives them. refusal, for a memory refusal, says
+   *   whether the rows or what the caller builds from them didn't fit. release() ends
+   *   the heap the rows have booked: call it once done with them, so that later reads
+   *   may use it.
    */
   async read(
     filePath,
@@ -384,6 +483,26 @@ class QvdReader {
     const realFilePath = await realpath(filePath).catch(() => filePath);
     const header = await headerOf(filePath, realFilePath, dirname(realFilePath), signal);
     return header.rowCount;
+  }
+
+  /**
+   * A QVD's header as the viewer shows it, without its rows
+   * The header of a file whose rows can't be read, because they are damaged or
+   * too many for the memory left, usually still reads: in milliseconds, whatever
+   * the file's size, and not at all when a read has just read it and the file
+   * hasn't changed since. It isn't queued, as reads are.
+   * @param {string} filePath - Path to the QVD file
+   * @param {{signal?: AbortSignal}} [options] - signal: gives it up
+   * @returns {Promise<{metadata: object, columns: Array<string>, totalRows: number}>} As read() gives them
+   * @throws {Error} What reading the header throws
+   */
+  async readHeader(filePath, { signal } = {}) {
+    const realFilePath = await realpath(filePath).catch(() => filePath);
+    // A read that failed has just read it, and kept it unless the file has changed since
+    const header = await headerOf(filePath, realFilePath, dirname(realFilePath), signal);
+    // A copy, so that a caller can't change the one kept
+    const { metadata, columns } = structuredClone(header.view);
+    return { metadata, columns, totalRows: metadata.noOfRecords };
   }
 
   /**
@@ -476,59 +595,8 @@ class QvdReader {
       // Get columns from the DataFrame
       const columns = df.columns || [];
 
-      // Get file-level metadata
-      const fileMetadata = df.fileMetadata || {};
-
-      // Get field metadata
-      const allFieldMetadata = df.getAllFieldMetadata();
-
-      // Build metadata object matching the expected structure
-      const metadata = {
-        qvBuildNo: fileMetadata.qvBuildNo || "",
-        creatorDoc: fileMetadata.creatorDoc || "",
-        createUtcTime: fileMetadata.createUtcTime || "",
-        sourceCreateUtcTime: fileMetadata.sourceCreateUtcTime || "",
-        sourceFileUtcTime: fileMetadata.sourceFileUtcTime || "",
-        sourceFileSize: fileMetadata.sourceFileSize || "",
-        staleUtcTime: fileMetadata.staleUtcTime || "",
-        tableName: fileMetadata.tableName || "",
-        tableCreator: fileMetadata.tableCreator || "",
-        compression: fileMetadata.compression || "",
-        recordByteSize: fileMetadata.recordByteSize || "",
-        noOfRecords: parseInt(fileMetadata.noOfRecords) || 0,
-        offset: parseInt(fileMetadata.offset) || 0,
-        length: parseInt(fileMetadata.length) || 0,
-        comment: fileMetadata.comment || "",
-        encryptionInfo: fileMetadata.encryptionInfo || "",
-        tableTags: fileMetadata.tableTags || "",
-        profilingData: fileMetadata.profilingData || "",
-        lineage: fileMetadata.lineage || [],
-        fields: allFieldMetadata.map((field) => {
-          return {
-            name: field.fieldName || "",
-            type: field.type || "",
-            extent: field.extent || "",
-            noOfSymbols: parseInt(field.noOfSymbols) || 0,
-            offset: parseInt(field.offset) || 0,
-            length: parseInt(field.length) || 0,
-            bitOffset: parseInt(field.bitOffset) || 0,
-            bitWidth: parseInt(field.bitWidth) || 0,
-            bias: parseInt(field.bias) || 0,
-            numberFormat: field.numberFormat
-              ? {
-                  type: field.numberFormat.Type || "",
-                  nDec: field.numberFormat.nDec || "",
-                  useThou: field.numberFormat.UseThou || "",
-                  fmt: field.numberFormat.Fmt || "",
-                  dec: field.numberFormat.Dec || "",
-                  thou: field.numberFormat.Thou || "",
-                }
-              : null,
-            tags: tagsOf(field),
-            comment: field.comment || "",
-          };
-        }),
-      };
+      // The file's metadata and its fields', from its header
+      const metadata = viewerMetadata(df.fileMetadata || {}, df.getAllFieldMetadata());
 
       // Convert data from array of arrays to array of objects, with a field of
       // dates or timestamps as Dates when asked
@@ -564,6 +632,8 @@ class QvdReader {
         error: null,
         errorName: null,
         errorReason: null,
+        errorCode: null,
+        errorOption: null,
         refusal: null,
         release,
       };
