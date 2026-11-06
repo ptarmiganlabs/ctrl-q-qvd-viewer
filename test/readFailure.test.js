@@ -1,4 +1,5 @@
 const assert = require("assert");
+const { spawn } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -28,8 +29,85 @@ const colors = path.join(testData, "lego", "colors.qvd");
 // files named .qvd, a folder named .qvd and a path with no file
 let dir;
 const files = {};
-// Whether this account can be refused a file: not on Windows, and not as root
+// Whether chmod can stop this account reading a file: not on Windows, where it sets
+// only the read-only attribute, and not as root, who reads it anyway. Windows refuses
+// a file its account may not read with EPERM, not EACCES, and the page can't tell
+// that from a lock, so the tests of EACCES and its page have no case there.
 const canBeRefused = process.platform !== "win32" && process.getuid?.() !== 0;
+// How long PowerShell may take to start and hold a file
+const HOLD_WAIT_MS = 30000;
+
+/**
+ * Hold a file open from another program, with no sharing, as a Qlik reload holds a
+ * QVD it is storing: until it lets go, Windows won't let any other program open it
+ * @param {string} filePath - The file
+ * @returns {{held: Promise<void>, release: function(): Promise<void>}} held: settles
+ *   once PowerShell holds the file, or has failed to; release: ends PowerShell, which
+ *   lets the file go, and resolves once it has
+ */
+function holdOpen(filePath) {
+  // The path comes in an environment variable, so that it needs no quoting
+  const script =
+    "$held = [System.IO.File]::Open($env:QVD_HELD, 'Open', 'Read', 'None'); " +
+    "[Console]::Out.WriteLine('held'); [Console]::Out.Flush(); Start-Sleep -Seconds 120";
+  const powershell = spawn("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
+    env: { ...process.env, QVD_HELD: filePath },
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+  });
+  const ended = new Promise((resolve) => {
+    powershell.once("exit", resolve);
+    powershell.once("error", resolve);
+  });
+  let said = "";
+  powershell.stderr.setEncoding("utf8").on("data", (chunk) => (said += chunk));
+  const held = new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`PowerShell didn't hold ${filePath} within ${HOLD_WAIT_MS} ms`)),
+      HOLD_WAIT_MS
+    );
+    let output = "";
+    powershell.stdout.setEncoding("utf8").on("data", (chunk) => {
+      output += chunk;
+      if (output.includes("held")) {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+    ended.then((how) => {
+      clearTimeout(timer);
+      reject(new Error(`PowerShell ended before it held ${filePath} (${how}): ${said.trim()}`));
+    });
+  });
+  return {
+    held,
+    release: async () => {
+      powershell.kill();
+      await ended;
+    },
+  };
+}
+
+/**
+ * Make a file one that can't be opened, though it stays as it is: on Windows held
+ * open from another program, and elsewhere with no read permission
+ * @param {string} filePath - The file
+ * @returns {Promise<function(): Promise<void>>} Makes it one that opens again
+ */
+async function makeUnopenable(filePath) {
+  if (process.platform === "win32") {
+    const hold = holdOpen(filePath);
+    try {
+      await hold.held;
+    } catch (error) {
+      await hold.release();
+      throw error;
+    }
+    return hold.release;
+  }
+  fs.chmodSync(filePath, 0o000);
+  return async () => fs.chmodSync(filePath, 0o644);
+}
 
 /**
  * An editor provider with the real reader
@@ -282,6 +360,30 @@ suite("Read Failure Test Suite", () => {
     const page = getErrorHtml(busy);
     assertSays(page, "locked", busy.title);
     assert.ok(page.includes("EBUSY"));
+  });
+
+  test("A file another program holds on Windows reads as a lock, and its page says so", async function () {
+    // Only Windows refuses to open a file another program holds: elsewhere a lock is
+    // advisory, and the read goes ahead
+    if (process.platform !== "win32") {
+      this.skip();
+    }
+    this.timeout(HOLD_WAIT_MS + 30000);
+    const heldFile = path.join(dir, "held.qvd");
+    fs.copyFileSync(sets, heldFile);
+    const hold = holdOpen(heldFile);
+    try {
+      await hold.held;
+      const { result, failure } = await failedRead(heldFile);
+      assert.strictEqual(result.errorName, "QvdIOError");
+      assert.ok(["EBUSY", "EPERM"].includes(result.errorCode), `errorCode ${result.errorCode}`);
+      assert.strictEqual(failure.kind, "locked");
+      assertSays(getErrorHtml(failure), "locked", failure.title);
+      // The editor shows that page
+      assertSays(await pageFor(heldFile), "locked", failure.title);
+    } finally {
+      await hold.release();
+    }
   });
 
   test("A memory refusal says what didn't fit, and offers the rows that fit and the setting", () => {
@@ -628,15 +730,17 @@ suite("Read Failure Test Suite", () => {
   });
 
   test("The header a failed read has just read isn't read again", async function () {
-    if (!canBeRefused) {
+    // On Windows the file is held open instead of having its read permission taken
+    if (process.platform !== "win32" && !canBeRefused) {
       this.skip();
     }
+    this.timeout(HOLD_WAIT_MS + 30000);
     const reader = new QvdReader();
     const read = await reader.read(files.kept, 10);
     assert.strictEqual(read.errorName, "QvdCorruptedError");
 
     // The file can't be opened now, but it is the same version: the header the read kept is used
-    fs.chmodSync(files.kept, 0o000);
+    const reopenable = await makeUnopenable(files.kept);
     try {
       const header = await reader.readHeader(files.kept);
       assert.strictEqual(header.totalRows, 11673);
@@ -645,7 +749,7 @@ suite("Read Failure Test Suite", () => {
       header.metadata.fields.length = 0;
       assert.strictEqual((await reader.readHeader(files.kept)).metadata.fields.length, 5);
     } finally {
-      fs.chmodSync(files.kept, 0o644);
+      await reopenable();
     }
   });
 });
