@@ -128,6 +128,26 @@ suite("String Analysis Test Suite", () => {
       assert.strictEqual(analysis.lengthStats.min, 1);
       assert.strictEqual(analysis.lengthStats.max, 10);
     });
+
+    test("Should count characters as Qlik's Len() does", () => {
+      // Qlik counts code points: Len() gives 1 for 😀, 2 for 👍🏽 (thumbs up and
+      // skin tone) and 2 for e followed by a combining accent
+      const data = [
+        { text: "😀" },
+        { text: "👍🏽" },
+        { text: "é" },
+        { text: "abc" },
+      ];
+
+      const analysis = qvdStringAnalysis.calculateStringAnalysis(data, "text");
+
+      assert.strictEqual(analysis.lengthStats.min, 1);
+      assert.strictEqual(analysis.lengthStats.max, 3);
+      assert.strictEqual(analysis.lengthStats.average, 2);
+      assert.strictEqual(analysis.lengthStats.mostCommon, 2);
+      assert.strictEqual(analysis.lengthStats.mostCommonCount, 2);
+      assert.deepStrictEqual(analysis.lengthStats.distribution, { 1: 1, 2: 2, 3: 1 });
+    });
   });
 
   suite("Pattern Detection", () => {
