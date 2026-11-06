@@ -1679,7 +1679,12 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         }
                         receivedRows();
                         break;
-                        
+
+                    case 'loadRefused':
+                        // The read was too large, and the extension kept this page: put the load buttons back
+                        updateLoadedRowsBanner();
+                        break;
+
                     default:
                         logger.log('Unknown message command:', message.command);
                 }

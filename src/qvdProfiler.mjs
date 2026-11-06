@@ -9,6 +9,14 @@ import { isDateField, calculateTemporalAnalysis } from './qvdTemporalAnalysis.mj
 import { isStringField, calculateStringAnalysis } from './qvdStringAnalysis.mjs';
 
 /**
+ * Heap profiling builds per value of each profiled field, for the memory guard:
+ * about one and a half times the most measured, on 1,000,000 rows of
+ * chicago_taxi_rides_2016_03.qvd. A date field needed 181 bytes per value, for
+ * its Date objects and their sorted copies, and a number or a text field 38.
+ */
+export const PROFILE_BYTES_PER_VALUE = 288;
+
+/**
  * Compute value frequency distribution for specified fields
  * @param {Array<Object>} data - Array of data rows
  * @param {Array<string>} fieldNames - Field names to profile
