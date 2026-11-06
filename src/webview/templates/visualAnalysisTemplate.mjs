@@ -217,7 +217,17 @@ export function getVisualAnalysisHtml(
             color: var(--vscode-foreground) !important;
             font-weight: 600 !important;
         }
-        
+
+        /* The page size <select> itself has class tabulator-page-size */
+        .tabulator .tabulator-footer select.tabulator-page-size {
+            background-color: var(--vscode-dropdown-background) !important;
+            color: var(--vscode-dropdown-foreground) !important;
+            border: 1px solid var(--vscode-dropdown-border, var(--vscode-contrastBorder)) !important;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-weight: 600;
+        }
+
         /* Quality metrics styles */
         .quality-card {
             background-color: var(--vscode-textBlockQuote-background);

@@ -501,13 +501,14 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             font-weight: 600 !important;
         }
         
-        .tabulator .tabulator-footer .tabulator-page-size label {
+        /* The page size <select> itself has class tabulator-page-size, and its label is a sibling */
+        .tabulator .tabulator-footer .tabulator-paginator label {
             color: var(--vscode-foreground) !important;
             font-weight: 600 !important;
             margin-right: 6px;
         }
-        
-        .tabulator .tabulator-footer .tabulator-page-size select {
+
+        .tabulator .tabulator-footer select.tabulator-page-size {
             background-color: var(--vscode-dropdown-background) !important;
             color: var(--vscode-dropdown-foreground) !important;
             border: 1px solid var(--vscode-dropdown-border, var(--vscode-contrastBorder)) !important;
