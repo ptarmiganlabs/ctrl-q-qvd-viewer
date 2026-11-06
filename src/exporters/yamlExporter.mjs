@@ -11,6 +11,30 @@ import * as yaml from "js-yaml";
  */
 export const memoryCost = { bytesPerCell: 352, bytesPerTextChar: 4 };
 
+// Text that YAML 1.2's core schema reads as a float
+const CORE_SCHEMA_FLOAT = /^[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?$/;
+
+/**
+ * A js-yaml style rule: quote text that YAML 1.2's core schema reads as a number.
+ * js-yaml quotes text its own loader would read as another type, but its loader keeps
+ * a float too large for a double, such as 8E5597, as text, so it leaves that plain.
+ * @param {Object} layout - js-yaml's layout of one scalar, updated in place
+ * @returns {void}
+ */
+function quoteCoreSchemaFloats(layout) {
+  if (
+    layout.style === yaml.SCALAR_STYLE.PLAIN &&
+    layout.node.tag === layout.presenterOptions.schema.defaultScalarTag.tagName &&
+    CORE_SCHEMA_FLOAT.test(layout.node.value)
+  ) {
+    const singleQuoted = (layout.allowedStylesMask & (1 << yaml.SCALAR_STYLE.SINGLE_QUOTED)) !== 0;
+    layout.style = singleQuoted ? yaml.SCALAR_STYLE.SINGLE_QUOTED : yaml.SCALAR_STYLE.DOUBLE_QUOTED;
+  }
+}
+
+// The rule above, then js-yaml's own, in their order
+const SCALAR_STYLE_RULES = [quoteCoreSchemaFloats, ...Object.values(yaml.DEFAULT_SCALAR_STYLE_RULES)];
+
 /**
  * Export data to YAML format
  * @param {Array<Object>} data - Array of row objects
@@ -34,6 +58,7 @@ export async function exportToYAML(data, filePath) {
       indent: 2,
       lineWidth: -1,
       noRefs: true,
+      scalarStyleRules: SCALAR_STYLE_RULES,
     });
 
     await fs.writeFile(filePath, header + yamlString, "utf8");

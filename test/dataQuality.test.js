@@ -2,12 +2,25 @@ const assert = require("assert");
 
 // Import data quality functions
 let qvdDataQuality;
+let qvdProfiler;
+
+/**
+ * Build rows of one field, holding each value the given number of times
+ * @param {Array<[*, number]>} counts - Each value and how many rows hold it
+ * @returns {Array<Object>} Array of row objects
+ */
+function makeFieldRows(counts) {
+  return counts.flatMap(([value, count]) =>
+    Array.from({ length: count }, () => ({ field: value }))
+  );
+}
 
 suite("Data Quality Metrics Test Suite", () => {
-  // Load the module before running tests
+  // Load the modules before running tests
   suiteSetup(async () => {
-    // Import the ESM module
+    // Import the ESM modules
     qvdDataQuality = await import("../src/qvdDataQuality.mjs");
+    qvdProfiler = await import("../src/qvdProfiler.mjs");
   });
 
   suite("Completeness Metrics", () => {
@@ -96,6 +109,81 @@ suite("Data Quality Metrics Test Suite", () => {
       assert.strictEqual(metrics.completeness.nonNullPercentage, 80);
       assert.strictEqual(metrics.completeness.fillRate, 60);
       assert.strictEqual(metrics.completeness.emptyStringCount, 1);
+    });
+
+    test("Profiling counts an empty string once, not as a null as well", () => {
+      const data = makeFieldRows([
+        ["a", 5],
+        ["", 3],
+        [null, 2],
+      ]);
+
+      const [field] = qvdProfiler.profileFields(data, ["field"]).fields;
+      const { completeness } = field.qualityMetrics;
+
+      assert.strictEqual(completeness.fillRate, 50);
+      assert.strictEqual(completeness.nonNullPercentage, 80);
+      assert.strictEqual(completeness.missingCount, 2);
+      assert.strictEqual(completeness.emptyStringCount, 3);
+      // Profiling still shows nulls and empty strings together
+      assert.strictEqual(field.nullCount, 5);
+    });
+
+    test("Profiling raises no empty-string issue for a field without empty strings", () => {
+      const data = makeFieldRows([
+        ["x", 4],
+        [null, 6],
+      ]);
+
+      const [field] = qvdProfiler.profileFields(data, ["field"]).fields;
+      const { assessment } = field.qualityMetrics;
+
+      assert.deepStrictEqual(assessment.issues, [
+        "Critical: More than 50% of values are missing",
+      ]);
+      // A field of one value is also called highly skewed, which is a separate issue (#157)
+      assert.ok(
+        assessment.warnings.every((warning) => !warning.includes("empty strings")),
+        assessment.warnings.join(", ")
+      );
+    });
+
+    test("Profiling doesn't count missing values against the fill rate a second time", () => {
+      // One empty string, which isn't what makes the field incomplete
+      const data = makeFieldRows([
+        [null, 60],
+        ["", 1],
+        ["a", 30],
+        ["b", 9],
+      ]);
+
+      const [field] = qvdProfiler.profileFields(data, ["field"]).fields;
+      const { assessment } = field.qualityMetrics;
+
+      assert.deepStrictEqual(assessment.issues, [
+        "Critical: More than 50% of values are missing",
+      ]);
+      assert.strictEqual(assessment.qualityScore, 60);
+      assert.strictEqual(assessment.qualityLevel, "Fair");
+    });
+
+    test("Profiling still flags empty strings that take the fill rate below a threshold", () => {
+      // 45 nulls alone would be a warning, but with 30 empty strings a quarter of the
+      // rows hold a value
+      const data = makeFieldRows([
+        [null, 45],
+        ["", 30],
+        ["a", 13],
+        ["b", 12],
+      ]);
+
+      const [field] = qvdProfiler.profileFields(data, ["field"]).fields;
+      const { assessment } = field.qualityMetrics;
+
+      assert.deepStrictEqual(assessment.issues, [
+        "Critical: Low fill rate with many empty strings",
+      ]);
+      assert.deepStrictEqual(assessment.warnings, ["45.0% of values are missing"]);
     });
   });
 

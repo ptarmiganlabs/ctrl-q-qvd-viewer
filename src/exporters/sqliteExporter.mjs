@@ -3,6 +3,7 @@ import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { createRequire } from 'module';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { isMissing, scanColumnTypes } from './columnTypes.mjs';
 
 // sql.js, once it has started
 let sqlJs = null;
@@ -67,41 +68,8 @@ export async function exportToSQLite(data, filePath) {
     const firstRow = data[0];
     const columnNames = Object.keys(firstRow);
 
-    // Track type information for each column across all rows
-    const columnTypes = {};
-    columnNames.forEach((key) => {
-      columnTypes[key] = {
-        hasNull: false,
-        hasNumber: false,
-        hasString: false,
-        hasBoolean: false,
-        hasDate: false,
-        allIntegers: true,
-      };
-    });
-
-    // Scan all rows to determine the most compatible type for each column
-    for (const row of data) {
-      for (const key of columnNames) {
-        const value = row[key];
-        const typeInfo = columnTypes[key];
-
-        if (value === null || value === undefined) {
-          typeInfo.hasNull = true;
-        } else if (typeof value === "number") {
-          typeInfo.hasNumber = true;
-          if (!Number.isInteger(value)) {
-            typeInfo.allIntegers = false;
-          }
-        } else if (typeof value === "string") {
-          typeInfo.hasString = true;
-        } else if (typeof value === "boolean") {
-          typeInfo.hasBoolean = true;
-        } else if (value instanceof Date) {
-          typeInfo.hasDate = true;
-        }
-      }
-    }
+    // Determine the most compatible type for each column, from all rows
+    const columnTypes = scanColumnTypes(data, columnNames);
 
     // Determine SQLite type for each column based on collected type information
     const columns = columnNames
@@ -140,7 +108,7 @@ export async function exportToSQLite(data, filePath) {
         const typeInfo = columnTypes[col];
 
         // Convert values based on schema expectations
-        if (value === null || value === undefined) {
+        if (isMissing(value, typeInfo)) {
           return null;
         } else if (typeInfo.hasString) {
           // If schema expects TEXT, convert everything to string

@@ -1,4 +1,6 @@
 import ExcelJS from "exceljs";
+import { isBlank } from "../cellValue.mjs";
+import { scanColumnTypes } from "./columnTypes.mjs";
 
 /**
  * Heap an Excel export builds from the rows, for the memory guard. It needed
@@ -39,7 +41,8 @@ export async function exportToExcel(data, filePath) {
     }
 
     // Get column headers from first row
-    const columns = Object.keys(data[0]).map((key) => ({
+    const columnNames = Object.keys(data[0]);
+    const columns = columnNames.map((key) => ({
       header: key,
       key: key,
       width: 15,
@@ -47,9 +50,24 @@ export async function exportToExcel(data, filePath) {
 
     worksheet.columns = columns;
 
+    // Blank text in a column of numbers, booleans or dates is an empty cell, which a
+    // formula reads as nothing: as text, =A2+1 would give #VALUE!
+    const columnTypes = scanColumnTypes(data, columnNames);
+    const blankColumns = columnNames.filter((key) => columnTypes[key].blanksAreNull);
+
     // Add rows
     data.forEach((row) => {
-      worksheet.addRow(row);
+      let cells = row;
+      for (const key of blankColumns) {
+        if (isBlank(row[key])) {
+          // A copy, so that the caller's row stays as it was
+          if (cells === row) {
+            cells = { ...row };
+          }
+          cells[key] = null;
+        }
+      }
+      worksheet.addRow(cells);
     });
 
     // Style the header row

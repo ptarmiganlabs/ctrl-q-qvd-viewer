@@ -2,6 +2,7 @@ import { QvdDataFrame } from 'qvdjs';
 import { realpath, stat } from 'fs/promises';
 import { dirname } from 'path';
 import { createReadQueue } from './readQueue.mjs';
+import { toCellValue } from './cellValue.mjs';
 import {
   CONVERSION_BYTES_PER_CELL,
   HELD_BYTES_PER_CELL,
@@ -55,12 +56,6 @@ const PRICINGS = 3;
 
 // What a read's turn returns when its file changed while it waited
 const FILE_CHANGED = Symbol("file changed");
-
-// qvdjs 1.0+ leaves text that looks like a number as text. Convert it the way
-// qvdjs 0.6 did, so the grid, profiling and exports see the values they always
-// have - including its quirks: "" becomes 0 and "8E5597" becomes Infinity.
-const toCellValue = (value) =>
-  typeof value === "string" && !isNaN(Number(value)) ? Number(value) : value;
 
 /**
  * Turn qvdjs's rows into one object per row, keyed by field name

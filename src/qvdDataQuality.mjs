@@ -14,14 +14,12 @@ const CARDINALITY_THRESHOLDS = {
 
 /**
  * Calculate completeness metrics for a field
- * @param {Array<Object>} data - Array of data rows
- * @param {string} fieldName - Field name to analyze
- * @param {number} nullCount - Pre-calculated null count
+ * @param {number} totalRows - Number of rows
+ * @param {number} nullCount - Number of null or undefined values
+ * @param {number} emptyStringCount - Number of empty strings
  * @returns {Object} Completeness metrics
  */
-function calculateCompletenessMetrics(data, fieldName, nullCount) {
-  const totalRows = data.length;
-
+function calculateCompletenessMetrics(totalRows, nullCount, emptyStringCount) {
   if (totalRows === 0) {
     return {
       nonNullPercentage: 0,
@@ -29,15 +27,6 @@ function calculateCompletenessMetrics(data, fieldName, nullCount) {
       missingCount: 0,
       missingPercentage: 0,
     };
-  }
-
-  // Count empty strings (not null/undefined, but empty)
-  let emptyStringCount = 0;
-  for (const row of data) {
-    const value = row[fieldName];
-    if (value === "") {
-      emptyStringCount++;
-    }
   }
 
   const nonNullCount = totalRows - nullCount;
@@ -281,10 +270,12 @@ function generateQualityAssessment(metrics) {
     qualityScore -= 10;
   }
 
-  if (completeness.fillRate < 50) {
+  // The fill rate counts the nulls too, which the checks above have covered, so it is
+  // an issue only where the empty strings take it below a threshold the nulls don't
+  if (completeness.fillRate < 50 && completeness.nonNullPercentage >= 50) {
     issues.push("Critical: Low fill rate with many empty strings");
     qualityScore -= 20;
-  } else if (completeness.fillRate < 80) {
+  } else if (completeness.fillRate < 80 && completeness.nonNullPercentage >= 80) {
     warnings.push(
       `Fill rate is ${completeness.fillRate.toFixed(1)}% (many empty strings)`
     );
@@ -315,8 +306,9 @@ function generateQualityAssessment(metrics) {
  * @param {Array<Object>} data - Array of data rows
  * @param {string} fieldName - Field name to analyze
  * @param {number} uniqueValues - Pre-calculated unique value count
- * @param {number} nullCount - Pre-calculated null count
+ * @param {number} nullCount - Pre-calculated count of null or undefined values, without empty strings
  * @param {Map} valueCounts - Optional pre-calculated value frequencies
+ * @param {number|null} emptyStringCount - Optional pre-calculated count of empty strings
  * @returns {Object} Comprehensive quality metrics
  */
 export function calculateDataQualityMetrics(
@@ -324,7 +316,8 @@ export function calculateDataQualityMetrics(
   fieldName,
   uniqueValues,
   nullCount,
-  valueCounts = null
+  valueCounts = null,
+  emptyStringCount = null
 ) {
   if (!data || data.length === 0) {
     return {
@@ -332,15 +325,30 @@ export function calculateDataQualityMetrics(
     };
   }
 
+  // Count empty strings if not provided
+  if (emptyStringCount === null) {
+    emptyStringCount = 0;
+    for (const row of data) {
+      if (row[fieldName] === "") {
+        emptyStringCount++;
+      }
+    }
+  }
+
   const totalRows = data.length;
-  const totalNonNull = totalRows - nullCount;
+  // The values the distribution counts: neither null nor empty
+  const totalNonNull = totalRows - nullCount - emptyStringCount;
 
   // Calculate cardinality ratio
   const cardinalityRatio = totalRows > 0 ? uniqueValues / totalRows : 0;
   const cardinalityInfo = classifyCardinality(cardinalityRatio, uniqueValues);
 
   // Calculate completeness metrics
-  const completeness = calculateCompletenessMetrics(data, fieldName, nullCount);
+  const completeness = calculateCompletenessMetrics(
+    totalRows,
+    nullCount,
+    emptyStringCount
+  );
 
   // Calculate uniqueness metrics
   const uniqueness = calculateUniquenessMetrics(
