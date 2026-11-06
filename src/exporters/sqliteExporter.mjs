@@ -5,6 +5,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { isMissing, scanColumnTypes } from './columnTypes.mjs';
 import { naiveDateText } from './naiveDates.mjs';
+import { utcText, zonedTimestampsFor } from './zonedTimestamps.mjs';
 
 // sql.js, once it has started
 let sqlJs = null;
@@ -46,9 +47,16 @@ function readSqlWasm() {
  * Export data to SQLite database format
  * @param {Array<Object>} data - Array of row objects
  * @param {string} filePath - Destination file path
- * @returns {Promise<void>}
+ * @param {object} [options]
+ * @param {string|null} [options.timeZone] - The time zone the timestamps were read in,
+ *   to write each as the instant it was, in UTC; without one they are wall clocks with
+ *   no time zone
+ * @returns {Promise<import('./zonedTimestamps.mjs').TimeShifts|undefined>} With a time
+ *   zone and rows, what reading their timestamps in it did
  */
-export async function exportToSQLite(data, filePath) {
+export async function exportToSQLite(data, filePath, options = {}) {
+  // Before anything is written, so that a time zone Intl doesn't know leaves the file alone
+  const zoned = zonedTimestampsFor(options);
   try {
     // Initialize SQL.js once, handing it its WebAssembly file
     sqlJs ??= await initSqlJs({ wasmBinary: readSqlWasm() });
@@ -82,7 +90,9 @@ export async function exportToSQLite(data, filePath) {
         if (typeInfo.hasString || (typeInfo.hasNumber && typeInfo.hasBoolean)) {
           sqlType = "TEXT";
         } else if (typeInfo.hasDate) {
-          // Dates as ISO text with no time zone, which SQLite's date functions read
+          // Dates as ISO text, which SQLite's date functions read: with no time zone, or
+          // for timestamps read in one, their instants in UTC, with a Z. As text, only
+          // UTC keeps them in time order across a change of offset
           sqlType = "TEXT";
         } else if (typeInfo.hasNumber) {
           sqlType = typeInfo.allIntegers ? "INTEGER" : "REAL";
@@ -113,6 +123,9 @@ export async function exportToSQLite(data, filePath) {
         if (isMissing(value, typeInfo)) {
           return null;
         } else if (value instanceof Date) {
+          if (zoned && !typeInfo.calendarDates) {
+            return utcText(zoned.instant(value, col));
+          }
           return naiveDateText(value, typeInfo.calendarDates);
         } else if (typeInfo.hasString) {
           // If schema expects TEXT, convert everything to string
@@ -133,6 +146,7 @@ export async function exportToSQLite(data, filePath) {
 
     // Close the database
     db.close();
+    return zoned?.summary();
   } catch (error) {
     // Clean up the partially created file on error
     try {

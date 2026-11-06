@@ -110,6 +110,11 @@
           "type": "boolean",
           "default": false,
           "description": "Start CSV exports with a UTF-8 byte order mark. Excel on Windows needs it to show å, ä, ö and other non-ASCII text correctly. Some other readers, such as Python's csv module, then read it as part of the first column name."
+        },
+        "ctrl-q-qvd-viewer.exportTimeZone": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The time zone a QVD's timestamps were read in, offered first when an export to Parquet, Avro, Arrow, SQLite or PostgreSQL asks for it. Those exports ask when the QVD holds timestamps, and write each one as the instant it was. Name an IANA time zone such as `America/Chicago`, `UTC`, an alias such as `US/Central`, or an offset such as `-06:00`. Leave it empty to offer timestamps as wall clocks with no time zone first, as the QVD holds them. Excel and the text formats always write wall clocks."
         }
       }
     }

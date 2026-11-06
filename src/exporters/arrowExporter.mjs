@@ -2,6 +2,7 @@ import { promises as fs, existsSync, unlinkSync } from 'fs';
 import * as arrow from 'apache-arrow';
 import { isMissing, scanColumnTypes } from './columnTypes.mjs';
 import { naiveDateText } from './naiveDates.mjs';
+import { zonedTimestampsFor } from './zonedTimestamps.mjs';
 
 /**
  * Heap an Arrow export builds from the rows, for the memory guard. It needed 12
@@ -17,9 +18,15 @@ export const memoryCost = { bytesPerCell: 24, bytesPerTextChar: 2 };
  * Export data to Apache Arrow format
  * @param {Array<Object>} data - Array of row objects
  * @param {string} filePath - Destination file path
- * @returns {Promise<void>}
+ * @param {object} [options]
+ * @param {string|null} [options.timeZone] - The time zone the timestamps were read in,
+ *   to write each as the instant it was; without one they are wall clocks with no time zone
+ * @returns {Promise<import('./zonedTimestamps.mjs').TimeShifts|undefined>} With a time
+ *   zone and rows, what reading their timestamps in it did
  */
-export async function exportToArrow(data, filePath) {
+export async function exportToArrow(data, filePath, options = {}) {
+  // Before anything is written, so that a time zone Intl doesn't know leaves the file alone
+  const zoned = zonedTimestampsFor(options);
   try {
     if (data.length === 0) {
       // Create empty Arrow file
@@ -39,8 +46,23 @@ export async function exportToArrow(data, filePath) {
     const isTextColumn = (typeInfo) =>
       typeInfo.hasString || typeInfo.hasObject || (typeInfo.hasNumber && typeInfo.hasBoolean);
 
-    // Each column's values, normalized so that a column holds one type
-    const columns = new Map(columnNames.map((key) => [key, []]));
+    // A column of timestamps read in a time zone holds their instants, which go
+    // straight into Arrow's buffers rather than into a number per cell first. Its type
+    // names the zone
+    const instants = new Map(
+      columnNames
+        .filter((key) => {
+          const typeInfo = columnTypes[key];
+          return zoned !== null && typeInfo.hasDate && !typeInfo.calendarDates && !isTextColumn(typeInfo);
+        })
+        .map((key) => [
+          key,
+          arrow.makeBuilder({ type: new arrow.TimestampMillisecond(zoned.timeZone), nullValues: [null] }),
+        ])
+    );
+
+    // Each other column's values, normalized so that a column holds one type
+    const columns = new Map(columnNames.filter((key) => !instants.has(key)).map((key) => [key, []]));
     for (const row of data) {
       for (const key of columnNames) {
         const value = row[key];
@@ -62,7 +84,12 @@ export async function exportToArrow(data, filePath) {
           // Keep primitives (string, number, boolean) and dates as they are
           cell = value;
         }
-        columns.get(key).push(cell);
+        const builder = instants.get(key);
+        if (builder) {
+          builder.append(cell === null ? null : zoned.instant(cell, key));
+        } else {
+          columns.get(key).push(cell);
+        }
       }
     }
 
@@ -71,6 +98,10 @@ export async function exportToArrow(data, filePath) {
     const table = new arrow.Table(
       Object.fromEntries(
         columnNames.map((key) => {
+          const builder = instants.get(key);
+          if (builder) {
+            return [key, builder.finish().toVector()];
+          }
           const typeInfo = columnTypes[key];
           let type;
           if (typeInfo.hasDate && !isTextColumn(typeInfo)) {
@@ -86,6 +117,7 @@ export async function exportToArrow(data, filePath) {
     const uint8Array = await writer.toUint8Array();
     const buffer = Buffer.from(uint8Array);
     await fs.writeFile(filePath, buffer);
+    return zoned?.summary();
   } catch (error) {
     // Clean up the partially created file on error
     try {
