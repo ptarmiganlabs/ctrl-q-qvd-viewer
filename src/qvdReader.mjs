@@ -1,6 +1,45 @@
 import { QvdDataFrame } from 'qvdjs';
 import { realpath } from 'fs/promises';
 import { dirname } from 'path';
+import { createReadQueue } from './readQueue.mjs';
+import { describeMemoryRefusal, memorySafetyFactorFor } from './memoryGuard.mjs';
+
+// One read at a time in the whole extension host, whichever editor asks
+const reads = createReadQueue();
+
+// Cells to convert between yields to the event loop: about 15 ms of work
+const CELLS_PER_CHUNK = 250000;
+
+// qvdjs 1.0+ leaves text that looks like a number as text. Convert it the way
+// qvdjs 0.6 did, so the grid, profiling and exports see the values they always
+// have - including its quirks: "" becomes 0 and "8E5597" becomes Infinity.
+const toCellValue = (value) =>
+  typeof value === "string" && !isNaN(Number(value)) ? Number(value) : value;
+
+/**
+ * Turn qvdjs's rows into one object per row, keyed by field name
+ * Yields to the event loop between chunks, so other extensions keep running,
+ * and lets each of qvdjs's rows go once it is converted, so the whole of both
+ * copies is never held at once. Empties rows as it goes.
+ * @param {Array<Array>} rows - qvdjs's rows, one value per field
+ * @param {Array<string>} columns - Field names, in file order
+ * @returns {Promise<Array<Object>>} The rows as objects
+ */
+export async function toRowObjects(rows, columns) {
+  const rowsPerChunk = Math.max(1, Math.floor(CELLS_PER_CHUNK / Math.max(1, columns.length)));
+  const objects = [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    objects.push(
+      Object.fromEntries(columns.map((col, idx) => [col, toCellValue(row[idx])]))
+    );
+    rows[i] = undefined;
+    if ((i + 1) % rowsPerChunk === 0 && i + 1 < rows.length) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  }
+  return objects;
+}
 
 /**
  * Reads and parses QVD file metadata and data
@@ -8,11 +47,23 @@ import { dirname } from 'path';
 class QvdReader {
   /**
    * Read QVD file and return metadata and data
+   * Reads run one at a time, in the order they are asked for.
    * @param {string} filePath - Path to the QVD file
    * @param {number} maxRows - Maximum number of rows to read (default: 25, 0 = all rows)
-   * @returns {Promise<{metadata: object, data: Array, error: string|null}>}
+   * @returns {Promise<{metadata: object, data: Array, error: string|null, errorName: string|null, errorReason: string|null}>}
+   *   errorName and errorReason are qvdjs's error class and context.reason, such as "memory"
    */
   async read(filePath, maxRows = 25) {
+    return reads.run(() => this.readNow(filePath, maxRows));
+  }
+
+  /**
+   * Read QVD file now, without waiting for other reads
+   * @param {string} filePath - Path to the QVD file
+   * @param {number} maxRows - Maximum number of rows to read (0 = all rows)
+   * @returns {Promise<object>} As read() describes
+   */
+  async readNow(filePath, maxRows) {
     try {
       // Load the QVD file using qvdjs
       // Configure allowedDir to the parent directory of the file being opened
@@ -22,12 +73,16 @@ class QvdReader {
       // file's real path: a QVD opened through a symlink in another directory is
       // otherwise refused. A path that can't be resolved is left for qvdjs to report.
       const realFilePath = await realpath(filePath).catch(() => filePath);
+      const memorySafetyFactor = memorySafetyFactorFor(maxRows);
       const loadOptions = {
         ...(maxRows === 0 ? {} : { maxRows }),
         allowedDir: dirname(realFilePath),
         // Read a dual value (a date, a formatted number) as the text Qlik displays,
         // as qvdjs 0.x did. Since 1.0 qvdjs reads it as its number by default.
         duals: "text",
+        // A read of every row leaves room in qvdjs's budget for the row objects
+        // built below, so that one too large is refused rather than aborting
+        ...(memorySafetyFactor === undefined ? {} : { memorySafetyFactor }),
       };
       const df = await QvdDataFrame.fromQvd(filePath, loadOptions);
 
@@ -98,20 +153,8 @@ class QvdReader {
         }),
       };
 
-      // qvdjs 1.0+ leaves text that looks like a number as text. Convert it the way
-      // qvdjs 0.6 did, so the grid, profiling and exports see the values they always
-      // have - including its quirks: "" becomes 0 and "8E5597" becomes Infinity.
-      const toCellValue = (value) =>
-        typeof value === "string" && !isNaN(Number(value))
-          ? Number(value)
-          : value;
-
       // Convert data from array of arrays to array of objects
-      const data = df.data.map((row) =>
-        Object.fromEntries(
-          columns.map((col, idx) => [col, toCellValue(row[idx])])
-        )
-      );
+      const data = await toRowObjects(df.data, columns);
 
       return {
         metadata,
@@ -120,6 +163,8 @@ class QvdReader {
         totalRows: metadata.noOfRecords || 0,
         dataError: null,
         error: null,
+        errorName: null,
+        errorReason: null,
       };
     } catch (error) {
       return {
@@ -128,7 +173,10 @@ class QvdReader {
         columns: [],
         totalRows: 0,
         dataError: null,
-        error: error.message,
+        error: describeMemoryRefusal(error) ?? error.message,
+        // qvdjs's error class and reason, so a caller can tell a refusal from damage
+        errorName: error.name ?? null,
+        errorReason: error.context?.reason ?? null,
       };
     }
   }
