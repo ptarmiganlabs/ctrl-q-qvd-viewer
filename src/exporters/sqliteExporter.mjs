@@ -84,7 +84,8 @@ export async function exportToSQLite(data, filePath) {
           typeInfo.hasBlank = true;
         } else if (typeof value === "number") {
           typeInfo.hasNumber = true;
-          if (!Number.isInteger(value)) {
+          // Beyond 2^53 an integer may already be rounded, and beyond 2^63 it overflows 64 bits
+          if (!Number.isSafeInteger(value)) {
             typeInfo.allIntegers = false;
           }
         } else if (typeof value === "string") {

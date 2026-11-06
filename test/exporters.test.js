@@ -17,6 +17,7 @@ let csvExporter;
 let parquetExporter;
 let postgresExporter;
 let sqliteExporter;
+let QvdDataFrame;
 // QvdReader is async because it's a CJS wrapper around ESM
 let QvdReader;
 let outputDir;
@@ -75,6 +76,19 @@ function makeBlankRows() {
     { parent_id: 3, flag: true, code: "a", note: "" },
     { parent_id: "", flag: " ", code: "", note: " " },
     { parent_id: " \t", flag: false, code: "c", note: null },
+  ];
+}
+
+/**
+ * Build rows with an integer column, and a column of integers a double holds but a
+ * 64-bit integer column might not: 2^53, the first a double can't tell from the next,
+ * and 10^19, which is past 2^63
+ * @returns {Array<Object>} Array of row objects
+ */
+function makeBigIntegerRows() {
+  return [
+    { id: 1, big: 2 ** 53 },
+    { id: 2, big: 1e19 },
   ];
 }
 
@@ -209,6 +223,7 @@ suite("Exporter Test Suite", () => {
     parquetExporter = await import("../src/exporters/parquetExporter.mjs");
     postgresExporter = await import("../src/exporters/postgresExporter.mjs");
     sqliteExporter = await import("../src/exporters/sqliteExporter.mjs");
+    ({ QvdDataFrame } = await import("qvdjs"));
     QvdReader = await require("../src/qvdReader.cjs");
     outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-viewer-export-"));
   });
@@ -299,6 +314,25 @@ suite("Exporter Test Suite", () => {
     assert.deepStrictEqual(
       records.map((record) => ({ ...record })),
       BLANK_ROWS_STORED
+    );
+  });
+
+  test("Avro export - integers beyond 2^53 go in a double column", async () => {
+    const filePath = path.join(outputDir, "big.avro");
+
+    await avroExporter.exportToAvro(makeBigIntegerRows(), filePath);
+    const { schema, records } = await decodeAvro(fs.readFileSync(filePath));
+
+    assert.deepStrictEqual(
+      schema.fields.map((field) => [field.name, field.type]),
+      [
+        ["id", "long"],
+        ["big", "double"],
+      ]
+    );
+    assert.deepStrictEqual(
+      records.map((record) => ({ ...record })),
+      makeBigIntegerRows()
     );
   });
 
@@ -526,6 +560,35 @@ suite("Exporter Test Suite", () => {
     assert.deepStrictEqual(rows, BLANK_ROWS_STORED);
   });
 
+  test("Parquet export - integers beyond 2^53 go in a DOUBLE column", async () => {
+    const filePath = path.join(outputDir, "big.parquet");
+
+    await parquetExporter.exportToParquet(makeBigIntegerRows(), filePath);
+
+    assert.deepStrictEqual(await readParquet(filePath), {
+      schema: { id: "INT64", big: "DOUBLE" },
+      rows: makeBigIntegerRows(),
+    });
+  });
+
+  test("Parquet export - an integer a QVD stores beyond 2^53 goes in a DOUBLE column", async () => {
+    // A number stored without text, as in a field Qlik calculated
+    const qvdPath = path.join(outputDir, "big.qvd");
+    await new QvdDataFrame([[1, 2 ** 53], [2, 1e19]], ["id", "big"]).toQvd(qvdPath, {
+      allowedDir: outputDir,
+    });
+    const result = await new QvdReader().read(qvdPath, 0);
+    assert.strictEqual(result.error, null);
+    const filePath = path.join(outputDir, "big-qvd.parquet");
+
+    await parquetExporter.exportToParquet(result.data, filePath);
+
+    assert.deepStrictEqual(await readParquet(filePath), {
+      schema: { id: "INT64", big: "DOUBLE" },
+      rows: makeBigIntegerRows(),
+    });
+  });
+
   test("PostgreSQL export - blank text next to numbers or booleans is NULL, and text elsewhere", async () => {
     const filePath = path.join(outputDir, "blanks.sql");
 
@@ -544,6 +607,24 @@ suite("Exporter Test Suite", () => {
       "  (3, TRUE, 'a', ''),",
       "  (NULL, NULL, '', ' '),",
       "  (NULL, FALSE, 'c', NULL);",
+    ]);
+  });
+
+  test("PostgreSQL export - integers beyond 2^53 go in a NUMERIC column", async () => {
+    const filePath = path.join(outputDir, "big.sql");
+
+    await postgresExporter.exportToPostgres(makeBigIntegerRows(), filePath, 0, {});
+    const lines = fs.readFileSync(filePath, "utf8").split("\n");
+
+    const create = lines.indexOf('CREATE TABLE "qvd_data" (');
+    assert.deepStrictEqual(lines.slice(create + 1, create + 3), [
+      '  "id" BIGINT NOT NULL,',
+      '  "big" NUMERIC NOT NULL',
+    ]);
+    const values = lines.indexOf("VALUES");
+    assert.deepStrictEqual(lines.slice(values + 1, values + 3), [
+      "  (1, 9007199254740992),",
+      "  (2, 10000000000000000000);",
     ]);
   });
 
@@ -593,6 +674,27 @@ suite("Exporter Test Suite", () => {
         ],
         "Booleans should be stored as 0/1"
       );
+    } finally {
+      db.close();
+    }
+  });
+
+  test("SQLite export - integers beyond 2^53 go in a REAL column", async () => {
+    const filePath = path.join(outputDir, "big.db");
+
+    await sqliteExporter.exportToSQLite(makeBigIntegerRows(), filePath);
+
+    const SQL = await initSqlJs();
+    const db = new SQL.Database(fs.readFileSync(filePath));
+    try {
+      assert.strictEqual(
+        db.exec("SELECT sql FROM sqlite_master WHERE name = 'data'")[0].values[0][0],
+        'CREATE TABLE data ("id" INTEGER, "big" REAL)'
+      );
+      assert.deepStrictEqual(db.exec("SELECT id, big FROM data")[0].values, [
+        [1, 2 ** 53],
+        [2, 1e19],
+      ]);
     } finally {
       db.close();
     }
