@@ -127,6 +127,17 @@ suite("QVD Reader Test Suite", () => {
     ]);
   });
 
+  test("Reader - text whose number would show in exponent form stays text", async () => {
+    await assertReadsAs([
+      ["0.0000001", "0.0000001"],
+      ["-0.00000012", "-0.00000012"],
+      ["1000000000000000000000", "1000000000000000000000"],
+      ["0.000001", 0.000001],
+      ["-0.0000010", -0.000001],
+      ["100000000000000000000", 1e20],
+    ]);
+  });
+
   test("Reader - NaN and Infinity stored in a QVD are empty cells", async () => {
     // qvdjs refuses to write them, so write stand-ins and replace their bytes
     const filePath = path.join(outputDir, "non-finite.qvd");

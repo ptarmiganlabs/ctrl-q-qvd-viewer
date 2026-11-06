@@ -90,8 +90,14 @@ function toCellValue(value) {
     }
   }
   const number = Number(value);
-  // -0 would show as 0, and text such as 1 followed by 400 zeros is Infinity
-  return Object.is(number, -0) || !Number.isFinite(number) ? value : number;
+  // Keep the text where the number would show differently: -0 shows as 0, and below
+  // 1e-6 or from 1e21 on a number shows in exponent form, as 0.0000001 shows as 1e-7.
+  // Text such as 1 followed by 400 zeros, whose number is Infinity, is past 1e21 too
+  const size = Math.abs(number);
+  if (Object.is(number, -0) || (size !== 0 && (size < 1e-6 || size >= 1e21))) {
+    return value;
+  }
+  return number;
 }
 
 /**
