@@ -1,6 +1,6 @@
 import parquet from 'parquetjs';
 import { existsSync, unlinkSync } from 'fs';
-import { isBlank, settleBlanks } from './blankCells.mjs';
+import { isMissing, scanColumnTypes } from './columnTypes.mjs';
 
 /**
  * Heap a Parquet export builds from the rows, for the memory guard. It writes
@@ -35,48 +35,8 @@ export async function exportToParquet(data, filePath) {
     const firstRow = data[0];
     const columnNames = Object.keys(firstRow);
 
-    // Track type information for each column across all rows
-    const columnTypes = {};
-    columnNames.forEach((key) => {
-      columnTypes[key] = {
-        hasNull: false,
-        hasBlank: false,
-        hasNumber: false,
-        hasString: false,
-        hasBoolean: false,
-        hasDate: false,
-        allIntegers: true,
-      };
-    });
-
-    // Scan all rows to determine the most compatible type for each column
-    for (const row of data) {
-      for (const key of columnNames) {
-        const value = row[key];
-        const typeInfo = columnTypes[key];
-
-        if (value === null || value === undefined) {
-          typeInfo.hasNull = true;
-        } else if (isBlank(value)) {
-          typeInfo.hasBlank = true;
-        } else if (typeof value === "number") {
-          typeInfo.hasNumber = true;
-          // Beyond 2^53 an integer may already be rounded, and beyond 2^63 it overflows 64 bits
-          if (!Number.isSafeInteger(value)) {
-            typeInfo.allIntegers = false;
-          }
-        } else if (typeof value === "string") {
-          typeInfo.hasString = true;
-        } else if (typeof value === "boolean") {
-          typeInfo.hasBoolean = true;
-        } else if (value instanceof Date) {
-          typeInfo.hasDate = true;
-        }
-      }
-    }
-
-    // Blank text next to numbers, booleans or dates is a missing value
-    columnNames.forEach((key) => settleBlanks(columnTypes[key]));
+    // Determine the most compatible type for each column, from all rows
+    const columnTypes = scanColumnTypes(data, columnNames);
 
     // Build schema based on collected type information
     const schemaFields = {};
@@ -111,11 +71,7 @@ export async function exportToParquet(data, filePath) {
         const value = row[key];
         const typeInfo = columnTypes[key];
 
-        if (
-          value === null ||
-          value === undefined ||
-          (typeInfo.blanksAreNull && isBlank(value))
-        ) {
+        if (isMissing(value, typeInfo)) {
           processedRow[key] = null;
         } else if (typeInfo.hasString) {
           // If schema expects string, convert everything to string

@@ -1,6 +1,6 @@
 import { promises as fs, existsSync, unlinkSync } from 'fs';
 import * as arrow from 'apache-arrow';
-import { isBlank, settleBlanks } from './blankCells.mjs';
+import { isMissing, scanColumnTypes } from './columnTypes.mjs';
 
 /**
  * Heap an Arrow export builds from the rows, for the memory guard. It needed 12
@@ -33,46 +33,8 @@ export async function exportToArrow(data, filePath) {
     const firstRow = data[0];
     const columnNames = Object.keys(firstRow);
 
-    // Track type information for each column across all rows
-    const columnTypes = {};
-    columnNames.forEach((key) => {
-      columnTypes[key] = {
-        hasNull: false,
-        hasBlank: false,
-        hasNumber: false,
-        hasString: false,
-        hasBoolean: false,
-        hasDate: false,
-        hasObject: false,
-      };
-    });
-
-    // Scan all rows to determine the most compatible type for each column
-    for (const row of data) {
-      for (const key of columnNames) {
-        const value = row[key];
-        const typeInfo = columnTypes[key];
-
-        if (value === null || value === undefined) {
-          typeInfo.hasNull = true;
-        } else if (isBlank(value)) {
-          typeInfo.hasBlank = true;
-        } else if (value instanceof Date) {
-          typeInfo.hasDate = true;
-        } else if (typeof value === "object") {
-          typeInfo.hasObject = true;
-        } else if (typeof value === "number") {
-          typeInfo.hasNumber = true;
-        } else if (typeof value === "string") {
-          typeInfo.hasString = true;
-        } else if (typeof value === "boolean") {
-          typeInfo.hasBoolean = true;
-        }
-      }
-    }
-
-    // Blank text next to numbers, booleans or dates is a missing value
-    columnNames.forEach((key) => settleBlanks(columnTypes[key]));
+    // Determine the most compatible type for each column, from all rows
+    const columnTypes = scanColumnTypes(data, columnNames);
 
     // Normalize data to ensure type consistency within each column
     const normalizedData = data.map((row) => {
@@ -82,11 +44,7 @@ export async function exportToArrow(data, filePath) {
         const value = row[key];
         const typeInfo = columnTypes[key];
 
-        if (
-          value === null ||
-          value === undefined ||
-          (typeInfo.blanksAreNull && isBlank(value))
-        ) {
+        if (isMissing(value, typeInfo)) {
           normalizedRow[key] = null;
         } else if (
           typeInfo.hasString ||
