@@ -268,6 +268,8 @@ The Ctrl-Q QVD Viewer allows you to export QVD data to various formats for furth
 
 - **All data is exported**: The export includes all rows from the QVD file, not just the preview data shown in the viewer (except for Qlik Inline Script and PostgreSQL where you can limit rows)
 - **Automatic schema inference**: Data types are automatically detected and preserved in supported formats (Parquet, Excel, Avro, Arrow, SQLite, PostgreSQL)
+- **CSV files start with the header row**: the QVD's field names, in QVD order, even when there are no rows. Every value is quoted, and the file is UTF-8. Earlier versions wrote six lines starting with `#` before the header row. A load that skipped them, such as `header is 6 lines` in Qlik or `skiprows=6` in pandas, must stop doing so, or it will skip the first rows of data
+- **CSV files are safe to open in a spreadsheet**: text that Excel, LibreOffice or Google Sheets would run as a formula, such as `=HYPERLINK(…)`, gets an apostrophe in front. Numbers such as `-5`, and text such as `+46 70 123 45 67` that only looks like one, are left alone. The `csvEscapeFormulas` setting turns this off
 - **Beta formats**: Some export formats are marked as Beta, indicating they are fully functional but may receive additional enhancements based on user feedback
 - **Progress notification**: You'll see a confirmation message with an option to open the folder containing the exported file
 
@@ -276,6 +278,8 @@ The Ctrl-Q QVD Viewer allows you to export QVD data to various formats for furth
 This extension contributes the following settings:
 
 - `ctrl-q-qvd-viewer.maxPreviewRows`: Maximum number of rows to load from the QVD file for preview and pagination (default: 5000, min: 100, max: 100000)
+- `ctrl-q-qvd-viewer.csvEscapeFormulas`: Put an apostrophe before CSV text that a spreadsheet would run as a formula (default: true). Turn it off if the files are only read by programs
+- `ctrl-q-qvd-viewer.csvByteOrderMark`: Start CSV files with a UTF-8 byte order mark, which Excel on Windows needs to show å, ä, ö and other non-ASCII text (default: false). Python's `csv` module then reads the mark as part of the first column name, unless the file is opened with `encoding="utf-8-sig"`
 
 To change this setting:
 
