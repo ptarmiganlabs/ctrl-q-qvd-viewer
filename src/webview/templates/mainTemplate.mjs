@@ -8,6 +8,7 @@ import {
 import { escapeHtml } from "./errorTemplate.mjs";
 import DataExporter from "../../exporters/index.mjs";
 import { metricHelpContent } from "../qualityMetricHelp.mjs";
+import { getLoadMoreRowCount } from "../loadMore.mjs";
 
 /**
  * Generate HTML for webview with tabbed interface and Tabulator
@@ -1405,6 +1406,8 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
         // Updated when the rows arrive via postMessage
         let currentLoadedRows = ${data.length};
         let hasMoreRows = ${hasMoreRows};
+        // Rows that Load More reads, counted from the start of the file
+        let loadMoreRowCount = ${getLoadMoreRowCount(data.length)};
         
         // Logging helper - sends logs to extension
         const logger = {
@@ -1656,6 +1659,9 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         hasMoreRows = message.hasMoreRows !== undefined
                             ? message.hasMoreRows
                             : currentLoadedRows < totalRowsInFile;
+                        if (message.loadMoreRowCount !== undefined) {
+                            loadMoreRowCount = message.loadMoreRowCount;
+                        }
                         updateLoadedRowsBanner();
                         
                         // Hide loading indicator
@@ -2101,18 +2107,20 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             }
             
             const remainingRows = totalRowsInFile - currentLoadedRows;
-            // The loadMore handler in messageHandler.mjs doubles the loaded rows, up to 100,000
-            const nextBatch = Math.min(currentLoadedRows * 2, 100000, totalRowsInFile) - currentLoadedRows;
+            const nextBatch = Math.min(loadMoreRowCount, totalRowsInFile) - currentLoadedRows;
             
             document.getElementById('loaded-rows-text').textContent =
                 \`📊 Showing \${currentLoadedRows.toLocaleString()} of \${totalRowsInFile.toLocaleString()} rows (\${((currentLoadedRows / totalRowsInFile) * 100).toFixed(1)}% of file loaded)\`;
             
+            // Labelled and enabled afresh, in case an earlier click left them on "Loading..."
             const loadMoreBtn = document.getElementById('loadMoreBtn');
             loadMoreBtn.textContent = \`Load More (next \${nextBatch.toLocaleString()} rows)\`;
             loadMoreBtn.style.display = nextBatch > 0 ? '' : 'none';
+            loadMoreBtn.disabled = false;
             
-            document.getElementById('loadAllBtn').textContent =
-                \`Load All Remaining (\${remainingRows.toLocaleString()} rows)\`;
+            const loadAllBtn = document.getElementById('loadAllBtn');
+            loadAllBtn.textContent = \`Load All Remaining (\${remainingRows.toLocaleString()} rows)\`;
+            loadAllBtn.disabled = false;
             
             banner.style.display = '';
         }

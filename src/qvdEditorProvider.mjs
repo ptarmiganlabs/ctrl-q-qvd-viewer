@@ -4,6 +4,7 @@ import QvdReader from "./qvdReader.mjs";
 import { getErrorHtml } from "./webview/templates/errorTemplate.mjs";
 import { getHtmlForWebview } from "./webview/templates/mainTemplate.mjs";
 import { setupMessageHandler } from "./webview/messageHandler.mjs";
+import { getLoadMoreRowCount } from "./webview/loadMore.mjs";
 import logger from "./logger.mjs";
 
 /**
@@ -174,6 +175,7 @@ class QvdEditorProvider {
         metadata: result.metadata,
         totalRows: result.totalRows,
         hasMoreRows: result.data.length < result.totalRows,
+        loadMoreRowCount: getLoadMoreRowCount(result.data.length),
       });
       logger.log(
         `⏱️ [TIMING] postMessage: ${(performance.now() - postStart).toFixed(
