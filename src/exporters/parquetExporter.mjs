@@ -1,7 +1,8 @@
 import parquet from 'parquetjs';
 import { existsSync, unlinkSync } from 'fs';
 import { isMissing, scanColumnTypes } from './columnTypes.mjs';
-import { markNaiveTimestamps } from './parquetTimestamps.mjs';
+import { markTimestamps } from './parquetTimestamps.mjs';
+import { zonedTimestamps } from './zonedTimestamps.mjs';
 
 /**
  * Heap a Parquet export builds from the rows, for the memory guard. It writes
@@ -17,9 +18,15 @@ export const memoryCost = { bytesPerCell: 16, bytesPerTextChar: 0, writesAsItGoe
  * Export data to Parquet format
  * @param {Array<Object>} data - Array of row objects
  * @param {string} filePath - Destination file path
- * @returns {Promise<void>}
+ * @param {object} [options]
+ * @param {string|null} [options.timeZone] - The time zone the timestamps were read in,
+ *   to write each as the instant it was; without one they are wall clocks with no time zone
+ * @returns {Promise<import('./zonedTimestamps.mjs').TimeShifts|undefined>} With a time
+ *   zone, what reading the timestamps in it did
  */
-export async function exportToParquet(data, filePath) {
+export async function exportToParquet(data, filePath, { timeZone = null } = {}) {
+  // Before anything is written, so that a time zone Intl doesn't know leaves the file alone
+  const zoned = timeZone ? zonedTimestamps(timeZone) : null;
   try {
     if (data.length === 0) {
       // Create empty parquet file with minimal schema
@@ -29,7 +36,7 @@ export async function exportToParquet(data, filePath) {
 
       const writer = await parquet.ParquetWriter.openFile(schema, filePath);
       await writer.close();
-      return;
+      return zoned?.summary();
     }
 
     // Infer schema by scanning all rows to determine compatible types
@@ -54,7 +61,8 @@ export async function exportToParquet(data, filePath) {
       } else if (typeInfo.hasDate && typeInfo.calendarDates) {
         type = "DATE";
       } else if (typeInfo.hasDate) {
-        // Milliseconds, marked as a timestamp with no time zone once the file is written
+        // Milliseconds, marked as timestamps once the file is written: wall clocks with
+        // no time zone, or instants when read in one
         type = "INT64";
         timestampColumns.push(key);
       } else if (typeInfo.hasNumber) {
@@ -83,7 +91,11 @@ export async function exportToParquet(data, filePath) {
           // If schema expects string, convert everything to string
           processedRow[key] = String(value);
         } else if (value instanceof Date) {
-          processedRow[key] = typeInfo.calendarDates ? value : value.getTime();
+          if (typeInfo.calendarDates) {
+            processedRow[key] = value;
+          } else {
+            processedRow[key] = zoned ? zoned.instant(value, key) : value.getTime();
+          }
         } else {
           processedRow[key] = value;
         }
@@ -93,7 +105,8 @@ export async function exportToParquet(data, filePath) {
     }
 
     await writer.close();
-    await markNaiveTimestamps(filePath, timestampColumns);
+    await markTimestamps(filePath, timestampColumns, { adjustedToUTC: zoned !== null });
+    return zoned?.summary();
   } catch (error) {
     // Clean up the partially created file on error
     try {

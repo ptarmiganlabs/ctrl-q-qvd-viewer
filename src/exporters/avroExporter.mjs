@@ -4,10 +4,11 @@ import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { isMissing, scanColumnTypes } from './columnTypes.mjs';
 import { DAY_MS, naiveDateText } from './naiveDates.mjs';
+import { zonedTimestamps } from './zonedTimestamps.mjs';
 
 // avsc leaves a logical type it doesn't know out of the file's schema. This one keeps
-// the annotation, which tells a reader that an int is a date, or a long a timestamp
-// with no time zone, and passes the values through as they are
+// the annotation, which tells a reader that an int is a date, or a long a timestamp:
+// a wall clock with no time zone, or an instant, and passes the values through as they are
 class Annotation extends avro.types.LogicalType {
   _fromValue(value) {
     return value;
@@ -17,7 +18,11 @@ class Annotation extends avro.types.LogicalType {
     return value;
   }
 }
-const LOGICAL_TYPES = { date: Annotation, "local-timestamp-millis": Annotation };
+const LOGICAL_TYPES = {
+  date: Annotation,
+  "local-timestamp-millis": Annotation,
+  "timestamp-millis": Annotation,
+};
 
 /**
  * Heap an Avro export builds from the rows, for the memory guard. It writes as
@@ -51,9 +56,15 @@ function writeAvroFile(records, type, filePath) {
  * Export data to Avro format
  * @param {Array<Object>} data - Array of row objects
  * @param {string} filePath - Destination file path
- * @returns {Promise<void>}
+ * @param {object} [options]
+ * @param {string|null} [options.timeZone] - The time zone the timestamps were read in,
+ *   to write each as the instant it was; without one they are wall clocks with no time zone
+ * @returns {Promise<import('./zonedTimestamps.mjs').TimeShifts|undefined>} With a time
+ *   zone, what reading the timestamps in it did
  */
-export async function exportToAvro(data, filePath) {
+export async function exportToAvro(data, filePath, { timeZone = null } = {}) {
+  // Before anything is written, so that a time zone Intl doesn't know leaves the file alone
+  const zoned = timeZone ? zonedTimestamps(timeZone) : null;
   try {
     if (data.length === 0) {
       // Create empty Avro file with minimal schema
@@ -64,7 +75,7 @@ export async function exportToAvro(data, filePath) {
       });
 
       await writeAvroFile([], type, filePath);
-      return;
+      return zoned?.summary();
     }
 
     // Infer schema by scanning all rows to determine compatible types
@@ -83,10 +94,13 @@ export async function exportToAvro(data, filePath) {
       if (typeInfo.hasString || (typeInfo.hasNumber && typeInfo.hasBoolean)) {
         avroType = "string";
       } else if (typeInfo.hasDate) {
-        // Days since 1970 for a date, or milliseconds for a timestamp
-        avroType = typeInfo.calendarDates
-          ? { type: "int", logicalType: "date" }
-          : { type: "long", logicalType: "local-timestamp-millis" };
+        // Days since 1970 for a date, or milliseconds for a timestamp: of its wall clock,
+        // or of its instant when read in a time zone
+        if (typeInfo.calendarDates) {
+          avroType = { type: "int", logicalType: "date" };
+        } else {
+          avroType = { type: "long", logicalType: zoned ? "timestamp-millis" : "local-timestamp-millis" };
+        }
       } else if (typeInfo.hasNumber) {
         avroType = typeInfo.allIntegers ? "long" : "double";
       } else if (typeInfo.hasBoolean) {
@@ -128,9 +142,11 @@ export async function exportToAvro(data, filePath) {
             // If schema expects string, convert everything to string
             processedRow[key] = value instanceof Date ? naiveDateText(value, false) : String(value);
           } else if (value instanceof Date) {
-            processedRow[key] = typeInfo.calendarDates
-              ? Math.round(value.getTime() / DAY_MS)
-              : value.getTime();
+            if (typeInfo.calendarDates) {
+              processedRow[key] = Math.round(value.getTime() / DAY_MS);
+            } else {
+              processedRow[key] = zoned ? zoned.instant(value, key) : value.getTime();
+            }
           } else {
             processedRow[key] = value;
           }
@@ -140,6 +156,7 @@ export async function exportToAvro(data, filePath) {
     }
 
     await writeAvroFile(processedRows(), type, filePath);
+    return zoned?.summary();
   } catch (error) {
     // Clean up the partially created file on error
     try {

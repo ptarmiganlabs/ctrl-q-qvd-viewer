@@ -1,4 +1,5 @@
 import { join } from 'path';
+import { CalendarDate, isBlank } from '../cellValue.mjs';
 import { exportToCSV, memoryCost as csvCost } from './csvExporter.mjs';
 import { exportToJSON, memoryCost as jsonCost } from './jsonExporter.mjs';
 import { exportToExcel, memoryCost as excelCost } from './excelExporter.mjs';
@@ -10,11 +11,16 @@ import { exportToSQLite, memoryCost as sqliteCost } from './sqliteExporter.mjs';
 import { exportToXML, memoryCost as xmlCost } from './xmlExporter.mjs';
 import { exportToQlikInline, memoryCost as qlikCost } from './qlikInlineExporter.mjs';
 import { exportToPostgres, memoryCost as postgresCost } from './postgresExporter.mjs';
+import { resolveTimeZone, timeZoneNames } from './zonedTimestamps.mjs';
+
+// The setting that names the time zone a QVD's timestamps were read in
+const TIME_ZONE_SETTING = "exportTimeZone";
 
 // Each export format: its name as the user sees it, its file's extension and the save
 // dialog's filter, whether it is in beta, its exporter, what its export builds on the
-// heap as the exporter declares it, and whether it writes a QVD's dates and timestamps
-// as dates, as a format with date types does
+// heap as the exporter declares it, whether it writes a QVD's dates and timestamps as
+// dates, as a format with date types does, and whether it can write the timestamps as
+// instants, read in a time zone the export names
 const FORMATS = {
   arrow: {
     label: "Export to Arrow",
@@ -24,6 +30,7 @@ const FORMATS = {
     exporter: exportToArrow,
     cost: arrowCost,
     dates: true,
+    zones: true,
   },
   avro: {
     label: "Export to Avro",
@@ -33,6 +40,7 @@ const FORMATS = {
     exporter: exportToAvro,
     cost: avroCost,
     dates: true,
+    zones: true,
   },
   csv: {
     label: "Export to CSV",
@@ -42,6 +50,7 @@ const FORMATS = {
     exporter: exportToCSV,
     cost: csvCost,
     dates: false,
+    zones: false,
   },
   excel: {
     label: "Export to Excel",
@@ -51,6 +60,7 @@ const FORMATS = {
     exporter: exportToExcel,
     cost: excelCost,
     dates: true,
+    zones: false,
   },
   json: {
     label: "Export to JSON",
@@ -60,6 +70,7 @@ const FORMATS = {
     exporter: exportToJSON,
     cost: jsonCost,
     dates: false,
+    zones: false,
   },
   parquet: {
     label: "Export to Parquet",
@@ -69,6 +80,7 @@ const FORMATS = {
     exporter: exportToParquet,
     cost: parquetCost,
     dates: true,
+    zones: true,
   },
   postgres: {
     label: "Export to PostgreSQL",
@@ -78,6 +90,7 @@ const FORMATS = {
     exporter: exportToPostgres,
     cost: postgresCost,
     dates: true,
+    zones: true,
   },
   qlik: {
     label: "Export to Qlik Inline Script",
@@ -87,6 +100,7 @@ const FORMATS = {
     exporter: exportToQlikInline,
     cost: qlikCost,
     dates: false,
+    zones: false,
   },
   sqlite: {
     label: "Export to SQLite",
@@ -96,6 +110,7 @@ const FORMATS = {
     exporter: exportToSQLite,
     cost: sqliteCost,
     dates: true,
+    zones: true,
   },
   xml: {
     label: "Export to XML",
@@ -105,6 +120,7 @@ const FORMATS = {
     exporter: exportToXML,
     cost: xmlCost,
     dates: false,
+    zones: false,
   },
   yaml: {
     label: "Export to YAML",
@@ -114,8 +130,109 @@ const FORMATS = {
     exporter: exportToYAML,
     cost: yamlCost,
     dates: false,
+    zones: false,
   },
 };
+
+/**
+ * Whether rows hold a column of timestamps, rather than only dates or no dates at all
+ * A column's values are all dates or all timestamps, as the reader makes them, so the
+ * first that isn't empty says which.
+ * @param {Array<Object>} rows - Array of row objects
+ * @returns {boolean} True if a column holds timestamps
+ */
+function holdsTimestamps(rows) {
+  const columns = new Set(rows.length > 0 ? Object.keys(rows[0]) : []);
+  for (const row of rows) {
+    for (const key of columns) {
+      const value = row[key];
+      if (value !== null && value !== undefined && !isBlank(value)) {
+        if (value instanceof Date && !(value instanceof CalendarDate)) {
+          return true;
+        }
+        columns.delete(key);
+      }
+    }
+    if (columns.size === 0) {
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
+ * The time zone the settings name for a QVD's timestamps
+ * @param {object} vscode - VS Code API object
+ * @returns {string|null} Intl's name for it, or null when the setting is empty
+ * @throws {Error} For a zone Intl doesn't know, naming the setting in its setting property
+ */
+function settingsTimeZone(vscode) {
+  const named = String(
+    vscode.workspace.getConfiguration("ctrl-q-qvd-viewer").get(TIME_ZONE_SETTING, "") ?? ""
+  ).trim();
+  if (named === "") {
+    return null;
+  }
+  const timeZone = resolveTimeZone(named);
+  if (timeZone === null) {
+    const setting = `ctrl-q-qvd-viewer.${TIME_ZONE_SETTING}`;
+    const error = new Error(
+      `The setting ${setting} names "${named}", which isn't a time zone VS Code knows. ` +
+        `Name one such as America/Chicago or UTC, or leave it empty to export timestamps ` +
+        `as wall clocks with no time zone.`
+    );
+    error.setting = setting;
+    throw error;
+  }
+  return timeZone;
+}
+
+/**
+ * Ask which time zone a QVD's timestamps were read in
+ * @param {object} vscode - VS Code API object
+ * @param {string|null} defaultTimeZone - The zone the settings name, offered first
+ * @returns {Promise<string|null|undefined>} The zone, null for none, or undefined when
+ *   the user cancelled
+ */
+async function askTimeZone(vscode, defaultTimeZone) {
+  const title = "Time Zone of the Timestamps";
+  const items = [];
+  const offer = (item) => {
+    if (!items.some((other) => other.value === item.value)) {
+      items.push(item);
+    }
+  };
+  if (defaultTimeZone !== null) {
+    offer({ label: `${defaultTimeZone} (default)`, description: "From the settings", value: defaultTimeZone });
+  }
+  offer({
+    label: defaultTimeZone === null ? "No time zone (default)" : "No time zone",
+    description: "Wall clocks as Qlik shows them, as the QVD holds them",
+    value: null,
+  });
+  offer({ label: "UTC", description: "The timestamps already are UTC, as Qlik's UTC() gives them", value: "UTC" });
+  const here = resolveTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  if (here !== null) {
+    offer({ label: here, description: "This computer's time zone. The QVD's may be another", value: here });
+  }
+  items.push({ label: "Other time zone…", description: "Every time zone VS Code knows", other: true });
+
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: "A QVD's timestamps are wall clocks. Name the time zone they were read in to export them as instants",
+    title,
+  });
+  if (!picked) {
+    return undefined;
+  }
+  if (!picked.other) {
+    return picked.value;
+  }
+  const zone = await vscode.window.showQuickPick(timeZoneNames(), {
+    placeHolder: "The time zone the QVD's timestamps were read in",
+    title,
+  });
+  return zone ?? undefined;
+}
 
 /**
  * Main DataExporter class that coordinates all export operations
@@ -187,6 +304,8 @@ class DataExporter {
    *   the export is written. It returns a release, or a promise of one, called when the
    *   export ends, or throws to refuse the export.
    * @returns {Promise<string|null>} Path to saved file or null if cancelled
+   * @throws {Error} For a time zone in the settings that VS Code doesn't know, naming
+   *   the setting in its setting property, when the export would use it
    */
   static async exportData(
     data,
@@ -202,6 +321,12 @@ class DataExporter {
     if (!config) {
       throw new Error(`Unsupported export format: ${format}`);
     }
+
+    // A format that can write instants asks which time zone the timestamps were read
+    // in, when there are timestamps: dates have no time zone. The zone the settings
+    // name is offered first, once it is known to be one
+    const asksTimeZone = config.zones && holdsTimestamps(data);
+    const defaultTimeZone = asksTimeZone ? settingsTimeZone(vscode) : null;
 
     // Handle Qlik inline format with delimiter selection BEFORE file dialog
     let selectedDelimiter = null;
@@ -341,6 +466,15 @@ class DataExporter {
       };
     }
 
+    // Without a time zone the timestamps are written as wall clocks, as the QVD holds them
+    let timeZone = null;
+    if (asksTimeZone) {
+      timeZone = await askTimeZone(vscode, defaultTimeZone);
+      if (timeZone === undefined) {
+        return null; // User cancelled
+      }
+    }
+
     // Show save dialog
     const defaultFileName = `${suggestedFileName}.${config.extension}`;
     // Need to use require for os.homedir() since it's not exported as ESM
@@ -377,7 +511,9 @@ class DataExporter {
         );
       } else if (format === "postgres") {
         // Pass options to PostgreSQL exporter
-        await config.exporter(data, fileUri.fsPath, maxRows, postgresOptions);
+        await config.exporter(data, fileUri.fsPath, maxRows, { ...postgresOptions, timeZone });
+      } else if (config.zones) {
+        await config.exporter(data, fileUri.fsPath, { timeZone });
       } else if (format === "csv") {
         // The header row comes from the QVD's fields, so it has every field, in QVD order,
         // even when there are no rows

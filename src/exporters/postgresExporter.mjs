@@ -1,6 +1,7 @@
 import { existsSync, unlinkSync, writeFileSync } from "fs";
 import { isMissing, scanColumnTypes } from "./columnTypes.mjs";
 import { naiveDateText } from "./naiveDates.mjs";
+import { offsetText, zonedTimestamps } from "./zonedTimestamps.mjs";
 
 /**
  * Heap a PostgreSQL export builds from the rows, for the memory guard. It
@@ -21,9 +22,14 @@ export const memoryCost = { bytesPerCell: 24, bytesPerTextChar: 2 };
  * @param {boolean} options.createTable - Whether to include CREATE TABLE statement
  * @param {string} options.tableName - Name of the table
  * @param {boolean} options.dropTable - Whether to include DROP TABLE IF EXISTS
- * @returns {Promise<void>}
+ * @param {string|null} [options.timeZone] - The time zone the timestamps were read in,
+ *   to write each as the instant it was; without one they are wall clocks with no time zone
+ * @returns {Promise<import('./zonedTimestamps.mjs').TimeShifts|undefined>} With a time
+ *   zone, what reading the timestamps in it did
  */
 export async function exportToPostgres(data, filePath, maxRows, options) {
+  // Before anything is written, so that a time zone Intl doesn't know leaves the file alone
+  const zoned = options?.timeZone ? zonedTimestamps(options.timeZone) : null;
   try {
     const {
       createTable = true,
@@ -38,7 +44,7 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
       // Create empty SQL file with comment
       const content = `-- Empty dataset\n-- No data to export\n`;
       writeFileSync(filePath, content, "utf8");
-      return;
+      return zoned?.summary();
     }
 
     // Get column names from first row
@@ -67,6 +73,13 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
         maxRows > 0 ? ` (limited from ${data.length})` : ""
       }`
     );
+    // Timestamps read in a time zone are its wall clocks, with their offsets from UTC
+    const zonedColumns = zoned
+      ? columnNames.filter((key) => columnTypes[key].hasDate && !columnTypes[key].calendarDates)
+      : [];
+    if (zonedColumns.length > 0) {
+      sqlContent.push(`-- Timestamps: wall clocks read in ${zoned.timeZone}, with their offsets from UTC`);
+    }
     sqlContent.push(``);
 
     // Begin transaction
@@ -92,8 +105,13 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
           // Mixed types or strings - use TEXT
           pgType = "TEXT";
         } else if (typeInfo.hasDate) {
-          // TIMESTAMP is without a time zone, as a QVD's timestamps are
-          pgType = typeInfo.calendarDates ? "DATE" : "TIMESTAMP";
+          // TIMESTAMP is without a time zone, as a QVD's timestamps are. TIMESTAMPTZ holds
+          // instants, as timestamps read in a time zone are
+          if (typeInfo.calendarDates) {
+            pgType = "DATE";
+          } else {
+            pgType = zoned ? "TIMESTAMPTZ" : "TIMESTAMP";
+          }
         } else if (typeInfo.hasNumber) {
           if (typeInfo.allIntegers) {
             pgType = "BIGINT";
@@ -142,6 +160,9 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
             if (isMissing(value, typeInfo)) {
               return "NULL";
             } else if (value instanceof Date) {
+              if (zoned && !typeInfo.calendarDates) {
+                return `'${offsetText(value, zoned, col)}'`;
+              }
               return `'${naiveDateText(value, typeInfo.calendarDates)}'`;
             } else if (typeInfo.hasString) {
               // Escape single quotes for SQL
@@ -177,6 +198,7 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
 
     // Write to file
     writeFileSync(filePath, sqlContent.join("\n"), "utf8");
+    return zoned?.summary();
   } catch (error) {
     // Clean up the partially created file on error
     try {

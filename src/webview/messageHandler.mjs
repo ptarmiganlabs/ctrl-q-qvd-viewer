@@ -270,6 +270,15 @@ export function setupMessageHandler(
           if (error?.name === "AbortError" && signal?.aborted) {
             // The editor was closed while the export waited for a read to finish
             logger.log(`Export given up, because its editor was closed: ${filePath}`);
+          } else if (error?.setting) {
+            // A setting the export can't use: not awaited, so that the rows are let go
+            vscode.window
+              .showErrorMessage(`Export failed: ${error.message}`, "Open Settings")
+              .then((action) => {
+                if (action === "Open Settings") {
+                  vscode.commands.executeCommand("workbench.action.openSettings", error.setting);
+                }
+              });
           } else {
             vscode.window.showErrorMessage(`Export failed: ${error.message}`);
           }
