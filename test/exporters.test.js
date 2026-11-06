@@ -791,4 +791,64 @@ suite("Exporter Test Suite", () => {
     await exportToSQLite(rows, filePath);
     assert.strictEqual(await countSqliteRows(filePath), rows.length);
   });
+
+  test("Typed exports - blank text next to dates is null, and an empty cell in Excel", async () => {
+    const when = new Date(Date.UTC(2024, 0, 2, 3, 4, 5));
+    const rows = [{ when }, { when: "" }, { when: " " }];
+    const file = (extension) => path.join(outputDir, `dates.${extension}`);
+
+    await parquetExporter.exportToParquet(rows, file("parquet"));
+    assert.deepStrictEqual(await readParquet(file("parquet")), {
+      schema: { when: "TIMESTAMP_MILLIS?" },
+      rows: [{ when }, { when: null }, { when: null }],
+    });
+
+    await avroExporter.exportToAvro(rows, file("avro"));
+    const { schema, records } = await decodeAvro(fs.readFileSync(file("avro")));
+    assert.deepStrictEqual(schema.fields, [{ name: "when", type: ["null", "long"] }]);
+    assert.deepStrictEqual(
+      records.map((record) => ({ ...record })),
+      [{ when: when.getTime() }, { when: null }, { when: null }]
+    );
+
+    // Arrow and SQLite store a date as its ISO text
+    await arrowExporter.exportToArrow(rows, file("arrow"));
+    assert.deepStrictEqual(readArrow(file("arrow")).rows, [
+      { when: when.toISOString() },
+      { when: null },
+      { when: null },
+    ]);
+
+    await sqliteExporter.exportToSQLite(rows, file("db"));
+    const SQL = await initSqlJs();
+    const db = new SQL.Database(fs.readFileSync(file("db")));
+    try {
+      assert.deepStrictEqual(db.exec('SELECT "when" FROM data')[0].values, [
+        [when.toISOString()],
+        [null],
+        [null],
+      ]);
+    } finally {
+      db.close();
+    }
+
+    await postgresExporter.exportToPostgres(rows, file("sql"), 0, {});
+    const lines = fs.readFileSync(file("sql"), "utf8").split("\n");
+    assert.ok(lines.includes('  "when" TIMESTAMP'), "The column should be a nullable TIMESTAMP");
+    const values = lines.indexOf("VALUES");
+    assert.deepStrictEqual(lines.slice(values + 1, values + 4), [
+      `  ('${when.toISOString()}'),`,
+      "  (NULL),",
+      "  (NULL);",
+    ]);
+
+    await excelExporter.exportToExcel(rows, file("xlsx"));
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(file("xlsx"));
+    const sheet = workbook.getWorksheet("Data");
+    assert.deepStrictEqual(
+      [2, 3, 4].map((row) => sheet.getRow(row).getCell(1).value),
+      [when, null, null]
+    );
+  });
 });
