@@ -47,6 +47,12 @@ export function toCellValue(value) {
 }
 
 /**
+ * A date without a time of day: a Date at midnight UTC, as the reader makes a value of
+ * a QVD's date field. A value of a timestamp field is a plain Date, even at midnight.
+ */
+export class CalendarDate extends Date {}
+
+/**
  * Check whether a value is blank text: empty, or nothing but whitespace
  * @param {*} value - Cell value
  * @returns {boolean} True if the value is blank text

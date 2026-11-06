@@ -113,7 +113,7 @@ export async function exportToSQLite(data, filePath) {
         if (isMissing(value, typeInfo)) {
           return null;
         } else if (value instanceof Date) {
-          return naiveDateText(value, typeInfo.allMidnight);
+          return naiveDateText(value, typeInfo.calendarDates);
         } else if (typeInfo.hasString) {
           // If schema expects TEXT, convert everything to string
           return String(value);

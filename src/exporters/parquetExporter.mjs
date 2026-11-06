@@ -51,7 +51,7 @@ export async function exportToParquet(data, filePath) {
       // If column has mixed types or strings, use UTF8 as most compatible
       if (typeInfo.hasString || (typeInfo.hasNumber && typeInfo.hasBoolean)) {
         type = "UTF8";
-      } else if (typeInfo.hasDate && typeInfo.allMidnight) {
+      } else if (typeInfo.hasDate && typeInfo.calendarDates) {
         type = "DATE";
       } else if (typeInfo.hasDate) {
         // Milliseconds, marked as a timestamp with no time zone once the file is written
@@ -83,7 +83,7 @@ export async function exportToParquet(data, filePath) {
           // If schema expects string, convert everything to string
           processedRow[key] = String(value);
         } else if (value instanceof Date) {
-          processedRow[key] = typeInfo.allMidnight ? value : value.getTime();
+          processedRow[key] = typeInfo.calendarDates ? value : value.getTime();
         } else {
           processedRow[key] = value;
         }

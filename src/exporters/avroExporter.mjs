@@ -84,7 +84,7 @@ export async function exportToAvro(data, filePath) {
         avroType = "string";
       } else if (typeInfo.hasDate) {
         // Days since 1970 for a date, or milliseconds for a timestamp
-        avroType = typeInfo.allMidnight
+        avroType = typeInfo.calendarDates
           ? { type: "int", logicalType: "date" }
           : { type: "long", logicalType: "local-timestamp-millis" };
       } else if (typeInfo.hasNumber) {
@@ -128,7 +128,7 @@ export async function exportToAvro(data, filePath) {
             // If schema expects string, convert everything to string
             processedRow[key] = value instanceof Date ? naiveDateText(value, false) : String(value);
           } else if (value instanceof Date) {
-            processedRow[key] = typeInfo.allMidnight
+            processedRow[key] = typeInfo.calendarDates
               ? Math.round(value.getTime() / DAY_MS)
               : value.getTime();
           } else {

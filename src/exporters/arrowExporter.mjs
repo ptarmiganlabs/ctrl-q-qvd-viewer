@@ -74,7 +74,7 @@ export async function exportToArrow(data, filePath) {
           const typeInfo = columnTypes[key];
           let type;
           if (typeInfo.hasDate && !isTextColumn(typeInfo)) {
-            type = typeInfo.allMidnight ? new arrow.DateDay() : new arrow.TimestampMillisecond();
+            type = typeInfo.calendarDates ? new arrow.DateDay() : new arrow.TimestampMillisecond();
           }
           return [key, arrow.vectorFromArray(columns.get(key), type)];
         })

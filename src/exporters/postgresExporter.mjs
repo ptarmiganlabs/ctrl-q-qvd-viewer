@@ -93,7 +93,7 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
           pgType = "TEXT";
         } else if (typeInfo.hasDate) {
           // TIMESTAMP is without a time zone, as a QVD's timestamps are
-          pgType = typeInfo.allMidnight ? "DATE" : "TIMESTAMP";
+          pgType = typeInfo.calendarDates ? "DATE" : "TIMESTAMP";
         } else if (typeInfo.hasNumber) {
           if (typeInfo.allIntegers) {
             pgType = "BIGINT";
@@ -142,7 +142,7 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
             if (isMissing(value, typeInfo)) {
               return "NULL";
             } else if (value instanceof Date) {
-              return `'${naiveDateText(value, typeInfo.allMidnight)}'`;
+              return `'${naiveDateText(value, typeInfo.calendarDates)}'`;
             } else if (typeInfo.hasString) {
               // Escape single quotes for SQL
               return `'${String(value).replace(/'/g, "''")}'`;

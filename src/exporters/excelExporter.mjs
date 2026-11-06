@@ -60,7 +60,7 @@ export async function exportToExcel(data, filePath) {
       const typeInfo = columnTypes[key];
       const column = { header: key, key: key, width: 15 };
       if (typeInfo.hasDate && !textDateColumns.includes(key)) {
-        column.style = { numFmt: typeInfo.allMidnight ? "yyyy-mm-dd" : "yyyy-mm-dd hh:mm:ss" };
+        column.style = { numFmt: typeInfo.calendarDates ? "yyyy-mm-dd" : "yyyy-mm-dd hh:mm:ss" };
       }
       return column;
     });
@@ -84,7 +84,7 @@ export async function exportToExcel(data, filePath) {
       for (const key of textDateColumns) {
         if (row[key] instanceof Date) {
           cells = cells === row ? { ...row } : cells;
-          cells[key] = naiveDateText(row[key], columnTypes[key].allMidnight);
+          cells[key] = naiveDateText(row[key], columnTypes[key].calendarDates);
         }
       }
       worksheet.addRow(cells);

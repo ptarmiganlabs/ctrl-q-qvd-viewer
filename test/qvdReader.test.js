@@ -7,6 +7,7 @@ const path = require("path");
 let QvdReader;
 let QvdDataFrame;
 let QvdDual;
+let CalendarDate;
 let qvdProfiler;
 let outputDir;
 let fileCount = 0;
@@ -50,6 +51,7 @@ suite("QVD Reader Test Suite", () => {
   suiteSetup(async () => {
     QvdReader = await require("../src/qvdReader.cjs");
     ({ QvdDataFrame, QvdDual } = await import("qvdjs"));
+    ({ CalendarDate } = await import("../src/cellValue.mjs"));
     qvdProfiler = await import("../src/qvdProfiler.mjs");
     outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-viewer-reader-"));
   });
@@ -251,7 +253,7 @@ suite("QVD Reader Test Suite", () => {
 
     // Tagged $numeric and $integer, with a day's serial and its date in every dual
     const [day] = await readTestData("stockholm_temp/stockholm_temp.qvd", 1, { dates: true });
-    assert.deepStrictEqual(day.date, new Date(Date.UTC(1756, 0, 1)));
+    assert.deepStrictEqual(day.date, new CalendarDate(Date.UTC(1756, 0, 1)));
 
     // As serials, the years 1950 to 2017 are days in 1905, which their text doesn't show
     const sets = await readTestData("lego/sets.qvd", 0, { dates: true });
@@ -288,7 +290,7 @@ suite("QVD Reader Test Suite", () => {
     assert.deepStrictEqual(result.data, [
       {
         timestamp: new Date(Date.UTC(2016, 0, 13, 6)),
-        dayFirst: new Date(Date.UTC(2016, 0, 13)),
+        dayFirst: new CalendarDate(Date.UTC(2016, 0, 13)),
         year: 1950,
         mixed: "2016-1-13",
         wrongDay: "2016-1-14",
@@ -296,13 +298,50 @@ suite("QVD Reader Test Suite", () => {
       },
       {
         timestamp: "",
-        dayFirst: new Date(Date.UTC(2016, 0, 14)),
+        dayFirst: new CalendarDate(Date.UTC(2016, 0, 14)),
         year: 2017,
         mixed: "unknown",
         wrongDay: "2016-1-15",
         serial: 42383,
       },
     ]);
+  });
+
+  test("Reader - a field's tag or text, not its values, says whether it holds dates or timestamps", async () => {
+    const filePath = path.join(outputDir, "date-kinds.qvd");
+    const columns = ["shownAsDates", "midnights", "twelveHour"];
+    const rows = [
+      [
+        new QvdDual(42382.75, "2016-1-13"),
+        new QvdDual(42382, "2016-1-13 00:00:00"),
+        new QvdDual(42382.75, "1/13/2016 6:00 PM"),
+      ],
+      [
+        new QvdDual(42383.25, "2016-1-14"),
+        new QvdDual(42383, "2016-1-14 00:00:00"),
+        new QvdDual(42383.25, "1/14/2016 6:00 AM"),
+      ],
+    ];
+    await new QvdDataFrame(rows, columns).toQvd(filePath, { allowedDir: outputDir });
+
+    const result = await new QvdReader().read(filePath, 0, { dates: true });
+
+    assert.strictEqual(result.error, null);
+    assert.deepStrictEqual(result.data, [
+      {
+        // Timestamps Qlik shows as dates are dates, as shown
+        shownAsDates: new CalendarDate(Date.UTC(2016, 0, 13)),
+        // Text with a time makes timestamps, even at midnight
+        midnights: new Date(Date.UTC(2016, 0, 13)),
+        twelveHour: new Date(Date.UTC(2016, 0, 13, 18)),
+      },
+      {
+        shownAsDates: new CalendarDate(Date.UTC(2016, 0, 14)),
+        midnights: new Date(Date.UTC(2016, 0, 14)),
+        twelveHour: new Date(Date.UTC(2016, 0, 14, 6)),
+      },
+    ]);
+    assert.ok(!(result.data[0].midnights instanceof CalendarDate), "A timestamp isn't a date");
   });
 
   test("Profiling - an all-blank field in the taxi data is neither a date nor a number", async () => {

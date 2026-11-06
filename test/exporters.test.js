@@ -25,6 +25,7 @@ let sqliteExporter;
 let yamlExporter;
 let DataExporter;
 let QvdDataFrame;
+let CalendarDate;
 // QvdReader is async because it's a CJS wrapper around ESM
 let QvdReader;
 let outputDir;
@@ -153,9 +154,9 @@ function decodeAvro(bytes) {
  */
 function makeDateRows() {
   return [
-    { day: new Date(Date.UTC(1756, 0, 1)), at: new Date(Date.UTC(2016, 0, 13, 6, 15)) },
+    { day: new CalendarDate(Date.UTC(1756, 0, 1)), at: new Date(Date.UTC(2016, 0, 13, 6, 15)) },
     // Midnight, in a column whose other values have a time
-    { day: new Date(Date.UTC(2016, 0, 14)), at: new Date(Date.UTC(2016, 0, 14)) },
+    { day: new CalendarDate(Date.UTC(2016, 0, 14)), at: new Date(Date.UTC(2016, 0, 14)) },
   ];
 }
 
@@ -343,6 +344,7 @@ suite("Exporter Test Suite", () => {
     yamlExporter = await import("../src/exporters/yamlExporter.mjs");
     ({ default: DataExporter } = await import("../src/exporters/index.mjs"));
     ({ QvdDataFrame } = await import("qvdjs"));
+    ({ CalendarDate } = await import("../src/cellValue.mjs"));
     QvdReader = await require("../src/qvdReader.cjs");
     outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-viewer-export-"));
   });
@@ -994,7 +996,8 @@ suite("Exporter Test Suite", () => {
     await parquetExporter.exportToParquet(rows, file("parquet"));
     assert.deepStrictEqual(await readParquet(file("parquet")), {
       schema: { day: "DATE", at: "INT64" },
-      rows: rows.map((row) => ({ day: row.day, at: row.at.getTime() })),
+      // parquetjs reads a date back as a plain Date
+      rows: rows.map((row) => ({ day: new Date(row.day.getTime()), at: row.at.getTime() })),
     });
     // Not TIMESTAMP_MILLIS, which says UTC: pyarrow reads it as timestamp[ms, tz=UTC]
     assert.deepStrictEqual(parquetLogicalTypes(file("parquet")), {
@@ -1055,10 +1058,14 @@ suite("Exporter Test Suite", () => {
       "  ('1756-01-01', '2016-01-13 06:15:00'),",
       "  ('2016-01-14', '2016-01-14 00:00:00');",
     ]);
+
+    // A column of timestamps stays one when the rows exported all fall at midnight
+    await postgresExporter.exportToPostgres(rows.slice(1), file("sql"), 0, {});
+    assert.ok(fs.readFileSync(file("sql"), "utf8").includes('  "at" TIMESTAMP NOT NULL'));
   });
 
   test("Excel export - dates are formatted date cells, and a column with one before 1900-03-01 is ISO text", async () => {
-    const since = [new Date(Date.UTC(1900, 2, 1)), new Date(Date.UTC(2016, 0, 14))];
+    const since = [new CalendarDate(Date.UTC(1900, 2, 1)), new CalendarDate(Date.UTC(2016, 0, 14))];
     const rows = makeDateRows().map((row, index) => ({ ...row, since: since[index] }));
     const filePath = path.join(outputDir, "dates.xlsx");
 
@@ -1081,9 +1088,10 @@ suite("Exporter Test Suite", () => {
       [rows[0].at, "yyyy-mm-dd hh:mm:ss"],
       [rows[1].at, "yyyy-mm-dd hh:mm:ss"],
     ]);
+    // exceljs reads a date back as a plain Date
     assert.deepStrictEqual(cells(3), [
-      [since[0], "yyyy-mm-dd"],
-      [since[1], "yyyy-mm-dd"],
+      [new Date(since[0].getTime()), "yyyy-mm-dd"],
+      [new Date(since[1].getTime()), "yyyy-mm-dd"],
     ]);
     assert.deepStrictEqual(rows[0].day, makeDateRows()[0].day, "The rows should stay as they were");
   });
