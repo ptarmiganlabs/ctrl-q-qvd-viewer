@@ -4,6 +4,7 @@ import {
   getTabulatorJs,
   getTabulatorCss,
   getChartJs,
+  getHistogramViewJs,
 } from "../assetLoader.mjs";
 import { escapeHtml } from "./errorTemplate.mjs";
 import DataExporter from "../../exporters/index.mjs";
@@ -29,6 +30,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
   const tabulatorJs = getTabulatorJs(context.extensionPath);
   const tabulatorCss = getTabulatorCss(context.extensionPath);
   const chartJs = getChartJs(context.extensionPath);
+  const histogramViewJs = getHistogramViewJs(context.extensionPath);
 
   // Get the logo URI for the webview
   const logoUri = webview.asWebviewUri(
@@ -1198,7 +1200,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
     ">
         <div style="font-size: 48px; margin-bottom: 20px;">⏳</div>
         <div style="font-size: 18px; color: var(--vscode-foreground);">Loading QVD data...</div>
-        <div style="font-size: 14px; color: var(--vscode-descriptionForeground); margin-top: 10px;">
+        <div id="loading-progress" style="font-size: 14px; color: var(--vscode-descriptionForeground); margin-top: 10px;">
             Large file optimization in progress
         </div>
     </div>
@@ -1401,6 +1403,11 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
     </script>
     
     <script nonce="${nonce}">
+        /* Profiling histogram chart and table, shared with the visual-analysis panel - inlined */
+        ${histogramViewJs}
+    </script>
+    
+    <script nonce="${nonce}">
         const vscode = acquireVsCodeApi();
         const totalRowsInFile = ${totalRows};
         // Updated when the rows arrive via postMessage
@@ -1408,6 +1415,8 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
         let hasMoreRows = ${hasMoreRows};
         // Rows that Load More reads, counted from the start of the file
         let loadMoreRowCount = ${getLoadMoreRowCount(data.length)};
+        // Rows to expect: they arrive in batches, loadInitialData with the first and appendRows with the rest
+        let expectedRows = 0;
         
         // Logging helper - sends logs to extension
         const logger = {
@@ -1427,7 +1436,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
         
         // Data for tables
         // When embedData is false, data will be sent via postMessage after page load
-        const tableData = ${embedData ? JSON.stringify(data) : "[]"};
+        let tableData = ${embedData ? JSON.stringify(data) : "[]"};
         const schemaData = ${JSON.stringify(schemaData)};
         const metadataData = ${JSON.stringify(metadataKV)};
         const lineageData = ${JSON.stringify(lineageData)};
@@ -1647,35 +1656,28 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         logger.log('Received initial data via postMessage');
                         logger.log('Data rows:', message.data ? message.data.length : 0);
                         
-                        // Update global variables with received data
-                        if (message.data) {
-                            // Clear the placeholder and set real data
-                            tableData.length = 0;
-                            tableData.push(...message.data);
-                            currentLoadedRows = message.data.length;
-                        }
+                        // The first batch of rows takes the placeholder's place
+                        tableData = message.data || [];
+                        expectedRows = message.loadedRows !== undefined
+                            ? message.loadedRows
+                            : tableData.length;
                         
                         // Update hasMoreRows, from the message if it says
                         hasMoreRows = message.hasMoreRows !== undefined
                             ? message.hasMoreRows
-                            : currentLoadedRows < totalRowsInFile;
+                            : expectedRows < totalRowsInFile;
                         if (message.loadMoreRowCount !== undefined) {
                             loadMoreRowCount = message.loadMoreRowCount;
                         }
-                        updateLoadedRowsBanner();
+                        receivedRows();
+                        break;
                         
-                        // Hide loading indicator
-                        const loadingIndicator = document.getElementById('loading-indicator');
-                        if (loadingIndicator) {
-                            loadingIndicator.style.display = 'none';
+                    case 'appendRows':
+                        // One row at a time: push(...rows) overflows the stack from about 125,000 rows
+                        for (const row of message.data) {
+                            tableData.push(row);
                         }
-                        
-                        // Initialize tables now that we have data
-                        if (waitingForInitialData) {
-                            waitingForInitialData = false;
-                            initializeTables();
-                            logger.log('Tables initialized with postMessage data');
-                        }
+                        receivedRows();
                         break;
                         
                     default:
@@ -1684,6 +1686,33 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             });
             
             logger.log('Message listener setup complete. Waiting for data:', waitingForInitialData);
+        }
+        
+        // Show the rows once every batch has arrived, and how many have arrived until then
+        function receivedRows() {
+            if (tableData.length < expectedRows) {
+                const progress = document.getElementById('loading-progress');
+                if (progress) {
+                    progress.textContent = \`Received \${tableData.length.toLocaleString()} of \${expectedRows.toLocaleString()} rows\`;
+                }
+                return;
+            }
+            
+            currentLoadedRows = tableData.length;
+            updateLoadedRowsBanner();
+            
+            // Hide loading indicator
+            const loadingIndicator = document.getElementById('loading-indicator');
+            if (loadingIndicator) {
+                loadingIndicator.style.display = 'none';
+            }
+            
+            // Initialize tables now that we have data
+            if (waitingForInitialData) {
+                waitingForInitialData = false;
+                initializeTables();
+                logger.log('Tables initialized with postMessage data');
+            }
         }
         
         // QVD Structure Chart data (pre-calculated)
@@ -3202,119 +3231,15 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         chart.destroy();
                     }
                     
-                    const stats = fieldResult.statistics;
-                    
-                    // Extract numeric values from distribution (don't expand by count to avoid stack overflow)
-                    const uniqueNumericValues = [];
-                    fieldResult.distributions.forEach(dist => {
-                        const value = parseFloat(dist.value);
-                        if (!isNaN(value)) {
-                            uniqueNumericValues.push(value);
-                        }
-                    });
-                    
-                    if (uniqueNumericValues.length === 0) {
+                    // Bins over every numeric value, from the profiler
+                    const histogram = fieldResult.statistics.histogram;
+                    if (!histogram) {
                         logger.error('No numeric values found for histogram');
                         return;
                     }
-                    
-                    // Calculate min/max from actual values we have
-                    const min = Math.min(...uniqueNumericValues);
-                    const max = Math.max(...uniqueNumericValues);
-                    
-                    // Use statistics count for bin calculation
-                    const totalCount = fieldResult.totalRows - fieldResult.nullCount;
-                    const binCount = Math.min(20, Math.ceil(Math.sqrt(totalCount)));
-                    const binWidth = (max - min) / binCount;
-                    
-                    // Initialize bins
-                    const bins = Array(binCount).fill(0);
-                    // Enough decimals to tell neighbouring bin edges apart: one past binWidth's first significant digit
-                    const decimals = binWidth > 0 && isFinite(binWidth)
-                        ? Math.min(20, Math.max(1, 1 - Math.floor(Math.log10(binWidth))))
-                        : 1;
-                    const binRanges = [];
 
-                    // Work out each bin's edges, for the chart labels and the table
-                    for (let i = 0; i < binCount; i++) {
-                        const binStart = min + i * binWidth;
-                        const binEnd = min + (i + 1) * binWidth;
-                        binRanges.push({ from: binStart.toFixed(decimals), to: binEnd.toFixed(decimals) });
-                    }
-                    
-                    // Count values in each bin using the distribution counts
-                    fieldResult.distributions.forEach(dist => {
-                        const value = parseFloat(dist.value);
-                        if (!isNaN(value)) {
-                            let binIndex;
-                            if (binWidth === 0) {
-                                binIndex = 0;
-                            } else {
-                                binIndex = Math.floor((value - min) / binWidth);
-                                if (binIndex >= binCount) binIndex = binCount - 1;
-                            }
-                            bins[binIndex] += dist.count;
-                        }
-                    });
-                    
-                    chart = new Chart(ctx, {
-                        type: 'bar',
-                        data: {
-                            labels: binRanges.map(range => \`\${range.from} – \${range.to}\`),
-                            datasets: [{
-                                label: 'Frequency',
-                                data: bins,
-                                backgroundColor: 'rgba(75, 192, 192, 0.6)',
-                                borderColor: 'rgba(75, 192, 192, 1)',
-                                borderWidth: 1
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: true,
-                            plugins: {
-                                legend: {
-                                    display: false
-                                },
-                                title: {
-                                    display: true,
-                                    text: 'Histogram: Value Distribution',
-                                    color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
-                                }
-                            },
-                            scales: {
-                                y: {
-                                    beginAtZero: true,
-                                    ticks: {
-                                        color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
-                                    },
-                                    grid: {
-                                        color: 'rgba(128, 128, 128, 0.2)'
-                                    },
-                                    title: {
-                                        display: true,
-                                        text: 'Frequency',
-                                        color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
-                                    }
-                                },
-                                x: {
-                                    ticks: {
-                                        color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground'),
-                                        maxRotation: 45,
-                                        minRotation: 45
-                                    },
-                                    grid: {
-                                        color: 'rgba(128, 128, 128, 0.2)'
-                                    },
-                                    title: {
-                                        display: true,
-                                        text: 'Value Range',
-                                        color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
-                                    }
-                                }
-                            }
-                        }
-                    });
+                    // Shared with the visual-analysis panel: see histogramView.js
+                    chart = renderHistogramChart(ctx, histogram);
                     
                     // Update chart in tracking array
                     const chartIndex = profilingCharts.findIndex(c => c.canvas === canvas);
@@ -3322,33 +3247,11 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         profilingCharts[chartIndex] = chart;
                     }
                     
-                    // Update table with histogram data (using totalCount already declared above)
-                    const histogramData = binRanges.map((range, i) => ({
-                        from: range.from,
-                        to: range.to,
-                        count: bins[i],
-                        percentage: totalCount > 0 ? ((bins[i] / totalCount) * 100).toFixed(2) : '0.00'
-                    }));
-                    
                     if (profilingTable) {
                         profilingTable.destroy();
                     }
                     
-                    profilingTable = new Tabulator(\`#profiling-table-\${index}\`, {
-                        data: histogramData,
-                        columns: [
-                            { title: 'From', field: 'from', headerSort: true, widthGrow: 1 },
-                            { title: 'To', field: 'to', headerSort: true, widthGrow: 1 },
-                            { title: 'Count', field: 'count', headerSort: true, widthGrow: 1 },
-                            { title: 'Percentage', field: 'percentage', headerSort: true, widthGrow: 1, 
-                              formatter: (cell) => cell.getValue() + '%' }
-                        ],
-                        layout: 'fitDataStretch',
-                        pagination: true,
-                        paginationSize: 50,
-                        paginationSizeSelector: [25, 50, 100],
-                        paginationCounter: 'rows'
-                    });
+                    profilingTable = renderHistogramTable(\`#profiling-table-\${index}\`, histogram);
                 };
                 
                 const createFrequencyChart = () => {

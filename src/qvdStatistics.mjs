@@ -243,6 +243,65 @@ function calculateKurtosis(values, mean, stdDev) {
 }
 
 /**
+ * Sort a field's numeric values into up to 20 bins of equal width, for the
+ * profiling histogram
+ * @param {number[]} sortedValues - Every numeric value of the field, in ascending order
+ * @param {number} totalCount - Rows with a value, numeric or not: the percentages are shares of these
+ * @returns {{labels: string[], counts: number[], rows: Array<{from: string, to: string, count: number, percentage: string}>}|null}
+ *   The chart's labels and bar heights and the histogram table's rows, or null when there are no values
+ */
+export function calculateHistogram(sortedValues, totalCount) {
+  if (!sortedValues || sortedValues.length === 0) {
+    return null;
+  }
+
+  const percentage = (count) =>
+    Number.isFinite(totalCount) && totalCount > 0
+      ? ((count / totalCount) * 100).toFixed(2)
+      : "0.00";
+  const min = sortedValues[0];
+  const max = sortedValues[sortedValues.length - 1];
+
+  // A single distinct value gets a single bin, labelled with the value itself
+  if (min === max) {
+    const value = String(min);
+    const count = sortedValues.length;
+    return {
+      labels: [value],
+      counts: [count],
+      rows: [{ from: value, to: value, count, percentage: percentage(count) }],
+    };
+  }
+
+  const binCount = Math.min(20, Math.ceil(Math.sqrt(sortedValues.length)));
+  const binWidth = (max - min) / binCount;
+  // Enough decimals to tell neighbouring bin edges apart: one past binWidth's first significant digit
+  const decimals = Math.min(
+    20,
+    Math.max(1, 1 - Math.floor(Math.log10(binWidth)))
+  );
+
+  const counts = Array(binCount).fill(0);
+  for (const value of sortedValues) {
+    // The maximum falls on the last bin's upper edge
+    counts[Math.min(binCount - 1, Math.floor((value - min) / binWidth))]++;
+  }
+
+  const rows = counts.map((count, i) => ({
+    from: (min + i * binWidth).toFixed(decimals),
+    to: (min + (i + 1) * binWidth).toFixed(decimals),
+    count,
+    percentage: percentage(count),
+  }));
+
+  return {
+    labels: rows.map((row) => `${row.from} – ${row.to}`),
+    counts,
+    rows,
+  };
+}
+
+/**
  * Calculate comprehensive statistics for numeric field
  * @param {Array<Object>} data - Array of data rows
  * @param {string} fieldName - Field name to analyze
@@ -341,6 +400,9 @@ export function calculateStatistics(data, fieldName) {
       skewness,
       kurtosis,
     },
+
+    // Histogram bins over every numeric value, for the profiling chart and table
+    histogram: calculateHistogram(sortedValues, totalNonNull),
 
     // Data quality
     quality: {

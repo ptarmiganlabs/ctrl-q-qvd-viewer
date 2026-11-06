@@ -29,4 +29,16 @@ export default [
       "valid-typeof": "warn",
     },
   },
+  {
+    // Scripts the webviews inline: plain browser scripts, run after Chart.js and Tabulator
+    files: ["src/webview/client/**/*.js"],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        Chart: "readonly",
+        Tabulator: "readonly",
+      },
+      sourceType: "script",
+    },
+  },
 ];

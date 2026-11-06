@@ -5,6 +5,7 @@ import { getErrorHtml } from "./webview/templates/errorTemplate.mjs";
 import { getHtmlForWebview } from "./webview/templates/mainTemplate.mjs";
 import { setupMessageHandler } from "./webview/messageHandler.mjs";
 import { getLoadMoreRowCount } from "./webview/loadMore.mjs";
+import { splitRowsIntoBatches } from "./webview/rowBatches.mjs";
 import logger from "./logger.mjs";
 
 /**
@@ -93,6 +94,8 @@ class QvdEditorProvider {
 
   /**
    * Update webview content with QVD data
+   * @returns {Promise<{rowsSent: Promise<void>}|undefined>} Resolves once the HTML
+   *   is set; rowsSent settles once every row has been posted to the webview
    */
   async updateWebview(filePath, webview, maxRows) {
     const totalStart = performance.now();
@@ -165,34 +168,66 @@ class QvdEditorProvider {
         ).toFixed(0)}ms`
       );
 
-      // Send data via postMessage to avoid HTML size limits
-      // This fixes the "Unable to retrieve document" error for large QVDs
-      logger.log(`Sending data to webview via postMessage...`);
-      const postStart = performance.now();
-      webview.postMessage({
-        command: "loadInitialData",
-        data: result.data,
-        metadata: result.metadata,
-        totalRows: result.totalRows,
-        hasMoreRows: result.data.length < result.totalRows,
-        loadMoreRowCount: getLoadMoreRowCount(result.data.length),
+      // Send the rows without waiting for them here: VS Code creates a custom
+      // editor's webview only once resolveCustomEditor has returned, and until
+      // then a postMessage to it does not resolve
+      const rowsSent = this.postRows(webview, result).catch((error) => {
+        logger.error(`Exception while sending rows of QVD file: ${filePath}`, error);
+        webview.html = getErrorHtml(error.message);
       });
-      logger.log(
-        `⏱️ [TIMING] postMessage: ${(performance.now() - postStart).toFixed(
-          0
-        )}ms`
-      );
 
       const totalTime = performance.now() - totalStart;
       logger.log(
         `⏱️ [TIMING] ✅ TOTAL updateWebview: ${totalTime.toFixed(0)}ms`
       );
-
-      logger.log(`Data sent to webview successfully`);
+      return { rowsSent };
     } catch (error) {
       logger.error(`Exception while processing QVD file: ${filePath}`, error);
       webview.html = getErrorHtml(error.message);
     }
+  }
+
+  /**
+   * Send the rows to the webview via postMessage, in batches
+   * @param {object} webview - The webview to send them to
+   * @param {object} result - The QVD read result
+   * @returns {Promise<void>} Settles once every batch has been posted, or the webview has gone
+   */
+  async postRows(webview, result) {
+    // Send data via postMessage to avoid HTML size limits
+    // This fixes the "Unable to retrieve document" error for large QVDs
+    // The rows go in batches: VS Code turns each message into one JSON string,
+    // which for every row of a large file is longer than a string can be
+    logger.log(`Sending data to webview via postMessage...`);
+    const postStart = performance.now();
+    const batches = splitRowsIntoBatches(result.data);
+    let delivered = await webview.postMessage({
+      command: "loadInitialData",
+      data: batches[0],
+      loadedRows: result.data.length,
+      metadata: result.metadata,
+      totalRows: result.totalRows,
+      hasMoreRows: result.data.length < result.totalRows,
+      loadMoreRowCount: getLoadMoreRowCount(result.data.length),
+    });
+    // postMessage gives false once the webview is closed
+    for (let i = 1; delivered && i < batches.length; i++) {
+      delivered = await webview.postMessage({
+        command: "appendRows",
+        data: batches[i],
+      });
+    }
+    logger.log(
+      `⏱️ [TIMING] postMessage: ${(performance.now() - postStart).toFixed(
+        0
+      )}ms, ${batches.length} message(s)`
+    );
+
+    logger.log(
+      delivered
+        ? `Data sent to webview successfully`
+        : `Webview closed before all data was sent`
+    );
   }
 }
 

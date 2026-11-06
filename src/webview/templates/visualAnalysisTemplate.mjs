@@ -3,6 +3,7 @@ import {
   getTabulatorJs,
   getTabulatorCss,
   getChartJs,
+  getHistogramViewJs,
 } from "../assetLoader.mjs";
 import { escapeHtml } from "./errorTemplate.mjs";
 import { createHelpIconHtml } from "../qualityMetricHelp.mjs";
@@ -25,6 +26,7 @@ export function getVisualAnalysisHtml(
   const tabulatorJs = getTabulatorJs(extensionPath);
   const tabulatorCss = getTabulatorCss(extensionPath);
   const chartJs = getChartJs(extensionPath);
+  const histogramViewJs = getHistogramViewJs(extensionPath);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1477,6 +1479,11 @@ export function getVisualAnalysisHtml(
     </script>
     
     <script nonce="${nonce}">
+        /* Profiling histogram chart and table, shared with the QVD editor */
+        ${histogramViewJs}
+    </script>
+    
+    <script nonce="${nonce}">
         const fieldResult = ${JSON.stringify(fieldResult)};
         
         // Create chart
@@ -1489,146 +1496,20 @@ export function getVisualAnalysisHtml(
                 currentChart.destroy();
             }
             
-            const stats = fieldResult.statistics;
-            
-            // Extract numeric values from distribution (unique values only, no expansion)
-            const uniqueNumericValues = [];
-            fieldResult.distributions.forEach(dist => {
-                const value = parseFloat(dist.value);
-                if (!isNaN(value)) {
-                    uniqueNumericValues.push(value);
-                }
-            });
-            
-            if (uniqueNumericValues.length === 0) {
+            // Bins over every numeric value, from the profiler
+            const histogram = fieldResult.statistics.histogram;
+            if (!histogram) {
                 return;
             }
-            
-            // Use min/max from the actual values in distribution, not theoretical stats
-            const min = Math.min(...uniqueNumericValues);
-            const max = Math.max(...uniqueNumericValues);
-            
-            // Use total count for bin calculation (excluding nulls)
-            const totalCount = fieldResult.totalRows - fieldResult.nullCount;
-            const binCount = Math.min(20, Math.ceil(Math.sqrt(totalCount)));
-            const binWidth = (max - min) / binCount;
-            
-            // Initialize bins
-            const bins = Array(binCount).fill(0);
-            // Enough decimals to tell neighbouring bin edges apart: one past binWidth's first significant digit
-            const decimals = binWidth > 0 && isFinite(binWidth)
-                ? Math.min(20, Math.max(1, 1 - Math.floor(Math.log10(binWidth))))
-                : 1;
-            const binRanges = [];
 
-            // Work out each bin's edges, for the chart labels and the table
-            for (let i = 0; i < binCount; i++) {
-                const binStart = min + i * binWidth;
-                const binEnd = min + (i + 1) * binWidth;
-                binRanges.push({ from: binStart.toFixed(decimals), to: binEnd.toFixed(decimals) });
-            }
-            
-            // Count values in each bin using distribution counts
-            fieldResult.distributions.forEach(dist => {
-                const value = parseFloat(dist.value);
-                if (!isNaN(value)) {
-                    let binIndex;
-                    if (binWidth === 0) {
-                        binIndex = 0;
-                    } else {
-                        binIndex = Math.floor((value - min) / binWidth);
-                        if (binIndex >= binCount) binIndex = binCount - 1;
-                    }
-                    bins[binIndex] += dist.count;
-                }
-            });
-            
-            currentChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: binRanges.map(range => \`\${range.from} – \${range.to}\`),
-                    datasets: [{
-                        label: 'Frequency',
-                        data: bins,
-                        backgroundColor: 'rgba(75, 192, 192, 0.6)',
-                        borderColor: 'rgba(75, 192, 192, 1)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        title: {
-                            display: true,
-                            text: 'Histogram: Value Distribution',
-                            color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
-                            },
-                            grid: {
-                                color: 'rgba(128, 128, 128, 0.2)'
-                            },
-                            title: {
-                                display: true,
-                                text: 'Frequency',
-                                color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
-                            }
-                        },
-                        x: {
-                            ticks: {
-                                color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground'),
-                                maxRotation: 45,
-                                minRotation: 45
-                            },
-                            grid: {
-                                color: 'rgba(128, 128, 128, 0.2)'
-                            },
-                            title: {
-                                display: true,
-                                text: 'Value Range',
-                                color: getComputedStyle(document.body).getPropertyValue('--vscode-foreground')
-                            }
-                        }
-                    }
-                }
-            });
-            
-            // Update table with histogram data (using totalCount already declared above)
-            const histogramData = binRanges.map((range, i) => ({
-                from: range.from,
-                to: range.to,
-                count: bins[i],
-                percentage: totalCount > 0 ? ((bins[i] / totalCount) * 100).toFixed(2) : '0.00'
-            }));
+            // Shared with the QVD editor: see histogramView.js
+            currentChart = renderHistogramChart(ctx, histogram);
             
             if (currentTable) {
                 currentTable.destroy();
             }
             
-            currentTable = new Tabulator('#profiling-table', {
-                data: histogramData,
-                columns: [
-                    { title: 'From', field: 'from', headerSort: true, widthGrow: 1 },
-                    { title: 'To', field: 'to', headerSort: true, widthGrow: 1 },
-                    { title: 'Count', field: 'count', headerSort: true, widthGrow: 1 },
-                    { title: 'Percentage', field: 'percentage', headerSort: true, widthGrow: 1, 
-                      formatter: (cell) => cell.getValue() + '%' }
-                ],
-                layout: 'fitDataStretch',
-                pagination: true,
-                paginationSize: 50,
-                paginationSizeSelector: [25, 50, 100],
-                paginationCounter: 'rows'
-            });
+            currentTable = renderHistogramTable('#profiling-table', histogram);
         }
         
         function createFrequencyChart() {

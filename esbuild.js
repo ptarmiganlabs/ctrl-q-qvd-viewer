@@ -57,7 +57,8 @@ const copySqlWasmPlugin = {
  * Copy the libraries the webview inlines, Tabulator and Chart.js, into
  * dist/webview, where the webview templates read them from. Taking them from
  * their npm packages keeps their versions in package.json, where update tools
- * see them.
+ * see them. The webviews' own shared scripts, in src/webview/client, are
+ * copied there too.
  * @type {import('esbuild').Plugin}
  */
 const copyWebviewLibsPlugin = {
@@ -79,6 +80,13 @@ const copyWebviewLibsPlugin = {
         "chart.umd.js": path.join(
           path.dirname(require.resolve("chart.js")),
           "chart.umd.js"
+        ),
+        "histogramView.js": path.join(
+          __dirname,
+          "src",
+          "webview",
+          "client",
+          "histogramView.js"
         ),
       };
       for (const [name, source] of Object.entries(libs)) {

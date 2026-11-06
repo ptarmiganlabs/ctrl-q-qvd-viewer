@@ -62,3 +62,14 @@ export function getChartJs(extensionPath) {
   const chartPath = join(extensionPath, "dist", "webview", "chart.umd.js");
   return readFileSync(chartPath, "utf8");
 }
+
+/**
+ * Get the profiling histogram's chart and table script, shared by both
+ * webviews, inlined as string
+ * @param {string} extensionPath - The extension path
+ * @returns {string} Script content
+ */
+export function getHistogramViewJs(extensionPath) {
+  const scriptPath = join(extensionPath, "dist", "webview", "histogramView.js");
+  return readFileSync(scriptPath, "utf8");
+}

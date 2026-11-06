@@ -42,9 +42,6 @@ export function setupMessageHandler(
             logger.log(logMessage, message.data);
         }
         break;
-      case "refresh":
-        await updateWebviewFn(filePath, webviewPanel.webview, maxRows);
-        break;
       case "openAbout":
         vscode.commands.executeCommand("ctrl-q-qvd-viewer.about");
         break;
