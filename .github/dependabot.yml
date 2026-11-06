@@ -1,0 +1,47 @@
+# Weekly version updates. Security updates are switched on in the repository's settings.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # A release has to be a week old, as npm's min-release-age = 7 asks.
+    # qvdjs is ours, so its releases come through at once.
+    cooldown:
+      default-days: 7
+      exclude:
+        - qvdjs
+    # Raise the range in package.json too, not only the lockfile.
+    versioning-strategy: increase
+    # fix(deps) for what esbuild bundles into the extension, so release-please lists it.
+    # chore(deps-dev) for the tooling, which never reaches users.
+    # Merge these PRs with rebase: the PR title is the same subject, and a merge commit
+    # repeats it, so release-please would list each update twice.
+    commit-message:
+      prefix: fix
+      prefix-development: chore
+      include: scope
+    # Bundled libraries get a PR each, so each one is checked on its own.
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+    ignore:
+      # Types for the Node.js that the minimum VS Code (engines.vscode) runs extensions on:
+      # 22.15 for VS Code 1.101
+      - dependency-name: "@types/node"
+        versions: [">=22.16.0"]
+      # Moves only together with engines.vscode: vsce refuses to package when it is newer
+      - dependency-name: "@types/vscode"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+    groups:
+      github-actions:
+        patterns: ["*"]

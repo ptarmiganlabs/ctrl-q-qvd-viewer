@@ -30,7 +30,6 @@ package-lock.json
 # Release and CI/CD
 .release-please-manifest.json
 release-please-config.json
-renovate.json
 
 # Git files
 .git

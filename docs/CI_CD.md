@@ -254,7 +254,8 @@ Add these to your README.md:
 
 ### Dependency Security
 
-- Dependabot enabled by default
+- Dependabot opens version updates every week, as set in `.github/dependabot.yml`, and security updates when an advisory affects a dependency
+- Merge Dependabot's PRs with rebase. Their title is a Conventional Commits subject, so a merge commit would put each update in the changelog twice
 - Review and merge security updates
 - Keep Node.js version current
 - Monitor SBOM for vulnerabilities
