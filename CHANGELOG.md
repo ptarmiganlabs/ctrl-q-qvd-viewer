@@ -4,6 +4,128 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [1.4.0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.3.2...v1.4.0) (2026-11-06)
+
+
+### Features
+
+* Add QVD structure visualization and file size calculation in profiling tab ([cecab7e](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/cecab7ebef43b903b1d98ec68893846da306b013))
+* **export:** add a setting for a byte order mark in CSV files ([f34af51](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/f34af51f2ad17277bc6196213db54dff423affb3))
+* **export:** say how many timestamps the time zone's DST moved or left ambiguous ([d97e7bc](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/d97e7bc466eb2ce0efd23bfe8f98cc18b750a68c))
+* **export:** store timestamps as UTC instants in a time zone the export names ([2f0b36f](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/2f0b36f2b2986fb3e4182bd9aca32e758ab82b96))
+
+
+### Bug Fixes
+
+* **ci:** publish to the Marketplace with Trusted Publishing instead of a PAT ([e3145d2](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/e3145d261813da0bee25679b92977f7904196d33))
+* **deps:** update js-yaml and the test runner, apply compatible security fixes ([b2e77c5](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/b2e77c534cce0f4a329bf2bf39b62edf9444dc60))
+* **deps:** update js-yaml to 5.5.0 ([2d6707b](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/2d6707b38112b419b83f93ca91ccb74f9e4880e8))
+* **deps:** update Tabulator to 6.7.1 ([af3de34](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/af3de3496206d1394eeb754fe8ee8609d6941c65))
+* **deps:** update the bundled export and chart libraries ([97bd04b](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/97bd04b56ea9a7ea67131b1c3db3497985c80cfc))
+* **deps:** upgrade qvdjs to 4.0.2 and require VS Code 1.101 ([b2f404c](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/b2f404ce0986389d6e7235dc3852c59da3d13d20))
+* **export:** ask for the time zone whenever the rows exported hold a timestamp ([ddaec50](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/ddaec5023d93aae1075176ccc1bcd9a9544547ee))
+* **export:** export a QVD's dates and timestamps as dates, not as text ([14b7d33](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/14b7d332af2baa546b61017a9e9f23c081ae0286)), closes [#165](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/165)
+* **export:** export a timestamp field named constructor or toString in a time zone ([2775f7e](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/2775f7e6e887c9e2975e27db4d49e921f3576d9b))
+* **export:** keep a missing sql.js wasm file from failing every later SQLite export ([3614b12](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/3614b12a5c0922518d698dd23ee72188e71e3220))
+* **export:** keep the time of timestamps that Qlik shows as days ([f12200b](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/f12200b882e32c24b41f30c15e9b2500dc878c69))
+* **export:** leave blank cells in Excel's numeric columns empty ([1771f6c](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/1771f6c736ddc4e4d6fd0d0d051181a222ecdad8)), closes [#154](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/154)
+* **export:** mark Parquet timestamps as having no time zone ([4cd4b90](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/4cd4b9004a7e49ac6ddb32708f543a5581c5d836))
+* **export:** price CSV exports by the chunk they write ([7d1a0bb](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/7d1a0bb6d56b73f96ff323085ba491c678ebb632)), closes [#189](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/189)
+* **export:** quote YAML text such as 8E5597 that reads as a number ([a5f71c5](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/a5f71c527d3ce35cb90655aabd2f984b3e9265d0)), closes [#154](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/154)
+* **export:** replace a file only once its CSV export is complete ([5fb5db2](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/5fb5db20871cbee06687896f9f4829f2cfb16dad))
+* **export:** resolve Avro export only after the file is written and closed ([a653108](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/a6531085f3e629267cf91572b467bc9b4127ff0e))
+* **export:** ship sql.js's wasm file so SQLite export works in the packaged extension ([b9d6fa7](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/b9d6fa7b08ee2112d2f6c4a7076bf6c11a18bc06))
+* **export:** show milliseconds in Excel timestamps that have them ([e8f5959](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/e8f5959dbc730830f04c6d4d6095dde7913fb358)), closes [#165](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/165)
+* **export:** start CSV files with the header row, not six comment lines ([9b51328](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/9b5132899f1140fdb2fc12c25b669a45e8a1676f))
+* **export:** stop spreadsheets running CSV text as formulas ([6fd2e31](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/6fd2e3109436ee4f111bee9f959a769677191b2e))
+* **export:** store integers beyond 2^53 as doubles instead of wrapping ([39101ba](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/39101ba3bc407bcf86e51f10ec9d8a85a746ae33)), closes [#154](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/154)
+* **export:** take Avro columns from the first row, as the SQLite export does ([0c9d2b1](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/0c9d2b16b85365dc7d93175f775ea7210cc50ff1))
+* **export:** take date or timestamp from the QVD's field, not its rows ([516e0e6](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/516e0e6ba7335d3a19282eb243d51d0696e92cb2)), closes [#165](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/165)
+* **export:** take the CSV header row from the QVD's fields ([9597da1](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/9597da1d13d7532ac1652c643d3e184796b5faf9))
+* **export:** write blanks in a numeric column as NULL, keeping its type ([409acd2](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/409acd22bfae389e9e5f41cfd3f9aefb29dd30e0)), closes [#154](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/154)
+* **export:** write dates as dates, and timestamps without a time zone ([7438123](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/7438123f5509bcf4a6e0896568eefb3d2f81a569)), closes [#165](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/165)
+* **profiling:** bin the histogram in the profiler, from every numeric value ([b8a45a1](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/b8a45a1f109de9c9a5d4b63d6e7c05a6a1a42a57))
+* **profiling:** count empty strings once in the fill rate ([7ea9ac1](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/7ea9ac1c7eb7d2b6df2ce09d910e49b1ac32758c)), closes [#157](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/157)
+* **profiling:** count text lengths in characters, as Qlik's Len() does ([a238133](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/a2381335b658596c6bad97151a74e700fee8b852))
+* **profiling:** find text lengths' minimum and maximum without spreading ([e7b6b3b](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/e7b6b3bd460ae7bbdd50bed811bde46e58307eb1))
+* **profiling:** stop penalising nulls twice through the fill rate ([39ac4c8](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/39ac4c842613ad62db75627bdf5cf067ee0ea493)), closes [#157](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/157)
+* **profiling:** stop profiling codes and blank text as numbers ([2f75999](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/2f75999a045d259bcad458e8f74a189af4f6ae7e)), closes [#154](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/154)
+* **reader:** count significant digits without trailing zeros ([85d107d](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/85d107df9ca6de51feed058ad2934f224a137ae5)), closes [#154](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/154)
+* **reader:** keep decimals such as 0.0000001 as text, not as 1e-7 ([cfae136](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/cfae1364219f5a82812f75ed5d394deae0c9eb1a)), closes [#154](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/154)
+* **reader:** keep decimals too small for a double as text, not as 0 ([f08fe91](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/f08fe91d769976ba7972aff72f07db4571ca4491))
+* **reader:** keep opening QVDs reached through a symlink with qvdjs 4 ([7278652](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/72786520e014e1b720275492049a7c424fe4d80c))
+* **reader:** price every read against the heap left, and give up a closed editor's reads ([7c942ef](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/7c942ef6ecc8c46187219a0d6efa310373a32f9d)), closes [#189](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/189)
+* **reader:** price held text, check exports when they start, and validate row limits ([6854b70](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/6854b705c05c54e2ef75fc31801fbed4650a8096)), closes [#189](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/189)
+* **reader:** price the Dates an export read builds ([4befa0c](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/4befa0c454b5edf7aada20d7795e084ddaa096ac)), closes [#165](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/165)
+* **reader:** read decimals such as 0.0000001 as numbers, written as 1e-7 ([f65b8a1](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/f65b8a1bc607732a74b2208ef7b9ba774f9b49eb))
+* **reader:** read NaN and Infinity stored in a QVD as empty cells ([5f0d54c](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/5f0d54c6255fd7e7e3f25beb1875196f76b259a4)), closes [#154](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/154)
+* **reader:** say what didn't fit, and book reads given up while running ([91fbd5d](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/91fbd5d7fa6b2879cb2cf885bf1dc52863d72fdb)), closes [#189](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/189)
+* **reader:** stop full and side-by-side QVD reads running the extension host out of memory ([9d79084](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/9d7908413e88f03d224b29329de7a1b1ce222926)), closes [#189](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/189)
+* **reader:** stop reading codes such as 0901 and blank cells as numbers ([ca62754](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/ca6275462d3ffe92ec65f4b02ff6f96525c742e8)), closes [#154](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/154)
+* **webview:** build histogram table rows from the bin edges ([5a8d73f](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/5a8d73fe7f9a2b7c6abb23baf854c7b19729791d))
+* **webview:** give the page-size dropdown the VS Code dropdown colours ([9e8e789](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/9e8e7897c60be9cbd647723b084787b625df642a))
+* **webview:** keep the page when Load More or Load All is refused for memory ([7154492](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/7154492d0fa46f5c04cfdf420113a1d74a476879)), closes [#189](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/189)
+* **webview:** send the loaded rows to the webview in batches ([998e4b9](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/998e4b9d5e8582bfad6ae7a644452349010c61db))
+* **webview:** show the real loaded row count once the rows arrive ([f34260b](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/f34260b24a43e89f142e0e0bb4f64e719606f557))
+* **webview:** size histogram bin decimals to the bin width ([9f97a67](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/9f97a67a6a3b59c8c6aedb9e68b81b8f67d07df8))
+* **webview:** style disabled pager buttons by their disabled attribute ([954461a](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/954461a71a35a18f6ff2ca7b81b2ce039245e39f))
+* **webview:** take Load More's row count from one helper ([c0af01e](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/c0af01ea4bb05a0a200655d52913ded3cc9fae32))
+* **webview:** take the loaded rows without spreading them into push() ([2eff425](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/2eff425ffb9b89c62888ac9472283abf96d5d401))
+
+
+### Documentation
+
+* Add QVD file format specification ([b2ecda6](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/b2ecda6fa36e23f8c7c250d88a4b6920551be33c))
+* describe how dates and timestamps are exported ([60545c8](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/60545c8330106d59cc1753898098dd7703ef0e76)), closes [#165](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/165)
+* describe how text that looks like a number is read and exported ([78b081d](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/78b081db67b94b8140907022ae960f4a883593e5)), closes [#154](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/154)
+* describe how to export timestamps in a named time zone ([65dd7ec](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/65dd7ec422efd16ba9f3253a2e2d2066888139b3))
+* describe the CSV export and its settings ([d79c90c](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/d79c90cc1309a4df96824393b3f9e1f5d04ff36f))
+* describe Trusted Publishing setup for Marketplace releases ([1a5acc7](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/1a5acc7fa88707c29e3f96f91f33a4240664abae))
+* Enhance QVD_FORMAT.md with detailed explanations on field and index offsets ([209a45a](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/209a45aaf5016ab892d71f27af94d45ab641de91))
+* Revise QVD File Format Specification with detailed sections and improved structure ([9053900](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/9053900364b525c63fd38f87af9ef062941e3331))
+* say how a field's dates or timestamps are told apart, and Excel's milliseconds ([112d350](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/112d350888825a249dbb94fd6355c4fdb9870c95)), closes [#165](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/165)
+* Update README to refine description of the extension ([b394e04](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/b394e047d40fe6ad187c1d4e4f0fbf3896839e7c))
+
+
+### Miscellaneous
+
+* **deps:** match @types/node to the Node that VS Code 1.101 runs ([e0d2b5f](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/e0d2b5f0d427ca59d43333517263127c25ce8e55))
+* **deps:** update @vscode/vsce to 4.1.0 ([78c5836](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/78c58367e9b5df668bda283512f602e315bbd0d7))
+* **deps:** update esbuild to 0.28.2 ([cb284c3](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/cb284c30aa78807db44b238724d42819339cda57))
+* **deps:** update eslint to 10 ([90e269a](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/90e269a609688418307a492e2a5e3699114d83b1))
+* drop TypeScript and npm-run-all, which nothing uses ([d2dd827](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/d2dd827b145580bde0b2ad9a42ed137fa229b099))
+* move dependency updates from Renovate to Dependabot ([fd8ce3f](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/fd8ce3f8737958a9cb8829a252a84b3a2e8138d2))
+* Update .vscodeignore to include and exclude relevant files and directories ([cd3b1e8](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/cd3b1e896a639e25d59bf39716a63c082f4d5088))
+
+
+### Code Refactoring
+
+* **export:** apply the DST rule in one place, and look each timestamp up once ([6440979](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/6440979fff9a822c8eac881770d286f4ad06d84c))
+* **export:** give the typed exporters one column-type scan ([5b88d01](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/5b88d013ed2070be0b6acc9d6316ea8e9902a49b)), closes [#154](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/154)
+* **export:** keep each export format's details in one table ([8aa05d4](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/8aa05d4530f53d01625c909786fa112efb7a93e0)), closes [#165](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/165)
+* **webview:** drop the resizableColumns table option ([8d67d3c](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/8d67d3cd7396353591be1d81ecd5dbe83d937b56))
+* **webview:** remove the refresh message, which nothing sends ([47dd2dd](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/47dd2dda48caa9f0eb171fd77917c2d92bc0dffa))
+* **webview:** share the histogram binning between both webviews ([1d76979](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/1d769797f915165cfa1e6c4f8fb60b0e4981738b))
+* **webview:** share the histogram's chart and table as one script ([bd881b1](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/bd881b1d6eb914e85edcdc03ce09012189df4878))
+
+
+### Tests
+
+* Add performance testing suite for large QVD files ([5a2d139](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/5a2d139a370682be97eea70fd1a5377a34ef6427))
+* check which exports read dates, and that finding them can stop ([bd2d024](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/bd2d024739b4bbfe180bd54e9d48a19076dcae23)), closes [#165](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/165)
+* check zoned exports, their DST rule, and the time zone question ([6df2ab2](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/6df2ab21ff49a77add0fff4f7fc97e3514a66a47))
+* export the QVD with skipped and repeated times to Avro and Arrow too ([22a3f0a](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/22a3f0afb4af642d5204552a349ffc678f197d72))
+* **export:** check blank cells next to dates in the typed exports ([ea05d15](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/ea05d155bbf41ef8eb87ce12922c890fce35fd89)), closes [#154](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/154)
+* give VS Code a short user data directory in test runs ([5056487](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/5056487a0f816d6c1c4e9241ca2ddb26a1db8479))
+
+
+### Build System
+
+* **deps:** bump @azure/msal-node ([99ab849](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/99ab8497a7d8ed8e272baa1cf609add6eeb40047))
+* **lint:** reject spread arguments in the extension's code ([64cab7e](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/64cab7e332454caaeaa3520dd02a428e456c693d))
+* take the webview's Tabulator and Chart.js from npm at build time ([01b3058](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/01b3058905a5722ce610d954c53e9537364dbd41))
+* test the bundled SQLite exporter with esbuild.js's own options ([516f85c](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/516f85c62eb180da4e285c5f4acf60dd727b7b98))
+
 ## [1.3.2](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.3.1...v1.3.2) (2025-11-05)
 
 ### Bug Fixes
