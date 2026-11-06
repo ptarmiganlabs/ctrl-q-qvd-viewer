@@ -9,7 +9,6 @@ import { escapeHtml } from "./errorTemplate.mjs";
 import DataExporter from "../../exporters/index.mjs";
 import { metricHelpContent } from "../qualityMetricHelp.mjs";
 import { getLoadMoreRowCount } from "../loadMore.mjs";
-import { computeHistogram } from "../histogram.mjs";
 
 /**
  * Generate HTML for webview with tabbed interface and Tabulator
@@ -1437,9 +1436,6 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
         const availableFields = ${JSON.stringify(
           metadata && metadata.fields ? metadata.fields.map((f) => f.name) : []
         )};
-        
-        // Histogram binning, shared with the visual-analysis panel: see histogram.mjs
-        const computeHistogram = ${computeHistogram.toString()};
         
         let currentContextCell = null;
         let dataTable, schemaTable, metadataTable, lineageTable;
@@ -3209,8 +3205,8 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         chart.destroy();
                     }
                     
-                    // Bin the field's numeric values, excluding nulls
-                    const histogram = computeHistogram(fieldResult.distributions, fieldResult.totalRows - fieldResult.nullCount);
+                    // Bins over every numeric value, from the profiler
+                    const histogram = fieldResult.statistics.histogram;
                     if (!histogram) {
                         logger.error('No numeric values found for histogram');
                         return;

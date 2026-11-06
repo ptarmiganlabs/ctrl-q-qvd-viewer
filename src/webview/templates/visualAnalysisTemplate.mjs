@@ -6,7 +6,6 @@ import {
 } from "../assetLoader.mjs";
 import { escapeHtml } from "./errorTemplate.mjs";
 import { createHelpIconHtml } from "../qualityMetricHelp.mjs";
-import { computeHistogram } from "../histogram.mjs";
 
 /**
  * Generate HTML for visual analysis webview
@@ -1480,9 +1479,6 @@ export function getVisualAnalysisHtml(
     <script nonce="${nonce}">
         const fieldResult = ${JSON.stringify(fieldResult)};
         
-        // Histogram binning, shared with the QVD editor: see histogram.mjs
-        const computeHistogram = ${computeHistogram.toString()};
-        
         // Create chart
         const ctx = document.getElementById('profiling-chart').getContext('2d');
         let currentChart = null;
@@ -1493,8 +1489,8 @@ export function getVisualAnalysisHtml(
                 currentChart.destroy();
             }
             
-            // Bin the field's numeric values, excluding nulls
-            const histogram = computeHistogram(fieldResult.distributions, fieldResult.totalRows - fieldResult.nullCount);
+            // Bins over every numeric value, from the profiler
+            const histogram = fieldResult.statistics.histogram;
             if (!histogram) {
                 return;
             }

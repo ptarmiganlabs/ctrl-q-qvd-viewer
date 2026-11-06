@@ -1,48 +1,38 @@
 const assert = require("assert");
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
-const esbuild = require("esbuild");
-const { buildOptions } = require("../esbuild.js");
 
-// Import the histogram module
-let computeHistogram;
-let outputDir;
+// Import the profiling modules
+let qvdStatistics;
+let qvdProfiler;
 
 /**
- * Build a distribution with each value held by the given number of rows
- * @param {Array<[*, number]>} pairs - Value and row count pairs
- * @returns {Array<{value: *, count: number}>} Distribution as the profiler returns it
+ * Build a sorted list of values, each repeated the given number of times
+ * @param {Array<[number, number]>} pairs - Value and repeat count pairs, in ascending order of value
+ * @returns {number[]} The values in ascending order
  */
-function distribution(pairs) {
-  return pairs.map(([value, count]) => ({ value, count }));
+function repeated(pairs) {
+  return pairs.flatMap(([value, count]) => Array(count).fill(value));
 }
 
 /**
- * Turn a function's source text back into a function, as the webviews do
- * when the templates inline it
- * @param {Function} fn - Function to recreate
- * @returns {Function} The function, built from its source text alone
+ * Add up a histogram's bin counts
+ * @param {{counts: number[]}} histogram - Histogram to add up
+ * @returns {number} Values in all bins
  */
-function fromSourceText(fn) {
-  return new Function(`return (${fn.toString()});`)();
+function binTotal(histogram) {
+  return histogram.counts.reduce((sum, count) => sum + count, 0);
 }
 
 suite("Histogram Test Suite", () => {
-  // Load the module and create an output directory before running tests
+  // Load the modules before running tests
   suiteSetup(async () => {
-    // Import the ESM module
-    ({ computeHistogram } = await import("../src/webview/histogram.mjs"));
-    outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-viewer-histogram-"));
-  });
-
-  suiteTeardown(() => {
-    fs.rmSync(outputDir, { recursive: true, force: true });
+    // Import the ESM modules
+    qvdStatistics = await import("../src/qvdStatistics.mjs");
+    qvdProfiler = await import("../src/qvdProfiler.mjs");
   });
 
   test("Negative bounds - every bin has a From and a To", () => {
-    const histogram = computeHistogram(
-      distribution([
+    const histogram = qvdStatistics.calculateHistogram(
+      repeated([
         [-999, 7],
         [-50.5, 18],
         [0, 100],
@@ -62,16 +52,16 @@ suite("Histogram Test Suite", () => {
     assert.strictEqual(histogram.rows[14].to, "28.3");
     assert.ok(histogram.rows.every((row) => row.from !== "" && row.to !== ""));
     assert.strictEqual(histogram.labels[0], "-999.0 – -930.5");
-    assert.strictEqual(
-      histogram.counts.reduce((sum, count) => sum + count, 0),
-      200
-    );
+    assert.strictEqual(binTotal(histogram), 200);
   });
 
   test("Narrow range - bin edges keep enough decimals to differ", () => {
-    // 0.00 to 0.30 in 20 bins of 0.015
-    const values = Array.from({ length: 31 }, (_, i) => [(i / 100).toFixed(2), 1]);
-    const histogram = computeHistogram(distribution(values), 400);
+    // 0.00 to 0.30, 13 rows each: 403 values in 20 bins of 0.015
+    const values = [];
+    for (let i = 0; i <= 30; i++) {
+      values.push(...Array(13).fill(i / 100));
+    }
+    const histogram = qvdStatistics.calculateHistogram(values, values.length);
 
     assert.strictEqual(histogram.rows.length, 20);
     assert.strictEqual(histogram.rows[0].from, "0.000");
@@ -80,66 +70,69 @@ suite("Histogram Test Suite", () => {
     assert.strictEqual(new Set(histogram.rows.map((row) => row.from)).size, 20);
   });
 
-  test("One distinct value - zero-width bins hold every row in the first", () => {
-    const histogram = computeHistogram(distribution([[5, 10]]), 10);
-
-    assert.deepStrictEqual(histogram.counts, [10, 0, 0, 0]);
-    assert.ok(histogram.rows.every((row) => row.from === "5.0" && row.to === "5.0"));
-  });
-
-  test("Values that are not numbers are left out", () => {
-    const histogram = computeHistogram(
-      distribution([
-        ["abc", 3],
-        ["10", 2],
-        ["20", 2],
-      ]),
-      7
-    );
-    assert.strictEqual(
-      histogram.counts.reduce((sum, count) => sum + count, 0),
-      4
-    );
-
-    assert.strictEqual(computeHistogram(distribution([["abc", 3]]), 3), null);
-  });
-
-  test("Runs from its source text, as the webviews inline it", () => {
-    const values = distribution([
-      [-999, 7],
-      [0, 100],
-      [28.3, 75],
-    ]);
+  test("One distinct value - a single bin showing the value", () => {
     assert.deepStrictEqual(
-      fromSourceText(computeHistogram)(values, 182),
-      computeHistogram(values, 182)
+      qvdStatistics.calculateHistogram(Array(400).fill(5), 400),
+      {
+        labels: ["5"],
+        counts: [400],
+        rows: [{ from: "5", to: "5", count: 400, percentage: "100.00" }],
+      }
     );
+
+    // Not rounded to one decimal
+    const small = qvdStatistics.calculateHistogram([0.005, 0.005], 2);
+    assert.deepStrictEqual(small.labels, ["0.005"]);
   });
 
-  test("Runs from its source text once minified by the extension build", async () => {
-    const outfile = path.join(outputDir, "histogram.js");
-    await esbuild.build({
-      ...buildOptions,
-      entryPoints: [path.join(__dirname, "..", "src", "webview", "histogram.mjs")],
-      outfile,
-      minify: true,
-      sourcemap: false,
-      logLevel: "silent",
-      plugins: [],
-    });
-    const minified = require(outfile).computeHistogram;
-
-    // Minification renamed the local variables
-    assert.ok(!minified.toString().includes("numericValues"));
-
-    const values = distribution([
-      [-999, 7],
-      [0, 100],
-      [28.3, 75],
-    ]);
+  test("Percentages are shares of the rows with a value", () => {
+    // 4 numeric values among 8 rows with a value
+    const histogram = qvdStatistics.calculateHistogram([1, 2, 3, 4], 8);
     assert.deepStrictEqual(
-      fromSourceText(minified)(values, 182),
-      computeHistogram(values, 182)
+      histogram.rows.map((row) => row.percentage),
+      ["25.00", "25.00"]
     );
+
+    // A total that is not a number gives 0% rather than an error
+    const noTotal = qvdStatistics.calculateHistogram([1, 2, 3, 4], NaN);
+    assert.ok(noTotal.rows.every((row) => row.percentage === "0.00"));
+
+    assert.strictEqual(qvdStatistics.calculateHistogram([], 0), null);
+  });
+
+  test("Text and infinite values are left out of the bins", () => {
+    // 95 numbers and 5 other values: still a numeric field
+    const data = [
+      ...Array(50).fill({ v: 10 }),
+      ...Array(45).fill({ v: 20 }),
+      { v: "1,250.00" },
+      { v: "2023-01-05" },
+      { v: "12 kg" },
+      { v: Infinity },
+      { v: -Infinity },
+    ];
+    const stats = qvdStatistics.calculateStatistics(data, "v");
+
+    assert.strictEqual(stats.isNumeric, true);
+    const { histogram } = stats;
+    assert.strictEqual(histogram.rows[0].from, "10.0");
+    assert.strictEqual(histogram.rows.at(-1).to, "20.0");
+    assert.strictEqual(binTotal(histogram), 95);
+    assert.strictEqual(histogram.counts[0], 50);
+    assert.strictEqual(histogram.counts.at(-1), 45);
+    assert.strictEqual(histogram.rows[0].percentage, "50.00");
+  });
+
+  test("Bins cover every row when the distribution is truncated", () => {
+    // 2,000 distinct values, more than the profiler keeps in its distribution
+    const data = Array.from({ length: 2000 }, (_, i) => ({ v: i + 1 }));
+    const [field] = qvdProfiler.profileFields(data, ["v"], 1000).fields;
+
+    assert.strictEqual(field.truncated, true);
+    assert.strictEqual(field.distributions.length, 1000);
+    const { histogram } = field.statistics;
+    assert.strictEqual(histogram.rows[0].from, "1.0");
+    assert.strictEqual(histogram.rows.at(-1).to, "2000.0");
+    assert.strictEqual(binTotal(histogram), 2000);
   });
 });
