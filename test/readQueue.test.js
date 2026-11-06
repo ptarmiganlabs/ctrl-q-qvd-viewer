@@ -85,6 +85,26 @@ suite("Read Queue Test Suite", () => {
     ]);
   });
 
+  test("A task given a signal aborted before it is queued leaves no rejection unhandled", async () => {
+    const queue = createReadQueue();
+    const controller = new AbortController();
+    controller.abort();
+    const unhandled = [];
+    const listener = (reason) => unhandled.push(reason);
+    process.on("unhandledRejection", listener);
+    try {
+      await assert.rejects(queue.run(async () => "ran", { signal: controller.signal }), {
+        name: "AbortError",
+      });
+      // Node reports an unhandled rejection once the microtasks have drained
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    } finally {
+      process.off("unhandledRejection", listener);
+    }
+    assert.deepStrictEqual(unhandled, []);
+    assert.strictEqual(await queue.run(async () => "next"), "next");
+  });
+
   test("Aborting a running task lets the next one start, even if it never settles", async () => {
     const queue = createReadQueue();
     const controller = new AbortController();

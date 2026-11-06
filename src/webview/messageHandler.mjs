@@ -5,8 +5,25 @@ import DataExporter from "../exporters/index.mjs";
 import { profileFields, generateQvsScript } from "../qvdProfiler.mjs";
 import { getVisualAnalysisHtml } from "./templates/visualAnalysisTemplate.mjs";
 import { getLoadMoreRowCount } from "./loadMore.mjs";
-import { EXPORT_BYTES_PER_CELL, PROFILE_BYTES_PER_VALUE } from "../memoryGuard.mjs";
+import {
+  EXPORT_BYTES_PER_CELL,
+  PROFILE_BYTES_PER_VALUE,
+  describeExportRefusal,
+  exportCost,
+  exportHeapBytes,
+  tryBookHeap,
+} from "../memoryGuard.mjs";
 import logger from "../logger.mjs";
+
+/**
+ * An export format's name as the user sees it
+ * @param {string} format - The format, such as "excel"
+ * @returns {string} Such as "Excel"
+ */
+function exportLabel(format) {
+  const known = DataExporter.getExportFormats().find((entry) => entry.name === format);
+  return known ? known.label.replace(/^Export to /, "") : format;
+}
 
 /**
  * Create and configure the message handler for webview messages
@@ -69,15 +86,17 @@ export function setupMessageHandler(
         // Copy text to clipboard using VS Code API
         await vscode.env.clipboard.writeText(message.text);
         break;
-      case "exportData":
+      case "exportData": {
         // Export data to selected format
         let releaseExportedRows = () => {};
         try {
-          // What the exporter builds from the rows is priced too, so that an
-          // export too large for memory is refused rather than aborting
+          // What the exporter builds per cell is priced into the read, so that an
+          // export too large for memory is refused before every row is read. It is
+          // booked only once the dialogs are answered and the export begins.
           let result = await qvdReader.read(filePath, 0, {
             signal,
-            bytesPerCell: EXPORT_BYTES_PER_CELL[message.format] ?? 0,
+            bytesPerCell: exportCost(EXPORT_BYTES_PER_CELL, message.format),
+            holdCallerBytes: false,
           }); // Read all data
           releaseExportedRows = result.release;
           if (result.errorReason === "aborted") {
@@ -152,13 +171,34 @@ export function setupMessageHandler(
           const fileName = basename(filePath, extname(filePath));
           const workspaceFolder =
             vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+          const columnCount = result.columns.length;
           const savedPath = await DataExporter.exportData(
             result.data,
             message.format,
             fileName,
             vscode,
             workspaceFolder,
-            maxRows
+            maxRows,
+            {
+              // Priced from the rows to be written, their text included, once
+              // every dialog is answered: an export that won't fit is refused
+              // before anything is written
+              reserve: (rows, limit) => {
+                const needed = exportHeapBytes(message.format, rows, columnCount, limit);
+                const booking = tryBookHeap(needed.bytes);
+                if (!booking.release) {
+                  throw new Error(
+                    describeExportRefusal(
+                      exportLabel(message.format),
+                      needed.rows,
+                      needed.bytes,
+                      booking.leftBytes
+                    )
+                  );
+                }
+                return booking.release;
+              },
+            }
           );
           // The rows, and the exporter's copy, are done with: later reads may have the heap
           result = null;
@@ -184,7 +224,8 @@ export function setupMessageHandler(
           releaseExportedRows();
         }
         break;
-      case "profileFields":
+      }
+      case "profileFields": {
         // Profile selected fields and return distribution data
         let releaseProfiledRows = () => {};
         try {
@@ -225,6 +266,7 @@ export function setupMessageHandler(
           releaseProfiledRows();
         }
         break;
+      }
       case "exportProfilingQvs":
         // Export profiling data as QVS script
         try {

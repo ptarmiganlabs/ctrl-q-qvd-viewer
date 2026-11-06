@@ -43,6 +43,11 @@ class DataExporter {
    * @param {object} vscode - VS Code API object
    * @param {string} workspaceFolder - Workspace folder path
    * @param {number} maxRows - Maximum number of rows (for Qlik and PostgreSQL formats)
+   * @param {object} [options]
+   * @param {function(Array<Object>, number): function(): void} [options.reserve] - Called with
+   *   the rows and the row limit once every question is answered, just before the export
+   *   is written. It returns a release, called when the export ends, or throws to refuse
+   *   the export.
    * @returns {Promise<string|null>} Path to saved file or null if cancelled
    */
   static async exportData(
@@ -51,7 +56,8 @@ class DataExporter {
     suggestedFileName,
     vscode,
     workspaceFolder,
-    maxRows
+    maxRows,
+    { reserve } = {}
   ) {
     const formatConfig = {
       arrow: {
@@ -285,21 +291,29 @@ class DataExporter {
       return null; // User cancelled
     }
 
-    // Perform export
-    if (format === "qlik") {
-      // Pass delimiter to Qlik exporter
-      await config.exporter(
-        data,
-        fileUri.fsPath,
-        maxRows,
-        selectedDelimiter.value
-      );
-    } else if (format === "postgres") {
-      // Pass options to PostgreSQL exporter
-      await config.exporter(data, fileUri.fsPath, maxRows, postgresOptions);
-    } else {
-      // Other formats don't need delimiter or maxRows
-      await config.exporter(data, fileUri.fsPath);
+    // The heap the export needs, booked now the questions are answered
+    const limited = format === "qlik" || format === "postgres";
+    const release = reserve ? reserve(data, limited ? maxRows : 0) : () => {};
+
+    try {
+      // Perform export
+      if (format === "qlik") {
+        // Pass delimiter to Qlik exporter
+        await config.exporter(
+          data,
+          fileUri.fsPath,
+          maxRows,
+          selectedDelimiter.value
+        );
+      } else if (format === "postgres") {
+        // Pass options to PostgreSQL exporter
+        await config.exporter(data, fileUri.fsPath, maxRows, postgresOptions);
+      } else {
+        // Other formats don't need delimiter or maxRows
+        await config.exporter(data, fileUri.fsPath);
+      }
+    } finally {
+      release();
     }
 
     return fileUri.fsPath;

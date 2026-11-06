@@ -84,6 +84,58 @@ suite("Load Refused Test Suite", () => {
     assert.deepStrictEqual(messages, []);
   });
 
+  test("Closing the editor while it opens leaves the closed panel alone", async () => {
+    const provider = new QvdEditorProvider({
+      extensionPath: root,
+      extensionUri: vscode.Uri.file(root),
+    });
+    // A read that waits until the editor's signal gives it up
+    provider.qvdReader = {
+      read: (_path, _rows, { signal }) =>
+        new Promise((resolve) =>
+          signal.addEventListener("abort", () =>
+            resolve({
+              metadata: null,
+              data: [],
+              columns: [],
+              totalRows: 0,
+              error: "The read was given up, because its editor was closed.",
+              errorName: "AbortError",
+              errorReason: "aborted",
+              release: () => {},
+            })
+          )
+        ),
+    };
+    // VS Code's panel throws once it is disposed, as the real one does
+    let disposed = false;
+    let dispose;
+    const webview = recordingWebview([]);
+    const panel = {
+      get webview() {
+        if (disposed) {
+          throw new Error("Webview is disposed");
+        }
+        return webview;
+      },
+      onDidDispose: (listener) => {
+        dispose = listener;
+        return { dispose: () => {} };
+      },
+    };
+
+    const opening = provider.resolveCustomEditor(
+      { uri: vscode.Uri.file(path.join(root, "test-data", "lego", "colors.qvd")) },
+      panel,
+      {}
+    );
+    disposed = true;
+    dispose();
+
+    // It neither throws nor touches the panel
+    await opening;
+  });
+
   test("A read given up because its editor closed leaves the page alone", async () => {
     const provider = refusingProvider("The read was given up, because its editor was closed.", "aborted");
     const messages = [];

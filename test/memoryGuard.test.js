@@ -4,14 +4,15 @@ const path = require("path");
 // Import the guard, the reader and the exporters
 let guard;
 let toRowObjects;
+let readLanes;
 let QvdReader;
 let DataExporter;
+let QvdDataFrame;
 
 const root = path.join(__dirname, "..");
 const colors = path.join(root, "test-data", "lego", "colors.qvd");
 const sets = path.join(root, "test-data", "lego", "sets.qvd");
 const inventoryParts = path.join(root, "test-data", "lego", "inventory_parts.qvd");
-const taxi = path.join(root, "test-data", "chicago_taxi_rides", "chicago_taxi_rides_2016_03.qvd");
 
 /**
  * An error shaped like qvdjs's memory refusal
@@ -25,32 +26,63 @@ function memoryRefusal(context) {
   });
 }
 
+/**
+ * Hold a lane busy until free() is called
+ * @param {object} lane - One of the reader's lanes
+ * @returns {{free: function(): void, done: Promise<void>}} free ends the hold
+ */
+function holdLane(lane) {
+  let free;
+  const done = lane.run(() => new Promise((resolve) => (free = resolve)));
+  return { free: () => free(), done };
+}
+
+/**
+ * Wait for a promise, or report that it is still waiting after a while
+ * @param {Promise<any>} promise - The promise
+ * @param {number} ms - How long to give it
+ * @returns {Promise<string>} "settled" or "waiting"
+ */
+function settledWithin(promise, ms) {
+  return Promise.race([
+    promise.then(() => "settled"),
+    new Promise((resolve) => setTimeout(() => resolve("waiting"), ms)),
+  ]);
+}
+
 suite("Memory Guard Test Suite", () => {
   // Load the modules before running tests
   suiteSetup(async () => {
     // Import the ESM modules
     guard = await import("../src/memoryGuard.mjs");
-    ({ toRowObjects, default: QvdReader } = await import("../src/qvdReader.mjs"));
+    ({ toRowObjects, readLanes, default: QvdReader } = await import("../src/qvdReader.mjs"));
     ({ default: DataExporter } = await import("../src/exporters/index.mjs"));
+    ({ QvdDataFrame } = await import("qvdjs"));
   });
 
   test("With nothing held and nothing added, qvdjs keeps its own factor", () => {
-    assert.strictEqual(
-      guard.memorySafetyFactorFor(0, { booked: 0, usable: 4e9 }),
-      guard.QVDJS_SAFETY_FACTOR
-    );
+    assert.strictEqual(guard.memorySafetyFactorFor(0, { bytes: 4e9, factor: 0.8 }, 0), 0.8);
   });
 
   test("Held rows and what the read adds come off qvdjs's budget", () => {
-    // 0.8 of 4 GB, less 1 GB held and 1 GB added, is 1.2 GB: 0.3 of the heap
-    const factor = guard.memorySafetyFactorFor(1e9, { booked: 1e9, usable: 4e9 });
+    // 0.8 of 4 GB, less 1 GB held and 1 GB added, is 1.2 GB: 0.3 of the budget
+    const factor = guard.memorySafetyFactorFor(1e9, { bytes: 4e9, factor: 0.8 }, 1e9);
     assert.ok(Math.abs(factor - 0.3) < 1e-12);
   });
 
   test("A budget used up still gives a factor above zero, which would switch qvdjs's check off", () => {
-    const factor = guard.memorySafetyFactorFor(5e9, { booked: 0, usable: 4e9 });
+    const factor = guard.memorySafetyFactorFor(5e9, { bytes: 4e9, factor: 0.8 }, 0);
     assert.ok(factor > 0);
     assert.ok(factor < 1e-5);
+  });
+
+  test("qvdjs's own budget is what reads are priced against", async () => {
+    const read = await new QvdReader().read(colors, 1);
+    read.release();
+    const budget = guard.knownBudget();
+    // Its default factor, and the heap or container limit it budgets against
+    assert.strictEqual(budget.factor, 0.8);
+    assert.ok(budget.bytes > 64 * 1024 * 1024);
   });
 
   test("The costs cover what was measured, with room to spare", () => {
@@ -58,17 +90,27 @@ suite("Memory Guard Test Suite", () => {
     assert.ok(guard.CONVERSION_BYTES_PER_CELL >= 5.8 * 2);
     // Read rows held up to 25 bytes per cell
     assert.ok(guard.HELD_BYTES_PER_CELL >= 25 * 1.25);
-    // Profiling a date field needed 181 bytes per value, and an Excel export 730 per cell
+    // Profiling a date field needed 181 bytes per value, an Excel export 730 per cell and 2.3 per character
     assert.ok(guard.PROFILE_BYTES_PER_VALUE >= 181 * 1.5);
     assert.ok(guard.EXPORT_BYTES_PER_CELL.excel >= 730 * 1.5);
+    assert.ok(guard.EXPORT_BYTES_PER_TEXT_CHAR.excel >= 2.3 * 2);
   });
 
-  test("Every export format has a cost", () => {
+  test("Every export format has a cost per cell and per character", () => {
     const formats = DataExporter.getExportFormats().map((format) => format.name).sort();
-    assert.deepStrictEqual(Object.keys(guard.EXPORT_BYTES_PER_CELL).sort(), formats);
-    for (const bytes of Object.values(guard.EXPORT_BYTES_PER_CELL)) {
-      assert.ok(Number.isFinite(bytes) && bytes >= 0);
+    for (const table of [guard.EXPORT_BYTES_PER_CELL, guard.EXPORT_BYTES_PER_TEXT_CHAR]) {
+      assert.deepStrictEqual(Object.keys(table).sort(), formats);
+      for (const bytes of Object.values(table)) {
+        assert.ok(Number.isFinite(bytes) && bytes >= 0);
+      }
     }
+  });
+
+  test("A name that isn't a format costs nothing, not a function", () => {
+    for (const name of ["constructor", "toString", "__proto__", "hasOwnProperty", "nope"]) {
+      assert.strictEqual(guard.exportCost(guard.EXPORT_BYTES_PER_CELL, name), 0);
+    }
+    assert.strictEqual(guard.exportCost(guard.EXPORT_BYTES_PER_CELL, "excel"), 1100);
   });
 
   test("Booked heap is held until released, once", () => {
@@ -78,6 +120,60 @@ suite("Memory Guard Test Suite", () => {
     release();
     release();
     assert.strictEqual(guard.bookedBytes(), before);
+  });
+
+  test("Work that doesn't fit in the budget left isn't booked", () => {
+    const budget = { bytes: 1e9, factor: 0.8 };
+    const before = guard.bookedBytes();
+    const refused = guard.tryBookHeap(0.9e9, budget);
+    assert.strictEqual(refused.release, undefined);
+    assert.strictEqual(refused.leftBytes, 0.8e9 - before);
+    assert.strictEqual(guard.bookedBytes(), before);
+
+    const booked = guard.tryBookHeap(1000, budget);
+    assert.strictEqual(guard.bookedBytes(), before + 1000);
+    booked.release();
+    assert.strictEqual(guard.bookedBytes(), before);
+  });
+
+  test("Held text is priced by what the rows can keep alive", () => {
+    // A field of unique 2,000-byte values, and one of three short values
+    const fields = [
+      { symbols: 1000000, bytes: 2000 * 1000000 },
+      { symbols: 3, bytes: 30 },
+    ];
+    // 100 rows keep at most 100 of the unique values alive, and all three short ones
+    const window = guard.heldTextBytes(fields, 100);
+    assert.strictEqual(window, 100 * (2000 * 2 + 16) + 3 * (10 * 2 + 16));
+    // Every row keeps every value alive
+    const all = guard.heldTextBytes(fields, 1000000);
+    assert.strictEqual(all, 1000000 * (2000 * 2 + 16) + 3 * (10 * 2 + 16));
+    assert.strictEqual(guard.heldTextBytes([{ symbols: 0, bytes: 0 }], 10), 0);
+  });
+
+  test("An export is priced by its rows' cells and text", () => {
+    const rows = [
+      { id: 1, note: "x".repeat(1000) },
+      { id: 2, note: "y".repeat(3000) },
+      { id: 3, note: null },
+    ];
+    const all = guard.exportHeapBytes("excel", rows, 2);
+    assert.deepStrictEqual(all, {
+      rows: 3,
+      bytes: 3 * 2 * guard.EXPORT_BYTES_PER_CELL.excel + 4000 * guard.EXPORT_BYTES_PER_TEXT_CHAR.excel,
+    });
+    // A row limit prices only the rows exported
+    const first = guard.exportHeapBytes("qlik", rows, 2, 1);
+    assert.deepStrictEqual(first, {
+      rows: 1,
+      bytes: 2 * guard.EXPORT_BYTES_PER_CELL.qlik + 1000 * guard.EXPORT_BYTES_PER_TEXT_CHAR.qlik,
+    });
+  });
+
+  test("A refused export says what it needs and what is left", () => {
+    const message = guard.describeExportRefusal("Excel", 300000, 6.5 * 2 ** 30, 380 * 2 ** 20);
+    assert.ok(message.startsWith(`Exporting ${(300000).toLocaleString()} rows to Excel needs about 6.5 GiB`));
+    assert.ok(message.includes("about 380 MiB is left"));
   });
 
   test("A refused read of every row says how many rows would fit", () => {
@@ -146,19 +242,40 @@ suite("Memory Guard Test Suite", () => {
     });
   });
 
-  test("A read's rows book heap until released", async () => {
+  test("A row limit or cost that isn't a count is refused, not read", async () => {
+    const reader = new QvdReader();
+    // qvdjs would read a null maxRows as every row
+    for (const maxRows of [null, -1, 1.5, "10", NaN]) {
+      const result = await reader.read(colors, maxRows);
+      assert.strictEqual(result.errorReason, "option", `maxRows ${String(maxRows)}`);
+      assert.deepStrictEqual(result.data, []);
+    }
+    const cost = await reader.read(colors, 10, { bytesPerCell: NaN });
+    assert.strictEqual(cost.errorReason, "option");
+  });
+
+  test("A read's rows book their objects and text until released", async () => {
+    const header = await QvdDataFrame.readMetadata(colors, { allowedDir: path.dirname(colors) });
+    const fields = header.fields.map((field) => ({
+      symbols: Number(field.noOfSymbols),
+      bytes: Number(field.length),
+    }));
     const result = await new QvdReader().read(colors, 0);
     assert.strictEqual(result.error, null);
 
     // Read in one step, so nothing else can change the total in between
     const held = guard.bookedBytes();
     result.release();
-    assert.strictEqual(held - guard.bookedBytes(), 135 * 4 * guard.HELD_BYTES_PER_CELL);
+    assert.strictEqual(
+      held - guard.bookedBytes(),
+      135 * 4 * guard.HELD_BYTES_PER_CELL + guard.heldTextBytes(fields, 135)
+    );
   });
 
   test("A read is refused while held rows have booked the heap", async () => {
     const reader = new QvdReader();
-    const release = guard.bookHeap(guard.usableHeapBytes());
+    (await reader.read(colors, 1)).release();
+    const release = guard.bookHeap(guard.knownBudget().bytes);
     let refused;
     try {
       refused = await reader.read(colors, 10);
@@ -178,47 +295,32 @@ suite("Memory Guard Test Suite", () => {
     assert.strictEqual(result.errorReason, "memory");
   });
 
-  test("Large reads run one at a time", async () => {
+  test("A large read waits while the large lane is busy", async () => {
     const reader = new QvdReader();
-    const finished = [];
-    // Both take the large lane: what the caller builds puts sets.qvd's read in it.
-    // The second starts once the first has read its header and joined the queue.
-    const slow = reader.read(inventoryParts, 0).then((result) => {
-      finished.push("inventory_parts");
-      return result;
-    });
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const fast = reader.read(sets, 0, { bytesPerCell: 4096 }).then((result) => {
-      finished.push("sets");
-      return result;
-    });
-    const results = await Promise.all([slow, fast]);
+    const lane = holdLane(readLanes.large);
+    // What the caller builds puts this small file's read in the large lane
+    const read = reader.read(sets, 0, { bytesPerCell: 4096 });
 
-    assert.deepStrictEqual(finished, ["inventory_parts", "sets"]);
-    assert.ok(results.every((result) => result.error === null));
-    results.forEach((result) => result.release());
+    assert.strictEqual(await settledWithin(read, 300), "waiting");
+    lane.free();
+    const result = await read;
+    assert.strictEqual(result.error, null);
+    assert.strictEqual(result.data.length, 11673);
+    result.release();
+    await lane.done;
   });
 
-  test("A small read doesn't wait for a large one", async () => {
+  test("A small read doesn't wait for the large lane", async () => {
     const reader = new QvdReader();
-    const finished = [];
-    // The large read is long enough to outlast the small one even though they
-    // share the event loop: about 3.3 s against 0.9 s, measured in Node
-    const large = reader.read(taxi, 0).then((result) => {
-      finished.push("large");
-      return result;
-    });
-    // Once the large read has joined its queue, as in the test above
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const small = reader.read(colors, 10).then((result) => {
-      finished.push("small");
-      return result;
-    });
-    const results = await Promise.all([large, small]);
-
-    assert.ok(results.every((result) => result.error === null));
-    assert.deepStrictEqual(finished, ["small", "large"]);
-    results.forEach((result) => result.release());
+    const lane = holdLane(readLanes.large);
+    try {
+      const result = await reader.read(colors, 10);
+      assert.strictEqual(result.data.length, 10);
+      result.release();
+    } finally {
+      lane.free();
+    }
+    await lane.done;
   });
 
   test("A read whose editor is closed is given up", async () => {
@@ -228,6 +330,21 @@ suite("Memory Guard Test Suite", () => {
 
     assert.strictEqual(result.errorReason, "aborted");
     assert.deepStrictEqual(result.data, []);
+  });
+
+  test("A read waiting for its lane is given up when its editor closes", async () => {
+    const reader = new QvdReader();
+    const lane = holdLane(readLanes.small);
+    const controller = new AbortController();
+    const read = reader.read(colors, 10, { signal: controller.signal });
+    // Let it read its header and join the lane
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    controller.abort();
+
+    const result = await read;
+    assert.strictEqual(result.errorReason, "aborted");
+    lane.free();
+    await lane.done;
   });
 
   test("Reads asked for at once all complete", async () => {

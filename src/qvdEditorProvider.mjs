@@ -4,7 +4,7 @@ import QvdReader from "./qvdReader.mjs";
 import { getErrorHtml } from "./webview/templates/errorTemplate.mjs";
 import { getHtmlForWebview } from "./webview/templates/mainTemplate.mjs";
 import { setupMessageHandler } from "./webview/messageHandler.mjs";
-import { getLoadMoreRowCount } from "./webview/loadMore.mjs";
+import { getLoadMoreRowCount, previewRowsFromSetting } from "./webview/loadMore.mjs";
 import { splitRowsIntoBatches } from "./webview/rowBatches.mjs";
 import logger from "./logger.mjs";
 
@@ -43,6 +43,10 @@ class QvdEditorProvider {
    */
   async resolveCustomEditor(document, webviewPanel, _token) {
     console.log("🔵 resolveCustomEditor called for:", document.uri.fsPath);
+    // This editor's reads are given up once it is closed, queued or running,
+    // so they neither hold up other editors' reads nor run for nothing
+    const closed = new AbortController();
+    webviewPanel.onDidDispose(() => closed.abort());
     try {
       logger.log(`Opening QVD file: ${document.uri.fsPath}`);
 
@@ -56,12 +60,7 @@ class QvdEditorProvider {
 
       // Get the max rows configuration
       const config = vscode.workspace.getConfiguration("ctrl-q-qvd-viewer");
-      const maxRows = config.get("maxPreviewRows", 5000);
-
-      // This editor's reads are given up once it is closed, queued or running,
-      // so they neither hold up other editors' reads nor run for nothing
-      const closed = new AbortController();
-      webviewPanel.onDidDispose(() => closed.abort());
+      const maxRows = previewRowsFromSetting(config.get("maxPreviewRows"));
 
       // Read and display QVD content
       // Note: We read the file ourselves, not relying on VS Code to read it
@@ -71,6 +70,11 @@ class QvdEditorProvider {
         maxRows,
         { signal: closed.signal }
       );
+
+      // Closed while it opened: the panel is gone, and touching it would throw
+      if (closed.signal.aborted) {
+        return;
+      }
 
       // Store file path for message handler
       const filePath = document.uri.fsPath;
@@ -86,6 +90,11 @@ class QvdEditorProvider {
         closed.signal
       );
     } catch (error) {
+      if (closed.signal.aborted) {
+        // The editor was closed: there is no page to show the error on
+        logger.log(`Editor closed while opening ${document.uri.fsPath}: ${error.message}`);
+        return;
+      }
       logger.error(
         `Fatal error in resolveCustomEditor for ${document.uri.fsPath}:`,
         error

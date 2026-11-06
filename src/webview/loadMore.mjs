@@ -12,3 +12,19 @@ export const LOAD_MORE_MAX_ROWS = 100000;
 export function getLoadMoreRowCount(currentRows) {
   return Math.min(currentRows * 2, LOAD_MORE_MAX_ROWS);
 }
+
+/**
+ * The rows to open a file with, from the maxPreviewRows setting
+ * package.json allows 100 to 100,000, but VS Code doesn't hold settings.json to
+ * that: a 0 there would read every row on open, and a null or a string would
+ * reach the reader as a row limit it can't price.
+ * @param {*} value - The setting's value
+ * @returns {number} A whole number of rows, from 100 to LOAD_MORE_MAX_ROWS;
+ *   5,000, the default, when the value isn't a number
+ */
+export function previewRowsFromSetting(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 5000;
+  }
+  return Math.min(LOAD_MORE_MAX_ROWS, Math.max(100, Math.round(value)));
+}

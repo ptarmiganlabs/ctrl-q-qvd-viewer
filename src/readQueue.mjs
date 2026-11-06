@@ -36,11 +36,15 @@ export function createReadQueue() {
         signal?.throwIfAborted();
         return task();
       });
+      // A failure reaches the caller through result. A task given up before it
+      // was queued leaves result settled without ever watching turn, so turn is
+      // watched here, or its rejection would go unhandled.
+      turn.catch(() => {});
       const result = untilAborted(turn, signal);
       result.then(settled, settled);
       // The next task waits for every one before it, and then for this one,
       // however it ends, or until this one is given up
-      last = previous.then(() => untilAborted(turn, signal)).catch(() => {});
+      last = previous.then(() => result).catch(() => {});
       return result;
     },
   };

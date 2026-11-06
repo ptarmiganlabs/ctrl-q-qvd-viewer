@@ -1,5 +1,5 @@
 import { QvdDataFrame } from 'qvdjs';
-import { realpath } from 'fs/promises';
+import { realpath, stat } from 'fs/promises';
 import { dirname } from 'path';
 import { createReadQueue } from './readQueue.mjs';
 import {
@@ -7,7 +7,10 @@ import {
   HELD_BYTES_PER_CELL,
   bookHeap,
   describeMemoryRefusal,
+  heldTextBytes,
+  knownBudget,
   memorySafetyFactorFor,
+  rememberBudget,
 } from './memoryGuard.mjs';
 
 // Reads run one at a time in the whole extension host, whichever editor asks.
@@ -15,6 +18,17 @@ import {
 // for a large one, and each large read leaves room in its budget for one of them.
 const largeReads = createReadQueue();
 const smallReads = createReadQueue();
+
+/**
+ * The two lanes, for tests that need to hold one busy
+ */
+export const readLanes = { large: largeReads, small: smallReads };
+
+// Headers of files read lately, so that a file's later reads, such as Load
+// More, Export and Profile on an open file, price themselves without opening it
+// an extra time
+const headers = new Map();
+const HEADERS_KEPT = 32;
 
 /**
  * The most heap a read in the small lane costs, and so what a large read leaves for it
@@ -64,8 +78,97 @@ export async function toRowObjects(rows, columns, signal) {
 }
 
 /**
+ * A file's header, as far as pricing a read needs it
+ * @typedef {{rowCount: number, columnCount: number, fields: Array<{name: string, symbols: number, bytes: number}>}} Header
+ *   fields: each field's name, symbol count and symbol area's size in bytes
+ */
+
+/**
+ * The file's header, from the files read lately when it hasn't changed since
+ * @param {string} filePath - Path to the QVD file
+ * @param {string} realFilePath - Its real path
+ * @param {string} allowedDir - The directory qvdjs may read in
+ * @param {AbortSignal} [signal] - Gives the read up
+ * @returns {Promise<Header>} The header
+ */
+async function headerOf(filePath, realFilePath, allowedDir, signal) {
+  const stats = await stat(realFilePath).catch(() => null);
+  // The same inode, size and modification time: the same file
+  const key = stats ? `${stats.ino}:${stats.size}:${stats.mtimeMs}` : null;
+  const kept = headers.get(realFilePath);
+  if (key && kept?.key === key) {
+    return kept.header;
+  }
+
+  const metadata = await QvdDataFrame.readMetadata(filePath, { allowedDir, signal });
+  const header = {
+    rowCount: metadata.rowCount,
+    columnCount: metadata.columns.length,
+    fields: metadata.fields.map((field) => ({
+      name: field.fieldName,
+      symbols: Number(field.noOfSymbols) || 0,
+      bytes: Number(field.length) || 0,
+    })),
+  };
+  if (key) {
+    headers.delete(realFilePath);
+    headers.set(realFilePath, { key, header });
+    if (headers.size > HEADERS_KEPT) {
+      headers.delete(headers.keys().next().value);
+    }
+  }
+  return header;
+}
+
+/**
+ * qvdjs's budget: asked once, since neither the heap limit nor a container's
+ * memory limit changes. A read of one row of the file's smallest field makes
+ * qvdjs report it, walking no more than that field's symbols.
+ * @param {string} filePath - Path to the QVD file
+ * @param {string} allowedDir - The directory qvdjs may read in
+ * @param {Header} header - The file's header
+ * @param {AbortSignal} [signal] - Gives the read up
+ * @returns {Promise<import('./memoryGuard.mjs').Budget|null>} The budget, or null
+ *   for a file with no fields, whose read needs none
+ */
+async function budgetFor(filePath, allowedDir, header, signal) {
+  const known = knownBudget();
+  if (known || header.fields.length === 0) {
+    return known;
+  }
+  const smallest = header.fields.reduce((a, b) => (b.bytes < a.bytes ? b : a));
+  const { budget } = await QvdDataFrame.checkRead(filePath, {
+    allowedDir,
+    maxRows: 1,
+    fields: [smallest.name],
+    signal,
+  });
+  const found = { bytes: budget.allowedBytes / budget.safetyFactor, factor: budget.safetyFactor };
+  rememberBudget(found);
+  return found;
+}
+
+/**
+ * Refuse an option that isn't a count, the way qvdjs refuses its own
+ * @param {*} value - The option's value
+ * @param {string} name - Its name
+ * @param {boolean} [whole=false] - Whether it must be a whole number
+ * @throws {Error} A QvdValidationError with context.reason "option"
+ */
+function requireCount(value, name, whole = false) {
+  const count =
+    typeof value === "number" && Number.isFinite(value) && value >= 0 && (!whole || Number.isInteger(value));
+  if (!count) {
+    throw Object.assign(
+      new Error(`${name} must be ${whole ? "a whole number" : "a number"} of 0 or more, not ${String(value)}`),
+      { name: "QvdValidationError", context: { reason: "option", option: name } }
+    );
+  }
+}
+
+/**
  * An upper bound on the heap a read costs, from the file's header alone
- * @param {object} header - qvdjs's readMetadata() of the file
+ * @param {Header} header - The file's header
  * @param {number} cells - Cells the read returns
  * @param {number} callerBytes - Heap the caller builds from the rows
  * @returns {number} Bytes
@@ -74,8 +177,8 @@ function readCostBound(header, cells, callerBytes) {
   let symbols = 0;
   let symbolBytes = 0;
   for (const field of header.fields) {
-    symbols += Number(field.noOfSymbols) || 0;
-    symbolBytes += Number(field.length) || 0;
+    symbols += field.symbols;
+    symbolBytes += field.bytes;
   }
   const perCell = QVDJS_BYTES_PER_CELL + CONVERSION_BYTES_PER_CELL + HELD_BYTES_PER_CELL;
   return (
@@ -122,14 +225,27 @@ class QvdReader {
    * @param {AbortSignal} [options.signal] - Gives the read up, queued or running: its editor was closed
    * @param {number} [options.bytesPerCell=0] - Heap the caller builds from the rows per cell, such as an export's
    * @param {number} [options.bytesPerRow=0] - Heap the caller builds from the rows per row, such as profiling's
+   * @param {boolean} [options.holdCallerBytes=true] - Whether the rows' booking includes
+   *   the caller's work from the start. A caller that waits on the user first, as Export
+   *   does for its dialogs, books its work itself when it begins.
    * @returns {Promise<{metadata: object, data: Array, error: string|null, errorName: string|null, errorReason: string|null, release: function(): void}>}
    *   errorName and errorReason are qvdjs's error class and context.reason, such as
-   *   "memory", or "aborted" for a read given up. release() ends the heap the rows
-   *   have booked: call it once done with them, so that later reads may use it.
+   *   "memory", "option" for a maxRows or cost that isn't a count, or "aborted" for a
+   *   read given up. release() ends the heap the rows have booked: call it once done
+   *   with them, so that later reads may use it.
    */
-  async read(filePath, maxRows = 25, { signal, bytesPerCell = 0, bytesPerRow = 0 } = {}) {
+  async read(
+    filePath,
+    maxRows = 25,
+    { signal, bytesPerCell = 0, bytesPerRow = 0, holdCallerBytes = true } = {}
+  ) {
     try {
       signal?.throwIfAborted();
+      // qvdjs reads a maxRows of null, say, as every row: priced as anything else,
+      // such a read would get past the memory check
+      requireCount(maxRows, "maxRows", true);
+      requireCount(bytesPerCell, "bytesPerCell");
+      requireCount(bytesPerRow, "bytesPerRow");
       // Configure allowedDir to the parent directory of the file being opened
       // This allows qvdjs to read files from anywhere while still maintaining
       // path traversal protection within that directory.
@@ -140,20 +256,26 @@ class QvdReader {
       const allowedDir = dirname(realFilePath);
 
       // The header alone, whatever the file's size, says how much the read returns
-      const header = await QvdDataFrame.readMetadata(filePath, { allowedDir, signal });
+      const header = await headerOf(filePath, realFilePath, allowedDir, signal);
       const rows = maxRows === 0 ? header.rowCount : Math.min(maxRows, header.rowCount);
-      const cells = rows * header.columns.length;
+      const cells = rows * header.columnCount;
       const callerBytes = cells * bytesPerCell + rows * bytesPerRow;
       const small = readCostBound(header, cells, callerBytes) <= SMALL_READ_BYTES;
+      const budget = await budgetFor(filePath, allowedDir, header, signal);
 
       return await (small ? smallReads : largeReads).run(
         () =>
           this.#readNow(filePath, maxRows, {
             allowedDir,
             signal,
+            budget,
+            // Beyond qvdjs's estimate: the row objects, the caller's work, and
+            // room for a small read beside a large one
             extraBytes:
               cells * CONVERSION_BYTES_PER_CELL + callerBytes + (small ? 0 : SMALL_READ_BYTES),
-            callerBytes,
+            // Held by the rows besides their objects: the text they keep alive,
+            // and the caller's work unless it books that itself
+            heldBytes: heldTextBytes(header.fields, rows) + (holdCallerBytes ? callerBytes : 0),
           }),
         { signal }
       );
@@ -166,11 +288,12 @@ class QvdReader {
    * Read QVD file now, at its turn in the queue
    * @param {string} filePath - Path to the QVD file
    * @param {number} maxRows - Maximum number of rows to read (0 = all rows)
-   * @param {{allowedDir: string, signal?: AbortSignal, extraBytes: number, callerBytes: number}} plan -
-   *   extraBytes: heap the read needs beyond qvdjs's estimate; callerBytes: the caller's share of it
+   * @param {{allowedDir: string, signal?: AbortSignal, budget: object|null, extraBytes: number, heldBytes: number}} plan -
+   *   budget: qvdjs's; extraBytes: heap the read needs beyond qvdjs's estimate;
+   *   heldBytes: heap the rows hold besides their objects
    * @returns {Promise<object>} As read() describes
    */
-  async #readNow(filePath, maxRows, { allowedDir, signal, extraBytes, callerBytes }) {
+  async #readNow(filePath, maxRows, { allowedDir, signal, budget, extraBytes, heldBytes }) {
     // Load the QVD file using qvdjs
     const loadOptions = {
       ...(maxRows === 0 ? {} : { maxRows }),
@@ -181,7 +304,7 @@ class QvdReader {
       // Priced at this read's turn: qvdjs's budget, less the heap rows still held
       // have booked and what the row objects and the caller add, so that a read
       // too large is refused rather than aborting the extension host
-      memorySafetyFactor: memorySafetyFactorFor(extraBytes),
+      ...(budget ? { memorySafetyFactor: memorySafetyFactorFor(extraBytes, budget) } : {}),
       ...(signal ? { signal } : {}),
     };
     const df = await QvdDataFrame.fromQvd(filePath, loadOptions);
@@ -256,9 +379,12 @@ class QvdReader {
     // Convert data from array of arrays to array of objects
     const data = await toRowObjects(df.data, columns, signal);
 
-    // The rows, and what the caller builds from them, hold this until the
-    // caller releases them, or drops them
-    const release = bookHeap(data.length * columns.length * HELD_BYTES_PER_CELL + callerBytes, data);
+    // Given up after the conversion's last check: nobody is waiting for these
+    // rows, so nothing is booked for them
+    signal?.throwIfAborted();
+
+    // The rows hold this until the caller releases them, or drops them
+    const release = bookHeap(data.length * columns.length * HELD_BYTES_PER_CELL + heldBytes, data);
 
     return {
       metadata,

@@ -9,25 +9,12 @@
  * and the rows of earlier reads that callers still hold. A read qvdjs approved
  * could then abort the extension host, taking every extension with it.
  *
- * So each read hands qvdjs a smaller budget: its own, less the heap that held
- * rows have booked here, and less what this read will add on top of qvdjs's
- * estimate. A read that won't fit is then refused, catchably, before it reads
- * any rows.
+ * So each read hands qvdjs a smaller budget: qvdjs's own, less the heap that
+ * held rows have booked here, and less what this read will add on top of
+ * qvdjs's estimate. A read that won't fit is then refused, catchably, before it
+ * reads any rows. qvdjs's budget itself comes from qvdjs (see QvdReader), so
+ * that a container's memory limit binds here as it binds there.
  */
-import v8 from "v8";
-
-/**
- * The memorySafetyFactor qvdjs uses when it is given none.
- */
-export const QVDJS_SAFETY_FACTOR = 0.8;
-
-/**
- * How qvdjs sizes the heap it budgets against: heap_size_limit, less what that
- * overstates, and never less than a floor. HEAP_LIMIT_OVERSTATEMENT_BYTES and
- * MINIMUM_BUDGET_BYTES in qvdjs's src/util/memoryUtils.js.
- */
-const QVDJS_HEAP_OVERSTATEMENT = 192 * 1024 * 1024;
-const QVDJS_MINIMUM_BUDGET = 64 * 1024 * 1024;
 
 /**
  * The smallest factor handed to qvdjs. Zero would switch its check off.
@@ -45,22 +32,27 @@ export const CONVERSION_BYTES_PER_CELL = 12;
 
 /**
  * Heap the rows hold once read, per cell: the row objects and their values.
- * Measured at 16.7 to 25 bytes per cell on the taxi, lego and orders files,
- * the most where every row holds text of its own.
+ * Measured at 16.7 to 25 bytes per cell on the taxi, lego and orders files.
+ * The text the rows keep alive is booked on top, from the file's header.
  */
 export const HELD_BYTES_PER_CELL = 32;
 
 /**
+ * Heap a string costs besides its characters, and per character at most: text
+ * outside Latin-1 takes two bytes a character.
+ */
+const STRING_HEADER_BYTES = 16;
+const BYTES_PER_TEXT_CHAR = 2;
+
+/**
  * Heap an export builds from the rows, per cell, by format: about one and a
- * half times what each needed for the taxi file, whose values are short, since
- * the formats that build one string grow with the text. Measured by the
- * smallest heap that let 200,000 or 1,000,000 rows export:
- * Excel 730, YAML 226, XML 107, CSV 104, JSON 35, PostgreSQL 13, Arrow 12 and
- * Qlik inline 7.8 bytes per cell. Arrow's file buffers, outside the V8 heap,
- * aren't counted. Parquet and Avro write as they go, and SQLite keeps its
- * database in sql.js's WebAssembly memory, outside the V8 heap too. JSON also
- * stops at V8's longest string, with a catchable error, at about 1.6 million
- * rows of 20 fields.
+ * half times what each needed for the taxi file. Measured by the smallest heap
+ * that let 200,000 or 1,000,000 rows export: Excel 730, YAML 226, XML 107,
+ * CSV 104, JSON 35, PostgreSQL 13, Arrow 12 and Qlik inline 7.8 bytes per cell.
+ * Arrow's file buffers, outside the V8 heap, aren't counted. Parquet and Avro
+ * write as they go, and SQLite keeps its database in sql.js's WebAssembly
+ * memory, outside the V8 heap too. JSON also stops at V8's longest string,
+ * with a catchable error, at about 1.6 million rows of 20 fields.
  */
 export const EXPORT_BYTES_PER_CELL = {
   arrow: 24,
@@ -77,6 +69,29 @@ export const EXPORT_BYTES_PER_CELL = {
 };
 
 /**
+ * Heap an export builds per character of the rows' text, by format, on top of
+ * its cost per cell: what the formats that write the text into one string, or
+ * keep it in a document, cost as values get longer. About twice what each
+ * needed for 50,000 rows of four 400-character values, since text outside
+ * Latin-1 takes two bytes a character: Excel 2.3, YAML 1.9, XML and Qlik inline
+ * 1.0, JSON and PostgreSQL 0.9, Arrow 0.6 and CSV 0.4 bytes per character.
+ * Parquet, Avro and SQLite added nothing to the V8 heap.
+ */
+export const EXPORT_BYTES_PER_TEXT_CHAR = {
+  arrow: 2,
+  avro: 0,
+  csv: 1,
+  excel: 5,
+  json: 2,
+  parquet: 0,
+  postgres: 2,
+  qlik: 3,
+  sqlite: 0,
+  xml: 3,
+  yaml: 4,
+};
+
+/**
  * Heap profiling builds, per value of each profiled field: about one and a half
  * times the most measured, on 1,000,000 rows of the taxi file. A date field
  * needed 181 bytes per value, for its Date objects and their sorted copies, and
@@ -88,14 +103,30 @@ export const PROFILE_BYTES_PER_VALUE = 288;
 let booked = 0;
 // Rows a caller drops without releasing them are let go when they are collected
 const unreleased = new FinalizationRegistry((release) => release());
+// qvdjs's budget, once a read has asked it: the heap limit and any container limit don't change
+let qvdjsBudget = null;
 
 /**
- * The heap qvdjs budgets against
- * @returns {number} Bytes
+ * qvdjs's budget, as a read found it
+ * @typedef {{bytes: number, factor: number}} Budget
+ *   bytes: what qvdjs budgets against, the heap or a container limit, whichever binds;
+ *   factor: the share of it qvdjs lets a read use when it is given no factor
  */
-export function usableHeapBytes() {
-  const usable = v8.getHeapStatistics().heap_size_limit - QVDJS_HEAP_OVERSTATEMENT;
-  return Math.max(usable, QVDJS_MINIMUM_BUDGET);
+
+/**
+ * Remember qvdjs's budget
+ * @param {Budget} budget - As qvdjs reported it
+ */
+export function rememberBudget(budget) {
+  qvdjsBudget = budget;
+}
+
+/**
+ * qvdjs's budget, if a read has asked for it yet
+ * @returns {Budget|null} The budget
+ */
+export function knownBudget() {
+  return qvdjsBudget;
 }
 
 /**
@@ -129,20 +160,116 @@ export function bookHeap(bytes, rows) {
 }
 
 /**
+ * Book heap for work a caller is about to do, if it fits in qvdjs's budget less what is booked
+ * @param {number} bytes - Heap the work needs
+ * @param {Budget} [budget] - qvdjs's budget; without one there is nothing to check against
+ * @returns {{release: function(): void}|{leftBytes: number}} release ends the
+ *   booking; leftBytes, when the work doesn't fit, is what is left
+ */
+export function tryBookHeap(bytes, budget = knownBudget()) {
+  const left = budget ? budget.factor * budget.bytes - booked : Infinity;
+  if (bytes > left) {
+    return { leftBytes: Math.max(0, left) };
+  }
+  return { release: bookHeap(bytes) };
+}
+
+/**
  * The memorySafetyFactor to read with
  * qvdjs's own budget, less the heap held rows have booked and what this read
  * adds beyond qvdjs's estimate.
  * @param {number} extraBytes - Heap the read needs beyond qvdjs's estimate
- * @param {{booked?: number, usable?: number}} [heap] - Heap already booked, and
- *   the heap qvdjs budgets against; both read from the process when left out
- * @returns {number} Fraction of the heap qvdjs may let the read use: above zero,
+ * @param {Budget} budget - qvdjs's budget
+ * @param {number} [held] - Heap already booked; read from the ledger when left out
+ * @returns {number} Fraction of qvdjs's budget the read may use: above zero,
  *   and at most qvdjs's own factor
  */
-export function memorySafetyFactorFor(extraBytes, heap = {}) {
-  const held = heap.booked ?? bookedBytes();
-  const usable = heap.usable ?? usableHeapBytes();
-  const allowed = QVDJS_SAFETY_FACTOR * usable - held - extraBytes;
-  return Math.min(QVDJS_SAFETY_FACTOR, Math.max(MINIMUM_FACTOR, allowed / usable));
+export function memorySafetyFactorFor(extraBytes, budget, held = bookedBytes()) {
+  const allowed = budget.factor * budget.bytes - held - extraBytes;
+  return Math.min(budget.factor, Math.max(MINIMUM_FACTOR, allowed / budget.bytes));
+}
+
+/**
+ * Heap the text that rows keep alive costs, from the file's header
+ * Each field's distinct values are its symbols: rows can keep at most one per
+ * row alive, or all of them, and each costs about its size on disk in
+ * characters, plus a string's header.
+ * @param {Array<{symbols: number, bytes: number}>} fields - Each field's symbol
+ *   count and the bytes of its symbol area, from the header
+ * @param {number} rows - Rows read
+ * @returns {number} Bytes, whole: bookings stay exact when they are added and taken away
+ */
+export function heldTextBytes(fields, rows) {
+  let bytes = 0;
+  for (const field of fields) {
+    if (field.symbols > 0) {
+      const alive = Math.min(field.symbols, rows);
+      bytes += alive * ((field.bytes / field.symbols) * BYTES_PER_TEXT_CHAR + STRING_HEADER_BYTES);
+    }
+  }
+  return Math.ceil(bytes);
+}
+
+/**
+ * A format's cost from one of the tables above, or 0 for a name that isn't a format
+ * @param {Object<string, number>} table - EXPORT_BYTES_PER_CELL or EXPORT_BYTES_PER_TEXT_CHAR
+ * @param {string} format - The export format
+ * @returns {number} Bytes
+ */
+export function exportCost(table, format) {
+  return Object.hasOwn(table, format) ? table[format] : 0;
+}
+
+/**
+ * Heap an export of these rows builds: per cell, and per character of their text
+ * @param {string} format - The export format
+ * @param {Array<Object>} rows - The rows read
+ * @param {number} columnCount - Fields per row
+ * @param {number} [limit] - Rows to export, from the first; 0 or none for every row
+ * @returns {{bytes: number, rows: number}} The heap, and the rows it is for
+ */
+export function exportHeapBytes(format, rows, columnCount, limit = 0) {
+  const count = limit > 0 ? Math.min(limit, rows.length) : rows.length;
+  let chars = 0;
+  for (let i = 0; i < count; i++) {
+    const row = rows[i];
+    for (const key in row) {
+      const value = row[key];
+      if (typeof value === "string") {
+        chars += value.length;
+      }
+    }
+  }
+  const bytes =
+    count * columnCount * exportCost(EXPORT_BYTES_PER_CELL, format) +
+    chars * exportCost(EXPORT_BYTES_PER_TEXT_CHAR, format);
+  return { bytes, rows: count };
+}
+
+/**
+ * Bytes, the way the messages below give them
+ * @param {number} bytes - Bytes
+ * @returns {string} Such as "1.4 GiB" or "380 MiB"
+ */
+function size(bytes) {
+  const mib = bytes / 2 ** 20;
+  return mib >= 1024 ? `${(mib / 1024).toFixed(1)} GiB` : `${Math.max(1, Math.round(mib))} MiB`;
+}
+
+/**
+ * Say why an export is refused for memory
+ * @param {string} formatLabel - The format, as the user sees it
+ * @param {number} rows - Rows to export
+ * @param {number} neededBytes - Heap the export needs
+ * @param {number} leftBytes - Heap left for it
+ * @returns {string} The message
+ */
+export function describeExportRefusal(formatLabel, rows, neededBytes, leftBytes) {
+  return (
+    `Exporting ${rows.toLocaleString()} rows to ${formatLabel} needs about ${size(neededBytes)} ` +
+    `of memory, and about ${size(leftBytes)} is left in what VS Code gives its extensions. ` +
+    "Parquet and Avro write as they go, and need much less."
+  );
 }
 
 /**
