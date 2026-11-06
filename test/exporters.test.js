@@ -4,11 +4,13 @@ const os = require("os");
 const path = require("path");
 const avro = require("avsc");
 const esbuild = require("esbuild");
+const Papa = require("papaparse");
 const initSqlJs = require("sql.js");
 const { buildOptions } = require("../esbuild.js");
 
 // Import exporter modules
 let avroExporter;
+let csvExporter;
 let sqliteExporter;
 let outputDir;
 
@@ -95,12 +97,25 @@ suite("Exporter Test Suite", () => {
   suiteSetup(async () => {
     // Import the ESM modules
     avroExporter = await import("../src/exporters/avroExporter.mjs");
+    csvExporter = await import("../src/exporters/csvExporter.mjs");
     sqliteExporter = await import("../src/exporters/sqliteExporter.mjs");
     outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-viewer-export-"));
   });
 
   suiteTeardown(() => {
     fs.rmSync(outputDir, { recursive: true, force: true });
+  });
+
+  test("CSV export - the first row contains the column names", async () => {
+    const rows = [{ "Order Date": "2024-01-02", "%CustomerKey": 'Å, "quoted"\nvalue' }];
+    const filePath = path.join(outputDir, "rows.csv");
+
+    await csvExporter.exportToCSV(rows, filePath);
+    const parsed = Papa.parse(fs.readFileSync(filePath, "utf8"), { header: true });
+
+    assert.deepStrictEqual(parsed.errors, []);
+    assert.deepStrictEqual(parsed.meta.fields, ["Order Date", "%CustomerKey"]);
+    assert.deepStrictEqual(parsed.data, rows);
   });
 
   test("Avro export - file is complete when the export resolves", async () => {
