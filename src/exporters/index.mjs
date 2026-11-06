@@ -43,6 +43,7 @@ class DataExporter {
    * @param {object} vscode - VS Code API object
    * @param {string} workspaceFolder - Workspace folder path
    * @param {number} maxRows - Maximum number of rows (for Qlik and PostgreSQL formats)
+   * @param {Array<string>} [fields] - The QVD's field names in order (for CSV's header row)
    * @returns {Promise<string|null>} Path to saved file or null if cancelled
    */
   static async exportData(
@@ -51,7 +52,8 @@ class DataExporter {
     suggestedFileName,
     vscode,
     workspaceFolder,
-    maxRows
+    maxRows,
+    fields
   ) {
     const formatConfig = {
       arrow: {
@@ -297,6 +299,10 @@ class DataExporter {
     } else if (format === "postgres") {
       // Pass options to PostgreSQL exporter
       await config.exporter(data, fileUri.fsPath, maxRows, postgresOptions);
+    } else if (format === "csv") {
+      // The header row comes from the QVD's fields, so it has every field, in QVD order,
+      // even when there are no rows
+      await config.exporter(data, fileUri.fsPath, { fields });
     } else {
       // Other formats don't need delimiter or maxRows
       await config.exporter(data, fileUri.fsPath);

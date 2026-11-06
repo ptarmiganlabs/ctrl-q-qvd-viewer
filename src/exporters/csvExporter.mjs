@@ -2,24 +2,61 @@ import { promises as fs } from "fs";
 import Papa from "papaparse";
 
 /**
+ * Collect the field names of all rows, in the order they first appear
+ * @param {Array<Object>} rows - Array of row objects
+ * @returns {Array<string>} Field names
+ */
+function fieldsOf(rows) {
+  const fields = new Set();
+  for (const row of rows) {
+    for (const field of Object.keys(row)) {
+      fields.add(field);
+    }
+  }
+  return [...fields];
+}
+
+/**
+ * Turn a value into what Papa Parse should write for it
+ * @param {*} value - Field name or value
+ * @returns {*} null for an empty cell, otherwise the value or its text
+ */
+function toCell(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  // Papa Parse writes a Date without the quotes every other value gets. Write its
+  // ISO text instead, and an invalid date as an empty cell.
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  return value;
+}
+
+/**
  * Export data to CSV format
  *
  * The file starts with the header row, as readers that take column names from the
- * first line expect. CSV has no comment syntax, so nothing is written before it.
+ * first line expect. CSV has no comment syntax, so nothing comes before it. With no
+ * field names and no rows, the file is empty.
  * @param {Array<Object>} data - Array of row objects
  * @param {string} filePath - Destination file path
+ * @param {object} [options] - CSV options
+ * @param {Array<string>} [options.fields] - Column names in order, such as the QVD's fields. Defaults to every row's keys, in the order they first appear
  * @returns {Promise<void>}
  */
-export async function exportToCSV(data, filePath) {
+export async function exportToCSV(data, filePath, options = {}) {
+  const { fields = fieldsOf(data) } = options;
+  // A null in a file with one column would make a blank line, which readers skip,
+  // so write it as an empty quoted value instead
+  const empty = fields.length === 1 ? "" : null;
+  const toLine = (values) => values.map((value) => toCell(value) ?? empty);
+
   try {
-    const csv = Papa.unparse(data, {
-      quotes: true,
-      quoteChar: '"',
-      escapeChar: '"',
-      delimiter: ",",
-      header: true,
-      newline: "\n",
-    });
+    const lines = data.map((row) => toLine(fields.map((field) => row[field])));
+    lines.unshift(toLine(fields));
+    const csv =
+      fields.length === 0 ? "" : Papa.unparse(lines, { quotes: true, newline: "\n" });
 
     await fs.writeFile(filePath, csv, "utf8");
   } catch (error) {

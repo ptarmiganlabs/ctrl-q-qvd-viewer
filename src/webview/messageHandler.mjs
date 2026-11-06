@@ -142,7 +142,8 @@ export function setupMessageHandler(
             fileName,
             vscode,
             workspaceFolder,
-            maxRows
+            maxRows,
+            result.columns
           );
 
           if (savedPath) {

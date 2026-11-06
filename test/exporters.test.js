@@ -82,6 +82,19 @@ function decodeAvro(bytes) {
 }
 
 /**
+ * Export rows to CSV in the output directory and read the file back
+ * @param {Array<Object>} rows - Array of row objects
+ * @param {string} name - File name in the output directory
+ * @param {object} [options] - CSV options
+ * @returns {Promise<string>} The file's text
+ */
+async function exportCsvText(rows, name, options) {
+  const filePath = path.join(outputDir, name);
+  await csvExporter.exportToCSV(rows, filePath, options);
+  return fs.readFileSync(filePath, "utf8");
+}
+
+/**
  * Count the rows in the data table of an exported SQLite database
  * @param {string} filePath - Database file path
  * @returns {Promise<number>} Number of rows
@@ -184,29 +197,24 @@ suite("Exporter Test Suite", () => {
   });
 
   test("CSV export - the file starts with the header row", async () => {
-    const filePath = path.join(outputDir, "awkward.csv");
-
-    await csvExporter.exportToCSV(makeAwkwardRows(), filePath);
+    const text = await exportCsvText(makeAwkwardRows(), "awkward.csv");
 
     // Written out by hand rather than by a CSV library, so a quoting mistake shared by
-    // the writer and a reader can't hide. Dates are ISO strings without quotes, nulls
-    // are empty, and quotes inside a value are doubled. No BOM, no trailing newline.
+    // the writer and a reader can't hide. Every value is quoted, dates as ISO text,
+    // nulls are empty, and quotes inside a value are doubled. No BOM, no trailing newline.
     assert.strictEqual(
-      fs.readFileSync(filePath, "utf8"),
+      text,
       [
         '"Order Date","%CustomerKey","Amount","Active","Note"',
-        '2024-01-02T00:00:00.000Z,"Å, ""quoted""\nvalue","12.5","true",',
-        '2024-01-03T00:00:00.000Z,"Ölstuga","-3","false","x"',
+        '"2024-01-02T00:00:00.000Z","Å, ""quoted""\nvalue","12.5","true",',
+        '"2024-01-03T00:00:00.000Z","Ölstuga","-3","false","x"',
       ].join("\n")
     );
   });
 
   test("CSV export - a reader takes the column names from the first line", async () => {
     const rows = makeAwkwardRows();
-    const filePath = path.join(outputDir, "header.csv");
-
-    await csvExporter.exportToCSV(rows, filePath);
-    const parsed = Papa.parse(fs.readFileSync(filePath, "utf8"), { header: true });
+    const parsed = Papa.parse(await exportCsvText(rows, "header.csv"), { header: true });
 
     assert.deepStrictEqual(parsed.errors, []);
     assert.deepStrictEqual(parsed.meta.fields, Object.keys(rows[0]));
@@ -218,27 +226,60 @@ suite("Exporter Test Suite", () => {
   });
 
   test("CSV export - exporting the same rows twice gives the same file", async () => {
-    const first = path.join(outputDir, "first.csv");
-    const second = path.join(outputDir, "second.csv");
-
-    await csvExporter.exportToCSV(makeAwkwardRows(), first);
+    const first = await exportCsvText(makeAwkwardRows(), "first.csv");
     // Let the clock move on, so a timestamp in the file would differ
     await new Promise((resolve) => setTimeout(resolve, 10));
-    await csvExporter.exportToCSV(makeAwkwardRows(), second);
+    const second = await exportCsvText(makeAwkwardRows(), "second.csv");
 
-    assert.ok(
-      fs.readFileSync(first).equals(fs.readFileSync(second)),
+    assert.strictEqual(
+      second,
+      first,
       "Nothing that changes between runs, such as a timestamp, should be in the file"
     );
   });
 
-  test("CSV export - a QVD comes out with the columns of the CSV it was made from", async () => {
+  test("CSV export - columns follow the given fields, not the rows' keys", async () => {
+    // JavaScript puts integer-like keys first, so Object.keys gives 2019, 2020, Name
+    const rows = [
+      { Name: "a", 2019: 1, 2020: 2 },
+      { Name: "b", 2020: 4, Extra: "x" },
+    ];
+
+    assert.strictEqual(
+      await exportCsvText(rows, "fields.csv", { fields: ["Name", "2019", "2020"] }),
+      ['"Name","2019","2020"', '"a","1","2"', '"b",,"4"'].join("\n"),
+      "A missing value should be empty, and a key that isn't a field left out"
+    );
+  });
+
+  test("CSV export - without fields, columns are every row's keys", async () => {
+    // A later row may have a column the first row does not
+    const rows = [{ a: 1 }, { a: 2, b: "y" }];
+
+    assert.strictEqual(
+      await exportCsvText(rows, "keys.csv"),
+      ['"a","b"', '"1",', '"2","y"'].join("\n")
+    );
+  });
+
+  test("CSV export - with no rows, the header row is still written", async () => {
+    assert.strictEqual(
+      await exportCsvText([], "no-rows.csv", { fields: ["id", "name"] }),
+      '"id","name"'
+    );
+    // With neither rows nor field names there is nothing to write
+    assert.strictEqual(await exportCsvText([], "nothing.csv"), "");
+  });
+
+  test("CSV export - a QVD comes out as the CSV it was made from", async () => {
     const legoDir = path.join(__dirname, "..", "test-data", "lego");
     const result = await new QvdReader().read(path.join(legoDir, "colors.qvd"), 0);
-    const filePath = path.join(outputDir, "colors.csv");
+    assert.strictEqual(result.error, null);
 
-    await csvExporter.exportToCSV(result.data, filePath);
-    const exported = Papa.parse(fs.readFileSync(filePath, "utf8"), { header: true });
+    const exported = Papa.parse(
+      await exportCsvText(result.data, "colors.csv", { fields: result.columns }),
+      { header: true }
+    );
     const source = Papa.parse(
       fs.readFileSync(path.join(legoDir, "colors.csv"), "utf8").trimEnd(),
       { header: true }
@@ -247,18 +288,34 @@ suite("Exporter Test Suite", () => {
     assert.deepStrictEqual(exported.errors, []);
     assert.deepStrictEqual(exported.meta.fields, source.meta.fields);
     assert.strictEqual(exported.data.length, result.metadata.noOfRecords);
-    // rgb is left out: colour codes such as 000000 are read as numbers (#154)
-    const pick = ({ id, name, is_trans }) => ({ id, name, is_trans });
-    assert.deepStrictEqual(exported.data.map(pick), source.data.map(pick));
+    // The reader turns these colour codes into numbers (#154). Once that is fixed,
+    // they come out as in colors.csv and this list goes.
+    const readAsNumbers = {
+      75: "0",
+      132: "0",
+      133: "0",
+      373: "8.45e+86",
+      1001: "93910000",
+      1007: "Infinity",
+    };
+    assert.deepStrictEqual(
+      exported.data,
+      source.data.map((row) =>
+        row.id in readAsNumbers ? { ...row, rgb: readAsNumbers[row.id] } : row
+      )
+    );
   });
 
-  test("CSV export - no rows gives an empty file", async () => {
-    const filePath = path.join(outputDir, "empty.csv");
-
-    await csvExporter.exportToCSV([], filePath);
-
-    // The exporter only gets rows, so with none there are no column names to write (#161)
-    assert.strictEqual(fs.readFileSync(filePath, "utf8"), "");
+  test("CSV export - an invalid date is an empty cell, and a one-column null isn't a blank line", async () => {
+    assert.strictEqual(
+      await exportCsvText([{ d: new Date(NaN), n: 1 }], "bad-date.csv"),
+      ['"d","n"', ',"1"'].join("\n")
+    );
+    // Readers skip blank lines, which would drop the row
+    assert.strictEqual(
+      await exportCsvText([{ only: "a" }, { only: null }, { only: "c" }], "one-column.csv"),
+      ['"only"', '"a"', '""', '"c"'].join("\n")
+    );
   });
 
   test("SQLite export - rows can be read back", async () => {
