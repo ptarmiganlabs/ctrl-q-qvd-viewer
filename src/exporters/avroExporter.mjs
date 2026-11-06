@@ -3,6 +3,21 @@ import { createWriteStream, existsSync, unlinkSync } from 'fs';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { isMissing, scanColumnTypes } from './columnTypes.mjs';
+import { DAY_MS, naiveDateText } from './naiveDates.mjs';
+
+// avsc leaves a logical type it doesn't know out of the file's schema. This one keeps
+// the annotation, which tells a reader that an int is a date, or a long a timestamp
+// with no time zone, and passes the values through as they are
+class Annotation extends avro.types.LogicalType {
+  _fromValue(value) {
+    return value;
+  }
+
+  _toValue(value) {
+    return value;
+  }
+}
+const LOGICAL_TYPES = { date: Annotation, "local-timestamp-millis": Annotation };
 
 /**
  * Heap an Avro export builds from the rows, for the memory guard. It writes as
@@ -68,7 +83,10 @@ export async function exportToAvro(data, filePath) {
       if (typeInfo.hasString || (typeInfo.hasNumber && typeInfo.hasBoolean)) {
         avroType = "string";
       } else if (typeInfo.hasDate) {
-        avroType = "long"; // Store dates as timestamps
+        // Days since 1970 for a date, or milliseconds for a timestamp
+        avroType = typeInfo.calendarDates
+          ? { type: "int", logicalType: "date" }
+          : { type: "long", logicalType: "local-timestamp-millis" };
       } else if (typeInfo.hasNumber) {
         avroType = typeInfo.allIntegers ? "long" : "double";
       } else if (typeInfo.hasBoolean) {
@@ -85,11 +103,14 @@ export async function exportToAvro(data, filePath) {
       return { name: key, type: avroType };
     });
 
-    const type = avro.Type.forSchema({
-      type: "record",
-      name: "QVDRecord",
-      fields: fields,
-    });
+    const type = avro.Type.forSchema(
+      {
+        type: "record",
+        name: "QVDRecord",
+        fields: fields,
+      },
+      { logicalTypes: LOGICAL_TYPES }
+    );
 
     // Rows as the schema expects them, produced as the encoder asks for them
     function* processedRows() {
@@ -103,11 +124,13 @@ export async function exportToAvro(data, filePath) {
 
           if (isMissing(value, typeInfo)) {
             processedRow[key] = null;
-          } else if (value instanceof Date) {
-            processedRow[key] = value.getTime();
           } else if (typeInfo.hasString) {
             // If schema expects string, convert everything to string
-            processedRow[key] = String(value);
+            processedRow[key] = value instanceof Date ? naiveDateText(value, false) : String(value);
+          } else if (value instanceof Date) {
+            processedRow[key] = typeInfo.calendarDates
+              ? Math.round(value.getTime() / DAY_MS)
+              : value.getTime();
           } else {
             processedRow[key] = value;
           }

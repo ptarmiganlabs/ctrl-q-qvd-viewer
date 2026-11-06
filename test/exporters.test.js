@@ -8,6 +8,8 @@ const ExcelJS = require("exceljs");
 const Papa = require("papaparse");
 const parquet = require("parquetjs");
 const initSqlJs = require("sql.js");
+// parquetjs's own Thrift, to read the logical types parquetjs reads past
+const thrift = require("thrift");
 const yaml = require("js-yaml");
 const { buildOptions } = require("../esbuild.js");
 
@@ -23,6 +25,7 @@ let sqliteExporter;
 let yamlExporter;
 let DataExporter;
 let QvdDataFrame;
+let CalendarDate;
 // QvdReader is async because it's a CJS wrapper around ESM
 let QvdReader;
 let outputDir;
@@ -122,23 +125,39 @@ const BLANK_ROWS_STORED = [
 /**
  * Decode an Avro object container file held in memory
  * @param {Buffer} bytes - File contents
- * @returns {Promise<{header: boolean, schema: Object, records: Array<Object>}>} Whether the file had a header, its schema, and its records
+ * @returns {Promise<{header: boolean, schema: Object, fileSchema: Object, records: Array<Object>}>}
+ *   Whether the file had a header, its schema as avsc reads it, its schema as the file
+ *   stores it, logical types included, and its records
  */
 function decodeAvro(bytes) {
   return new Promise((resolve, reject) => {
     let header = false;
     let schema;
+    let fileSchema;
     const records = [];
     const decoder = new avro.streams.BlockDecoder();
-    decoder.on("metadata", (type) => {
+    decoder.on("metadata", (type, codec, fileHeader) => {
       header = true;
       schema = type.schema();
+      fileSchema = JSON.parse(fileHeader.meta["avro.schema"].toString());
     });
     decoder.on("data", (record) => records.push(record));
     decoder.on("error", reject);
-    decoder.on("end", () => resolve({ header, schema, records }));
+    decoder.on("end", () => resolve({ header, schema, fileSchema, records }));
     decoder.end(bytes);
   });
+}
+
+/**
+ * Build rows with a column of dates without a time, from before 1900 on, and one of timestamps
+ * @returns {Array<Object>} Array of row objects
+ */
+function makeDateRows() {
+  return [
+    { day: new CalendarDate(Date.UTC(1756, 0, 1)), at: new Date(Date.UTC(2016, 0, 13, 6, 15)) },
+    // Midnight, in a column whose other values have a time
+    { day: new CalendarDate(Date.UTC(2016, 0, 14)), at: new Date(Date.UTC(2016, 0, 14)) },
+  ];
 }
 
 /**
@@ -165,6 +184,85 @@ async function readParquet(filePath) {
   } finally {
     await reader.close();
   }
+}
+
+/**
+ * Read the logical type of each Parquet column that has one: its footer's
+ * SchemaElement field 10, which parquetjs's reader skips
+ * @param {string} filePath - File path
+ * @returns {Object<string, string>} Such as {at: "TIMESTAMP(isAdjustedToUTC=false, MILLIS)"}
+ */
+function parquetLogicalTypes(filePath) {
+  const bytes = fs.readFileSync(filePath);
+  const footerLength = bytes.readUInt32LE(bytes.length - 8);
+  const footer = bytes.subarray(bytes.length - 8 - footerLength, bytes.length - 8);
+  const input = new thrift.TCompactProtocol(new thrift.TFramedTransport(footer));
+  // Call read for each field of the struct at hand, and skip the fields it doesn't read
+  const fields = (read) => {
+    input.readStructBegin();
+    for (;;) {
+      const { ftype, fid } = input.readFieldBegin();
+      if (ftype === thrift.Thrift.Type.STOP) {
+        break;
+      }
+      if (!read(fid, ftype)) {
+        input.skip(ftype);
+      }
+      input.readFieldEnd();
+    }
+    input.readStructEnd();
+  };
+
+  const types = {};
+  fields((metadataField) => {
+    // FileMetaData.schema
+    if (metadataField !== 2) {
+      return false;
+    }
+    const { size } = input.readListBegin();
+    for (let i = 0; i < size; i++) {
+      let name;
+      let logicalType;
+      fields((elementField) => {
+        if (elementField === 4) {
+          name = input.readString();
+          return true;
+        }
+        if (elementField !== 10) {
+          return false;
+        }
+        fields((kind) => {
+          // LogicalType.TIMESTAMP
+          if (kind !== 8) {
+            logicalType = `type ${kind}`;
+            return false;
+          }
+          let adjusted;
+          let unit;
+          fields((timestampField) => {
+            if (timestampField === 1) {
+              adjusted = input.readBool();
+              return true;
+            }
+            fields((unitField) => {
+              unit = ["", "MILLIS", "MICROS", "NANOS"][unitField];
+              return false;
+            });
+            return true;
+          });
+          logicalType = `TIMESTAMP(isAdjustedToUTC=${adjusted}, ${unit})`;
+          return true;
+        });
+        return true;
+      });
+      if (logicalType) {
+        types[name] = logicalType;
+      }
+    }
+    input.readListEnd();
+    return true;
+  });
+  return types;
 }
 
 /**
@@ -246,6 +344,7 @@ suite("Exporter Test Suite", () => {
     yamlExporter = await import("../src/exporters/yamlExporter.mjs");
     ({ default: DataExporter } = await import("../src/exporters/index.mjs"));
     ({ QvdDataFrame } = await import("qvdjs"));
+    ({ CalendarDate } = await import("../src/cellValue.mjs"));
     QvdReader = await require("../src/qvdReader.cjs");
     outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-viewer-export-"));
   });
@@ -712,8 +811,8 @@ suite("Exporter Test Suite", () => {
       )[0].values;
       assert.deepStrictEqual(
         row,
-        [3, 3.25, "Item 3", 0, null, rows[3].created.toISOString()],
-        "Row should round-trip, with booleans as 0/1 and dates as ISO strings"
+        [3, 3.25, "Item 3", 0, null, "2024-01-01 00:03:00"],
+        "Row should round-trip, with booleans as 0/1 and dates as ISO text with no time zone"
       );
     } finally {
       db.close();
@@ -831,10 +930,14 @@ suite("Exporter Test Suite", () => {
     const rows = [{ when }, { when: "" }, { when: " " }];
     const file = (extension) => path.join(outputDir, `dates.${extension}`);
 
+    // A timestamp is milliseconds, marked as a timestamp with no time zone
     await parquetExporter.exportToParquet(rows, file("parquet"));
     assert.deepStrictEqual(await readParquet(file("parquet")), {
-      schema: { when: "TIMESTAMP_MILLIS?" },
-      rows: [{ when }, { when: null }, { when: null }],
+      schema: { when: "INT64?" },
+      rows: [{ when: when.getTime() }, { when: null }, { when: null }],
+    });
+    assert.deepStrictEqual(parquetLogicalTypes(file("parquet")), {
+      when: "TIMESTAMP(isAdjustedToUTC=false, MILLIS)",
     });
 
     await avroExporter.exportToAvro(rows, file("avro"));
@@ -845,10 +948,10 @@ suite("Exporter Test Suite", () => {
       [{ when: when.getTime() }, { when: null }, { when: null }]
     );
 
-    // Arrow and SQLite store a date as its ISO text
+    // Arrow reads a timestamp back as its milliseconds
     await arrowExporter.exportToArrow(rows, file("arrow"));
     assert.deepStrictEqual(readArrow(file("arrow")).rows, [
-      { when: when.toISOString() },
+      { when: when.getTime() },
       { when: null },
       { when: null },
     ]);
@@ -858,7 +961,7 @@ suite("Exporter Test Suite", () => {
     const db = new SQL.Database(fs.readFileSync(file("db")));
     try {
       assert.deepStrictEqual(db.exec('SELECT "when" FROM data')[0].values, [
-        [when.toISOString()],
+        ["2024-01-02 03:04:05"],
         [null],
         [null],
       ]);
@@ -871,7 +974,7 @@ suite("Exporter Test Suite", () => {
     assert.ok(lines.includes('  "when" TIMESTAMP'), "The column should be a nullable TIMESTAMP");
     const values = lines.indexOf("VALUES");
     assert.deepStrictEqual(lines.slice(values + 1, values + 4), [
-      `  ('${when.toISOString()}'),`,
+      "  ('2024-01-02 03:04:05'),",
       "  (NULL),",
       "  (NULL);",
     ]);
@@ -883,6 +986,166 @@ suite("Exporter Test Suite", () => {
     assert.deepStrictEqual(
       [2, 3, 4].map((row) => sheet.getRow(row).getCell(1).value),
       [when, null, null]
+    );
+  });
+
+  test("Typed exports - a column of dates holds dates, and one of timestamps naive timestamps", async () => {
+    const rows = makeDateRows();
+    const file = (extension) => path.join(outputDir, `naive.${extension}`);
+
+    await parquetExporter.exportToParquet(rows, file("parquet"));
+    assert.deepStrictEqual(await readParquet(file("parquet")), {
+      schema: { day: "DATE", at: "INT64" },
+      // parquetjs reads a date back as a plain Date
+      rows: rows.map((row) => ({ day: new Date(row.day.getTime()), at: row.at.getTime() })),
+    });
+    // Not TIMESTAMP_MILLIS, which says UTC: pyarrow reads it as timestamp[ms, tz=UTC]
+    assert.deepStrictEqual(parquetLogicalTypes(file("parquet")), {
+      at: "TIMESTAMP(isAdjustedToUTC=false, MILLIS)",
+    });
+
+    await avroExporter.exportToAvro(rows, file("avro"));
+    const { fileSchema, records } = await decodeAvro(fs.readFileSync(file("avro")));
+    assert.deepStrictEqual(fileSchema.fields, [
+      { name: "day", type: { type: "int", logicalType: "date" } },
+      { name: "at", type: { type: "long", logicalType: "local-timestamp-millis" } },
+    ]);
+    // Days since 1970, and milliseconds
+    assert.deepStrictEqual(
+      records.map((record) => ({ ...record })),
+      [
+        { day: -78162, at: rows[0].at.getTime() },
+        { day: 16814, at: rows[1].at.getTime() },
+      ]
+    );
+
+    await arrowExporter.exportToArrow(rows, file("arrow"));
+    const table = arrow.tableFromIPC(fs.readFileSync(file("arrow")));
+    assert.deepStrictEqual(
+      table.schema.fields.map((field) => [field.name, String(field.type), field.type.timezone ?? null]),
+      [
+        ["day", "Date32<DAY>", null],
+        ["at", "Timestamp<MILLISECOND>", null],
+      ],
+      "A timestamp should have no time zone"
+    );
+    assert.deepStrictEqual(
+      readArrow(file("arrow")).rows,
+      rows.map((row) => ({ day: row.day.getTime(), at: row.at.getTime() }))
+    );
+
+    await sqliteExporter.exportToSQLite(rows, file("db"));
+    const SQL = await initSqlJs();
+    const db = new SQL.Database(fs.readFileSync(file("db")));
+    try {
+      assert.deepStrictEqual(db.exec("SELECT day, at FROM data")[0].values, [
+        ["1756-01-01", "2016-01-13 06:15:00"],
+        ["2016-01-14", "2016-01-14 00:00:00"],
+      ]);
+    } finally {
+      db.close();
+    }
+
+    await postgresExporter.exportToPostgres(rows, file("sql"), 0, {});
+    const lines = fs.readFileSync(file("sql"), "utf8").split("\n");
+    const create = lines.indexOf('CREATE TABLE "qvd_data" (');
+    assert.deepStrictEqual(lines.slice(create + 1, create + 3), [
+      '  "day" DATE NOT NULL,',
+      '  "at" TIMESTAMP NOT NULL',
+    ]);
+    const values = lines.indexOf("VALUES");
+    assert.deepStrictEqual(lines.slice(values + 1, values + 3), [
+      "  ('1756-01-01', '2016-01-13 06:15:00'),",
+      "  ('2016-01-14', '2016-01-14 00:00:00');",
+    ]);
+
+    // A column of timestamps stays one when the rows exported all fall at midnight
+    await postgresExporter.exportToPostgres(rows.slice(1), file("sql"), 0, {});
+    assert.ok(fs.readFileSync(file("sql"), "utf8").includes('  "at" TIMESTAMP NOT NULL'));
+  });
+
+  test("Excel export - dates are formatted date cells, and a column with one before 1900-03-01 is ISO text", async () => {
+    const since = [new CalendarDate(Date.UTC(1900, 2, 1)), new CalendarDate(Date.UTC(2016, 0, 14))];
+    // Timestamps, one of them with milliseconds
+    const precise = [new Date(Date.UTC(2016, 0, 13, 6, 15, 0, 250)), new Date(Date.UTC(2016, 0, 14))];
+    const rows = makeDateRows().map((row, index) => ({
+      ...row,
+      since: since[index],
+      precise: precise[index],
+    }));
+    const filePath = path.join(outputDir, "dates.xlsx");
+
+    await excelExporter.exportToExcel(rows, filePath);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+    const sheet = workbook.getWorksheet("Data");
+    const cells = (column) =>
+      [2, 3].map((row) => {
+        const cell = sheet.getRow(row).getCell(column);
+        return [cell.value, cell.numFmt ?? null];
+      });
+
+    // Excel can't show 1756-01-01, so the whole column is text
+    assert.deepStrictEqual(cells(1), [
+      ["1756-01-01", null],
+      ["2016-01-14", null],
+    ]);
+    assert.deepStrictEqual(cells(2), [
+      [rows[0].at, "yyyy-mm-dd hh:mm:ss"],
+      [rows[1].at, "yyyy-mm-dd hh:mm:ss"],
+    ]);
+    // exceljs reads a date back as a plain Date
+    assert.deepStrictEqual(cells(3), [
+      [new Date(since[0].getTime()), "yyyy-mm-dd"],
+      [new Date(since[1].getTime()), "yyyy-mm-dd"],
+    ]);
+    // The milliseconds show, as SQLite and PostgreSQL write them
+    assert.deepStrictEqual(cells(4), [
+      [precise[0], "yyyy-mm-dd hh:mm:ss.000"],
+      [precise[1], "yyyy-mm-dd hh:mm:ss.000"],
+    ]);
+    assert.deepStrictEqual(rows[0].day, makeDateRows()[0].day, "The rows should stay as they were");
+  });
+
+  test("Typed exports - a QVD's dates and timestamps come out as dates, as an export reads them", async () => {
+    const read = async (name, maxRows) => {
+      const qvdPath = path.join(__dirname, "..", "test-data", name);
+      const result = await new QvdReader().read(qvdPath, maxRows, { dates: true });
+      assert.strictEqual(result.error, null);
+      return result.data;
+    };
+
+    // Timestamps, one field tagged $timestamp and one with no tags
+    const taxi = await read("chicago_taxi_rides/chicago_taxi_rides_2016_01.qvd", 100);
+    const parquetPath = path.join(outputDir, "taxi.parquet");
+    await parquetExporter.exportToParquet(taxi, parquetPath);
+    const { rows } = await readParquet(parquetPath);
+    const logicalTypes = parquetLogicalTypes(parquetPath);
+    assert.strictEqual(logicalTypes.trip_start_timestamp, "TIMESTAMP(isAdjustedToUTC=false, MILLIS)");
+    assert.strictEqual(logicalTypes.trip_end_timestamp, "TIMESTAMP(isAdjustedToUTC=false, MILLIS)");
+    assert.strictEqual(rows[0].trip_start_timestamp, Date.UTC(2016, 0, 13, 6, 15));
+
+    // Dates from 1756 on, in a field tagged $numeric and $integer
+    const stockholm = await read("stockholm_temp/stockholm_temp.qvd", 1000);
+    const sqlPath = path.join(outputDir, "stockholm.sql");
+    await postgresExporter.exportToPostgres(stockholm, sqlPath, 2, {});
+    const lines = fs.readFileSync(sqlPath, "utf8").split("\n");
+    assert.ok(lines.includes('  "date" DATE NOT NULL,'), "The column should be a DATE");
+    assert.ok(lines[lines.indexOf("VALUES") + 1].startsWith("  ('1756-01-01', "));
+
+    // Excel can't show them, so they are text
+    const excelPath = path.join(outputDir, "stockholm.xlsx");
+    await excelExporter.exportToExcel(stockholm, excelPath);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(excelPath);
+    assert.strictEqual(workbook.getWorksheet("Data").getRow(2).getCell(1).value, "1756-01-01");
+
+    // Every format with date types reads them so, and none other
+    assert.deepStrictEqual(
+      DataExporter.getExportFormats()
+        .map(({ name }) => name)
+        .filter((name) => DataExporter.writesDates(name)),
+      ["arrow", "avro", "excel", "parquet", "postgres", "sqlite"]
     );
   });
 });

@@ -40,6 +40,36 @@ export const CONVERSION_BYTES_PER_CELL = 12;
 export const HELD_BYTES_PER_CELL = 32;
 
 /**
+ * Heap a read for dates needs per distinct value of a field that may hold dates, as
+ * it finds them: a Date, 32 bytes, and its entry in the map that finds them, up to 43
+ * bytes while the map grows. Measured on a million distinct timestamps.
+ */
+export const DATE_BYTES_PER_VALUE = 96;
+
+/**
+ * Heap the rows of a read for dates hold per distinct date: its Date, 32 bytes.
+ */
+export const HELD_BYTES_PER_DATE = 48;
+
+/**
+ * Heap a read for dates needs for the Dates of its date fields, at most
+ * Which fields hold dates is known only once the rows are read, so every field that
+ * may is priced: all but those tagged $text, whose values are all text, never a date.
+ * @param {Array<{symbols: number, tags: Array<string>}>} fields - The header's fields
+ * @param {number} rows - Rows the read returns
+ * @returns {number} Bytes
+ */
+export function dateValueBytes(fields, rows) {
+  let values = 0;
+  for (const field of fields) {
+    if (!field.tags.includes("$text")) {
+      values += Math.min(field.symbols, rows);
+    }
+  }
+  return values * DATE_BYTES_PER_VALUE;
+}
+
+/**
  * Heap a string costs besides its characters, and per character at most: text
  * outside Latin-1 takes two bytes a character.
  */

@@ -18,6 +18,7 @@ const root = path.join(__dirname, "..");
 const colors = path.join(root, "test-data", "lego", "colors.qvd");
 const sets = path.join(root, "test-data", "lego", "sets.qvd");
 const inventoryParts = path.join(root, "test-data", "lego", "inventory_parts.qvd");
+const stockholm = path.join(root, "test-data", "stockholm_temp", "stockholm_temp.qvd");
 
 /**
  * An error shaped like qvdjs's memory refusal
@@ -113,6 +114,9 @@ suite("Memory Guard Test Suite", () => {
     assert.ok(guard.CONVERSION_BYTES_PER_CELL >= 5.8 * 2);
     // Read rows held up to 25 bytes per cell
     assert.ok(guard.HELD_BYTES_PER_CELL >= 25 * 1.25);
+    // A read for dates built a Date of 32 bytes and a map entry of up to 43 per distinct value
+    assert.ok(guard.DATE_BYTES_PER_VALUE >= (32 + 43) * 1.25);
+    assert.ok(guard.HELD_BYTES_PER_DATE >= 32 * 1.5);
     // Profiling a date field needed 181 bytes per value, an Excel export 730 per cell and 2.3 per character
     assert.ok(PROFILE_BYTES_PER_VALUE >= 181 * 1.5);
     const excel = DataExporter.memoryCost("excel");
@@ -425,6 +429,82 @@ suite("Memory Guard Test Suite", () => {
     // colors.qvd's id field is numbers, and keeps no text alive
     assert.strictEqual(shares.get("id"), 0);
     assert.ok(guard.heldTextBytes(fields, 135, shares) < guard.heldTextBytes(fields, 135));
+  });
+
+  test("A read for dates books the Dates its rows hold", async () => {
+    const header = await QvdDataFrame.readMetadata(stockholm, { allowedDir: path.dirname(stockholm) });
+    const fields = header.fields.map((field) => ({
+      name: field.fieldName,
+      symbols: Number(field.noOfSymbols),
+      bytes: Number(field.length),
+    }));
+    const result = await new QvdReader().read(stockholm, 0, { dates: true });
+    assert.strictEqual(result.error, null);
+
+    const held = guard.bookedBytes();
+    result.release();
+    const rows = result.data.length;
+    const shares = guard.textShares(result.data, result.columns);
+    // One Date for each of the 98,543 days, and no text kept alive for them
+    assert.strictEqual(shares.get("date"), 0);
+    assert.strictEqual(
+      held - guard.bookedBytes(),
+      rows * 5 * guard.HELD_BYTES_PER_CELL +
+        guard.heldTextBytes(fields, rows, shares) +
+        98543 * guard.HELD_BYTES_PER_DATE
+    );
+  });
+
+  test("A read for dates prices a Date for each value of a field that may hold dates", () => {
+    const fields = [
+      { symbols: 5000, tags: ["$numeric", "$timestamp"] },
+      // Text alone holds no date
+      { symbols: 200, tags: ["$ascii", "$text"] },
+      { symbols: 30, tags: [] },
+    ];
+    // At most one Date for each row read
+    assert.strictEqual(guard.dateValueBytes(fields, 1000), (1000 + 30) * guard.DATE_BYTES_PER_VALUE);
+  });
+
+  test("A read for dates is refused when its Dates don't fit, as the same read without them isn't", async () => {
+    const reader = new QvdReader();
+    (await reader.read(colors, 1)).release();
+    const budget = guard.knownBudget();
+    const allowedDir = path.dirname(stockholm);
+    const { estimate, budget: checked } = await QvdDataFrame.checkRead(stockholm, { allowedDir, duals: "both" });
+    const header = await QvdDataFrame.readMetadata(stockholm, { allowedDir });
+    const fields = header.fields.map((field) => ({
+      symbols: Number(field.noOfSymbols),
+      tags: [].concat(field.tags?.String ?? []),
+    }));
+    const rows = header.rowCount;
+    const datesBytes = guard.dateValueBytes(fields, rows);
+    // What the read needs without its Dates, and half of what they add
+    const readBytes =
+      estimate.heapBytes +
+      (checked.bound === "process" ? estimate.externalBytes : 0) +
+      rows * 5 * guard.CONVERSION_BYTES_PER_CELL;
+    // Rows other tests dropped are released once they are collected, which can happen
+    // during the reads and leave them more room: then the reads are done again
+    for (let attempt = 1; ; attempt++) {
+      const booked = guard.bookedBytes();
+      const release = guard.bookHeap(budget.factor * budget.bytes - booked - readBytes - datesBytes / 2);
+      let withDates;
+      let withoutDates;
+      try {
+        withDates = await reader.read(stockholm, 0, { dates: true });
+        withDates.release();
+        withoutDates = await reader.read(stockholm, 0);
+        withoutDates.release();
+      } finally {
+        release();
+      }
+      if (guard.bookedBytes() === booked || attempt === 3) {
+        assert.strictEqual(withDates.errorReason, "memory");
+        assert.strictEqual(withoutDates.error, null);
+        break;
+      }
+    }
   });
 
   test("A read is refused while held rows have booked the heap", async () => {

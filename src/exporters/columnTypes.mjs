@@ -1,4 +1,4 @@
-import { isBlank } from "../cellValue.mjs";
+import { CalendarDate, isBlank } from "../cellValue.mjs";
 
 /**
  * What a column holds, from which a typed exporter picks the column's type
@@ -10,6 +10,7 @@ import { isBlank } from "../cellValue.mjs";
  * @property {boolean} hasString - Some value is text, counting blank text unless it is null
  * @property {boolean} hasBoolean - Some value is a boolean
  * @property {boolean} hasDate - Some value is a Date
+ * @property {boolean} calendarDates - Every Date is a CalendarDate: a date without a time
  * @property {boolean} hasObject - Some value is an object other than a Date
  * @property {boolean} blanksAreNull - The column's blank text is a missing value
  */
@@ -35,6 +36,7 @@ export function scanColumnTypes(rows, columnNames) {
       hasString: false,
       hasBoolean: false,
       hasDate: false,
+      calendarDates: true,
       hasObject: false,
       blanksAreNull: false,
     };
@@ -61,6 +63,9 @@ export function scanColumnTypes(rows, columnNames) {
         typeInfo.hasBoolean = true;
       } else if (value instanceof Date) {
         typeInfo.hasDate = true;
+        if (!(value instanceof CalendarDate)) {
+          typeInfo.calendarDates = false;
+        }
       } else if (typeof value === "object") {
         typeInfo.hasObject = true;
       }

@@ -1,6 +1,7 @@
 import parquet from 'parquetjs';
 import { existsSync, unlinkSync } from 'fs';
 import { isMissing, scanColumnTypes } from './columnTypes.mjs';
+import { markNaiveTimestamps } from './parquetTimestamps.mjs';
 
 /**
  * Heap a Parquet export builds from the rows, for the memory guard. It writes
@@ -40,6 +41,7 @@ export async function exportToParquet(data, filePath) {
 
     // Build schema based on collected type information
     const schemaFields = {};
+    const timestampColumns = [];
 
     columnNames.forEach((key) => {
       const typeInfo = columnTypes[key];
@@ -49,8 +51,12 @@ export async function exportToParquet(data, filePath) {
       // If column has mixed types or strings, use UTF8 as most compatible
       if (typeInfo.hasString || (typeInfo.hasNumber && typeInfo.hasBoolean)) {
         type = "UTF8";
+      } else if (typeInfo.hasDate && typeInfo.calendarDates) {
+        type = "DATE";
       } else if (typeInfo.hasDate) {
-        type = "TIMESTAMP_MILLIS";
+        // Milliseconds, marked as a timestamp with no time zone once the file is written
+        type = "INT64";
+        timestampColumns.push(key);
       } else if (typeInfo.hasNumber) {
         type = typeInfo.allIntegers ? "INT64" : "DOUBLE";
       } else if (typeInfo.hasBoolean) {
@@ -77,7 +83,7 @@ export async function exportToParquet(data, filePath) {
           // If schema expects string, convert everything to string
           processedRow[key] = String(value);
         } else if (value instanceof Date) {
-          processedRow[key] = value;
+          processedRow[key] = typeInfo.calendarDates ? value : value.getTime();
         } else {
           processedRow[key] = value;
         }
@@ -87,6 +93,7 @@ export async function exportToParquet(data, filePath) {
     }
 
     await writer.close();
+    await markNaiveTimestamps(filePath, timestampColumns);
   } catch (error) {
     // Clean up the partially created file on error
     try {

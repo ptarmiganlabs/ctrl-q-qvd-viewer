@@ -1,6 +1,7 @@
 import { promises as fs, existsSync, unlinkSync } from 'fs';
 import * as arrow from 'apache-arrow';
 import { isMissing, scanColumnTypes } from './columnTypes.mjs';
+import { naiveDateText } from './naiveDates.mjs';
 
 /**
  * Heap an Arrow export builds from the rows, for the memory guard. It needed 12
@@ -35,44 +36,50 @@ export async function exportToArrow(data, filePath) {
 
     // Determine the most compatible type for each column, from all rows
     const columnTypes = scanColumnTypes(data, columnNames);
+    const isTextColumn = (typeInfo) =>
+      typeInfo.hasString || typeInfo.hasObject || (typeInfo.hasNumber && typeInfo.hasBoolean);
 
-    // Normalize data to ensure type consistency within each column
-    const normalizedData = data.map((row) => {
-      const normalizedRow = {};
-
-      columnNames.forEach((key) => {
+    // Each column's values, normalized so that a column holds one type
+    const columns = new Map(columnNames.map((key) => [key, []]));
+    for (const row of data) {
+      for (const key of columnNames) {
         const value = row[key];
         const typeInfo = columnTypes[key];
+        let cell;
 
         if (isMissing(value, typeInfo)) {
-          normalizedRow[key] = null;
-        } else if (
-          typeInfo.hasString ||
-          typeInfo.hasObject ||
-          (typeInfo.hasNumber && typeInfo.hasBoolean)
-        ) {
+          cell = null;
+        } else if (isTextColumn(typeInfo)) {
           // If column has mixed types or strings, convert everything to string
           if (value instanceof Date) {
-            normalizedRow[key] = value.toISOString();
+            cell = naiveDateText(value, false);
           } else if (typeof value === "object") {
-            normalizedRow[key] = JSON.stringify(value);
+            cell = JSON.stringify(value);
           } else {
-            normalizedRow[key] = String(value);
+            cell = String(value);
           }
-        } else if (value instanceof Date) {
-          // Convert dates to ISO strings for better compatibility
-          normalizedRow[key] = value.toISOString();
         } else {
-          // Keep primitives (string, number, boolean) as-is
-          normalizedRow[key] = value;
+          // Keep primitives (string, number, boolean) and dates as they are
+          cell = value;
         }
-      });
+        columns.get(key).push(cell);
+      }
+    }
 
-      return normalizedRow;
-    });
-
-    // Create Arrow table from JSON (this method is most reliable)
-    const table = arrow.tableFromJSON(normalizedData);
+    // A column of dates holds dates, or timestamps with no time zone, as a QVD's are.
+    // Arrow infers each other column's type from its values
+    const table = new arrow.Table(
+      Object.fromEntries(
+        columnNames.map((key) => {
+          const typeInfo = columnTypes[key];
+          let type;
+          if (typeInfo.hasDate && !isTextColumn(typeInfo)) {
+            type = typeInfo.calendarDates ? new arrow.DateDay() : new arrow.TimestampMillisecond();
+          }
+          return [key, arrow.vectorFromArray(columns.get(key), type)];
+        })
+      )
+    );
 
     // Write to file
     const writer = arrow.RecordBatchFileWriter.writeAll(table);

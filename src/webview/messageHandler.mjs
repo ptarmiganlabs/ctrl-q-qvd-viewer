@@ -200,6 +200,8 @@ export function setupMessageHandler(
             // A CSV export builds from a chunk of rows at a time
             chunkRows: cost.chunkRows ?? 0,
             holdCallerBytes: false,
+            // A format with date types gets a QVD's dates as dates
+            dates: DataExporter.writesDates(format),
           });
           releaseExportedRows = result.release;
           if (result.errorReason === "aborted") {

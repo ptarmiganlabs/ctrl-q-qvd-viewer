@@ -6,6 +6,8 @@ const path = require("path");
 // QvdReader is async because it's a CJS wrapper around ESM
 let QvdReader;
 let QvdDataFrame;
+let QvdDual;
+let CalendarDate;
 let qvdProfiler;
 let outputDir;
 let fileCount = 0;
@@ -36,10 +38,11 @@ async function assertReadsAs(cases) {
  * Read every row of a QVD in the test data
  * @param {string} name - File path within test-data
  * @param {number} [maxRows] - Rows to read, 0 for all
+ * @param {object} [options] - The reader's options, such as dates
  * @returns {Promise<Array<Object>>} The rows
  */
-async function readTestData(name, maxRows = 0) {
-  const result = await new QvdReader().read(path.join(testData, name), maxRows);
+async function readTestData(name, maxRows = 0, options = {}) {
+  const result = await new QvdReader().read(path.join(testData, name), maxRows, options);
   assert.strictEqual(result.error, null);
   return result.data;
 }
@@ -47,7 +50,8 @@ async function readTestData(name, maxRows = 0) {
 suite("QVD Reader Test Suite", () => {
   suiteSetup(async () => {
     QvdReader = await require("../src/qvdReader.cjs");
-    ({ QvdDataFrame } = await import("qvdjs"));
+    ({ QvdDataFrame, QvdDual } = await import("qvdjs"));
+    ({ CalendarDate } = await import("../src/cellValue.mjs"));
     qvdProfiler = await import("../src/qvdProfiler.mjs");
     outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-viewer-reader-"));
   });
@@ -231,6 +235,124 @@ suite("QVD Reader Test Suite", () => {
     );
     assert.ok(partNums.includes(3001), "3001 should be a number");
     assert.ok(partNums.includes("3001a"), "3001a should be text");
+  });
+
+  test("Reader - for an export, a field of dates or timestamps reads as Dates of Qlik's wall clock", async () => {
+    const taxi = "chicago_taxi_rides/chicago_taxi_rides_2016_01.qvd";
+    const [asText] = await readTestData(taxi, 1);
+    const [asDates] = await readTestData(taxi, 1, { dates: true });
+
+    assert.strictEqual(asText.trip_start_timestamp, "2016-1-13 06:15:00");
+    // Tagged $timestamp, and with no tags at all
+    const start = new Date(Date.UTC(2016, 0, 13, 6, 15));
+    assert.deepStrictEqual(asDates.trip_start_timestamp, start);
+    assert.deepStrictEqual(asDates.trip_end_timestamp, start);
+    // The other fields read as they do without dates
+    const without = (row) => ({ ...row, trip_start_timestamp: null, trip_end_timestamp: null });
+    assert.deepStrictEqual(without(asDates), without(asText));
+
+    // Tagged $numeric and $integer, with a day's serial and its date in every dual
+    const [day] = await readTestData("stockholm_temp/stockholm_temp.qvd", 1, { dates: true });
+    assert.deepStrictEqual(day.date, new CalendarDate(Date.UTC(1756, 0, 1)));
+
+    // As serials, the years 1950 to 2017 are days in 1905, which their text doesn't show
+    const sets = await readTestData("lego/sets.qvd", 0, { dates: true });
+    assert.ok(sets.every((row) => typeof row.year === "number"));
+  });
+
+  test("Reader - a field of duals reads as dates only if every value's text shows its date", async () => {
+    const filePath = path.join(outputDir, "dates.qvd");
+    const columns = ["timestamp", "dayFirst", "year", "mixed", "wrongDay", "serial"];
+    const rows = [
+      [
+        new QvdDual(42382.25, "2016-1-13 06:00:00"),
+        new QvdDual(42382, "13/1/2016"),
+        new QvdDual(1950, "1950"),
+        new QvdDual(42382, "2016-1-13"),
+        new QvdDual(42382, "2016-1-14"),
+        42382,
+      ],
+      [
+        "",
+        new QvdDual(42383, "1/14/2016"),
+        new QvdDual(2017, "2017"),
+        "unknown",
+        new QvdDual(42383, "2016-1-15"),
+        42383,
+      ],
+    ];
+    await new QvdDataFrame(rows, columns).toQvd(filePath, { allowedDir: outputDir });
+
+    const result = await new QvdReader().read(filePath, 0, { dates: true });
+
+    assert.strictEqual(result.error, null);
+    // A blank is no date either way; a serial without text, untagged, is a number
+    assert.deepStrictEqual(result.data, [
+      {
+        timestamp: new Date(Date.UTC(2016, 0, 13, 6)),
+        dayFirst: new CalendarDate(Date.UTC(2016, 0, 13)),
+        year: 1950,
+        mixed: "2016-1-13",
+        wrongDay: "2016-1-14",
+        serial: 42382,
+      },
+      {
+        timestamp: "",
+        dayFirst: new CalendarDate(Date.UTC(2016, 0, 14)),
+        year: 2017,
+        mixed: "unknown",
+        wrongDay: "2016-1-15",
+        serial: 42383,
+      },
+    ]);
+  });
+
+  test("Reader - a field's tag or text, not its values, says whether it holds dates or timestamps", async () => {
+    const filePath = path.join(outputDir, "date-kinds.qvd");
+    const columns = ["shownAsDates", "midnights", "twelveHour"];
+    const rows = [
+      [
+        new QvdDual(42382.75, "2016-1-13"),
+        new QvdDual(42382, "2016-1-13 00:00:00"),
+        new QvdDual(42382.75, "1/13/2016 6:00 PM"),
+      ],
+      [
+        new QvdDual(42383.25, "2016-1-14"),
+        new QvdDual(42383, "2016-1-14 00:00:00"),
+        new QvdDual(42383.25, "1/14/2016 6:00 AM"),
+      ],
+    ];
+    await new QvdDataFrame(rows, columns).toQvd(filePath, { allowedDir: outputDir });
+
+    const result = await new QvdReader().read(filePath, 0, { dates: true });
+
+    assert.strictEqual(result.error, null);
+    assert.deepStrictEqual(result.data, [
+      {
+        // Timestamps Qlik shows as dates are dates, as shown
+        shownAsDates: new CalendarDate(Date.UTC(2016, 0, 13)),
+        // Text with a time makes timestamps, even at midnight
+        midnights: new Date(Date.UTC(2016, 0, 13)),
+        twelveHour: new Date(Date.UTC(2016, 0, 13, 18)),
+      },
+      {
+        shownAsDates: new CalendarDate(Date.UTC(2016, 0, 14)),
+        midnights: new Date(Date.UTC(2016, 0, 14)),
+        twelveHour: new Date(Date.UTC(2016, 0, 14, 6)),
+      },
+    ]);
+    assert.ok(!(result.data[0].midnights instanceof CalendarDate), "A timestamp isn't a date");
+  });
+
+  test("Reader - finding a read's dates is given up between chunks", async () => {
+    const { findDateColumns } = await import("../src/qvdDates.mjs");
+    // Enough rows to span more than one chunk between yields
+    const date = new QvdDual(42382, "2016-1-13");
+    const rows = Array.from({ length: 300000 }, () => [date]);
+    const controller = new AbortController();
+    controller.abort();
+
+    await assert.rejects(findDateColumns(rows, [[]], controller.signal), { name: "AbortError" });
   });
 
   test("Profiling - an all-blank field in the taxi data is neither a date nor a number", async () => {

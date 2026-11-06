@@ -1,6 +1,11 @@
 import ExcelJS from "exceljs";
 import { isBlank } from "../cellValue.mjs";
 import { scanColumnTypes } from "./columnTypes.mjs";
+import { naiveDateText } from "./naiveDates.mjs";
+
+// The first date Excel shows as itself: it can't show earlier ones, and its 1900 leap
+// year bug puts January and February 1900 a day out
+const EXCEL_FIRST_DATE = Date.UTC(1900, 2, 1);
 
 /**
  * Heap an Excel export builds from the rows, for the memory guard. It needed
@@ -42,29 +47,56 @@ export async function exportToExcel(data, filePath) {
 
     // Get column headers from first row
     const columnNames = Object.keys(data[0]);
-    const columns = columnNames.map((key) => ({
-      header: key,
-      key: key,
-      width: 15,
-    }));
+    const columnTypes = scanColumnTypes(data, columnNames);
+
+    // A column of dates shows them as dates, and one of timestamps with their time, to
+    // the millisecond where one has them. A column with a date Excel can't show is
+    // written as ISO text instead
+    const textDateColumns = [];
+    const columns = columnNames.map((key) => {
+      const typeInfo = columnTypes[key];
+      const column = { header: key, key: key, width: 15 };
+      if (typeInfo.hasDate) {
+        let early = false;
+        let milliseconds = false;
+        for (const row of data) {
+          const value = row[key];
+          if (value instanceof Date) {
+            early ||= value.getTime() < EXCEL_FIRST_DATE;
+            milliseconds ||= value.getTime() % 1000 !== 0;
+          }
+        }
+        if (early) {
+          textDateColumns.push(key);
+        } else if (typeInfo.calendarDates) {
+          column.style = { numFmt: "yyyy-mm-dd" };
+        } else {
+          column.style = { numFmt: milliseconds ? "yyyy-mm-dd hh:mm:ss.000" : "yyyy-mm-dd hh:mm:ss" };
+        }
+      }
+      return column;
+    });
 
     worksheet.columns = columns;
 
     // Blank text in a column of numbers, booleans or dates is an empty cell, which a
     // formula reads as nothing: as text, =A2+1 would give #VALUE!
-    const columnTypes = scanColumnTypes(data, columnNames);
     const blankColumns = columnNames.filter((key) => columnTypes[key].blanksAreNull);
 
     // Add rows
     data.forEach((row) => {
+      // A copy where a cell changes, so that the caller's row stays as it was
       let cells = row;
       for (const key of blankColumns) {
         if (isBlank(row[key])) {
-          // A copy, so that the caller's row stays as it was
-          if (cells === row) {
-            cells = { ...row };
-          }
+          cells = cells === row ? { ...row } : cells;
           cells[key] = null;
+        }
+      }
+      for (const key of textDateColumns) {
+        if (row[key] instanceof Date) {
+          cells = cells === row ? { ...row } : cells;
+          cells[key] = naiveDateText(row[key], columnTypes[key].calendarDates);
         }
       }
       worksheet.addRow(cells);
