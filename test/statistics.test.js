@@ -57,6 +57,29 @@ suite("Statistical Analysis Test Suite", () => {
     );
   });
 
+  test("Numeric field detection - codes and blank text are not numbers", () => {
+    const codes = ["0901", "0x1F", "1e3", "+42", "000000"].map((value) => ({ value }));
+    const blanks = Array.from({ length: 10 }, () => ({ value: " " }));
+
+    assert.strictEqual(qvdStatistics.isNumericField(codes, "value"), false);
+    assert.strictEqual(qvdStatistics.isNumericField(blanks, "value"), false);
+    assert.strictEqual(qvdStatistics.calculateStatistics(blanks, "value").isNumeric, false);
+  });
+
+  test("Statistics calculation - blank text is left out, as a null is", () => {
+    const data = [
+      ...Array.from({ length: 10 }, () => ({ value: 10 })),
+      ...Array.from({ length: 10 }, () => ({ value: " " })),
+      ...Array.from({ length: 10 }, () => ({ value: "" })),
+    ];
+
+    assert.strictEqual(qvdStatistics.isNumericField(data, "value"), true);
+    const stats = qvdStatistics.calculateStatistics(data, "value");
+    assert.strictEqual(stats.descriptive.mean, 10, "A blank isn't the number 0");
+    assert.strictEqual(stats.descriptive.min, 10);
+    assert.strictEqual(stats.descriptive.count, 10);
+  });
+
   test("Statistics calculation - basic metrics", () => {
     const data = [
       { temp: 10 },

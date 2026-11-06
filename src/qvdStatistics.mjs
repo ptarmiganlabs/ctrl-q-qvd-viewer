@@ -3,17 +3,16 @@
  * Computes statistical metrics for numeric fields
  */
 
+import { isBlank, toCellValue } from "./cellValue.mjs";
+
 /**
- * Check if a value is numeric
+ * Check if a value is numeric: a number, or text the reader reads as one, so that a
+ * code such as 0901 or blank text isn't a number here either
  * @param {*} value - Value to check
  * @returns {boolean} True if numeric
  */
 function isNumeric(value) {
-  if (value === null || value === undefined || value === "") {
-    return false;
-  }
-  const num = Number(value);
-  return !Number.isNaN(num) && Number.isFinite(num);
+  return typeof toCellValue(value) === "number";
 }
 
 /**
@@ -37,7 +36,8 @@ export function isNumericField(data, fieldName, threshold = 0.9) {
 
   for (let i = 0; i < data.length; i += step) {
     const value = data[i][fieldName];
-    if (value !== null && value !== undefined && value !== "") {
+    // Blank text, like a null, is no value
+    if (value !== null && value !== undefined && !isBlank(value)) {
       nonNullCount++;
       if (isNumeric(value)) {
         numericCount++;
@@ -323,13 +323,14 @@ export function calculateStatistics(data, fieldName) {
   for (const row of data) {
     const value = row[fieldName];
 
-    if (value === null || value === undefined || value === "") {
+    if (value === null || value === undefined || isBlank(value)) {
       nullCount++;
       continue;
     }
 
-    if (isNumeric(value)) {
-      numericValues.push(Number(value));
+    const number = toCellValue(value);
+    if (typeof number === "number") {
+      numericValues.push(number);
     } else {
       nonNumericCount++;
     }
