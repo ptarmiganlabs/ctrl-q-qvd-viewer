@@ -1364,13 +1364,32 @@ suite("Exporter Test Suite", () => {
       "2016-11-06 08:00:00Z",
     ];
 
+    const instants = utc.map((text) => Date.parse(text.replace(" ", "T")));
+
     const parquetPath = path.join(outputDir, "dst.parquet");
     const parquetShifts = await parquetExporter.exportToParquet(read.data, parquetPath, options);
     assert.deepStrictEqual(
       (await readParquet(parquetPath)).rows.map((row) => Number(row.at)),
-      utc.map((text) => Date.parse(text.replace(" ", "T")))
+      instants
     );
     assert.deepStrictEqual(parquetShifts, shifts);
+
+    const avroPath = path.join(outputDir, "dst.avro");
+    const avroShifts = await avroExporter.exportToAvro(read.data, avroPath, options);
+    assert.deepStrictEqual(
+      (await decodeAvro(fs.readFileSync(avroPath))).records.map((record) => record.at),
+      instants
+    );
+    assert.deepStrictEqual(avroShifts, shifts);
+
+    // Arrow builds the column of instants on its own path
+    const arrowPath = path.join(outputDir, "dst.arrow");
+    const arrowShifts = await arrowExporter.exportToArrow(read.data, arrowPath, options);
+    assert.deepStrictEqual(
+      readArrow(arrowPath).rows.map((row) => row.at),
+      instants
+    );
+    assert.deepStrictEqual(arrowShifts, shifts);
 
     const sqlitePath = path.join(outputDir, "dst.db");
     const sqliteShifts = await sqliteExporter.exportToSQLite(read.data, sqlitePath, options);
