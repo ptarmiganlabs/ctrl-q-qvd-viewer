@@ -72,12 +72,16 @@ async function pageFor(filePath, maxRows = 5000) {
 }
 
 /**
- * What a page shows: its HTML without its scripts and styles
+ * What a page shows: its body, up to its scripts. Both pages keep their styles in
+ * their head, and their scripts after their content.
  * @param {string} html - The page
- * @returns {string} The rest
+ * @returns {string} That part of it
  */
 function shown(html) {
-  return html.replace(/<script[\s\S]*?<\/script>/g, "").replace(/<style[\s\S]*?<\/style>/g, "");
+  const body = html.indexOf("<body>");
+  assert.ok(body >= 0, "the page has a body");
+  const scripts = html.indexOf("<script", body);
+  return html.slice(body, scripts >= 0 ? scripts : html.length);
 }
 
 /**
