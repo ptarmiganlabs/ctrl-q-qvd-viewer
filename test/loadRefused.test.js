@@ -64,7 +64,7 @@ suite("Load Refused Test Suite", () => {
   });
 
   test("Load More on a file that has gone keeps the page, and says why", async () => {
-    // The API as the provider imports it: on VS Code 1.103.0, the minimum, that is another object than require() gives
+    // The API as the provider imports it: on some VS Code versions, 1.103.0 among them, that is another object than require() gives
     const api = await import("vscode");
     const showWarningMessage = api.window.showWarningMessage;
     const warnings = [];

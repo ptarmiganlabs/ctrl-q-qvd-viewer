@@ -530,7 +530,7 @@ suite("Read Failure Test Suite", () => {
   });
 
   test("Retry reads the file again, with the rows the setting asks for now or the rows offered", async () => {
-    // The API as the handler imports it: on VS Code 1.103.0, the minimum, that is another object than require() gives
+    // The API as the handler imports it: on some VS Code versions, 1.103.0 among them, that is another object than require() gives
     const api = await import("vscode");
     const getConfiguration = api.workspace.getConfiguration;
     const panel = { webview: recordingWebview() };

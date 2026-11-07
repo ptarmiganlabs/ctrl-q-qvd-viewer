@@ -140,7 +140,7 @@ suite("Zoned Timestamps Test Suite", () => {
 
   test("Every quarter hour of a year converts as Temporal's compatible rule does", function () {
     if (typeof globalThis.Temporal === "undefined") {
-      // VS Code 1.103.0's Node, 22.17, has no Temporal to compare with
+      // Node 22, which older VS Code runs extensions on, has no Temporal to compare with
       this.skip();
     }
     this.timeout(60000);

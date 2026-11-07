@@ -5,6 +5,7 @@
 node_modules/**
 src/**
 out/**
+scripts/**
 
 # Test files and data
 test/**
