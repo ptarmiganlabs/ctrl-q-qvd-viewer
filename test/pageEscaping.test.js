@@ -184,12 +184,24 @@ function assertNoMarkupFrom(html) {
 }
 
 /**
- * A page's markup, without its scripts
+ * A page's markup, without its scripts: each is cut where scriptsOf() finds it, from
+ * its start tag to the end of the first </script after it, as the HTML parser cuts it
  * @param {string} html - The page
  * @returns {string} Its markup
  */
 function markupOf(html) {
-  return html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
+  const lower = html.toLowerCase();
+  const pieces = [];
+  let from = 0;
+  for (let start = lower.indexOf("<script", from); start >= 0; start = lower.indexOf("<script", from)) {
+    pieces.push(html.slice(from, start));
+    const end = lower.indexOf("</script", start);
+    assert.ok(end >= 0, "each script ends");
+    from = lower.indexOf(">", end) + 1;
+    assert.ok(from > 0, "each script's end tag ends");
+  }
+  pieces.push(html.slice(from));
+  return pieces.join("");
 }
 
 /**
