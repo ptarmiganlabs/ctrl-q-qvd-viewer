@@ -36,6 +36,34 @@ jobs:
       - name: Run linter
         run: npm run lint
 
+      # The tests run in two VS Code builds of about 150 MB each, the minimum version and
+      # the latest stable, which they would otherwise download on every run. Each is kept
+      # under its own version, so a new stable release is downloaded once, and old ones
+      # aren't carried along with it.
+      - name: Find the VS Code versions the tests run in
+        id: vscode-versions
+        shell: bash
+        run: |
+          minimum=$(node -p "require('./package.json').engines.vscode.replace(/^\^/, '')")
+          # The update service the tests ask, too. If it doesn't answer, they download
+          # stable as before
+          stable=$(node -e "fetch('https://update.code.visualstudio.com/api/releases/stable', { signal: AbortSignal.timeout(15000) }).then((r) => r.json()).then((versions) => console.log(versions[0]))" || true)
+          echo "minimum=$minimum" >> "$GITHUB_OUTPUT"
+          echo "stable=$stable" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the minimum VS Code version
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .vscode-test/vscode-*-${{ steps.vscode-versions.outputs.minimum }}
+          key: vscode-${{ runner.os }}-${{ steps.vscode-versions.outputs.minimum }}
+
+      - name: Cache the latest stable VS Code
+        if: steps.vscode-versions.outputs.stable != ''
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .vscode-test/vscode-*-${{ steps.vscode-versions.outputs.stable }}
+          key: vscode-${{ runner.os }}-${{ steps.vscode-versions.outputs.stable }}
+
       - name: Setup virtual display for VS Code tests
         if: runner.os == 'Linux'
         run: |
