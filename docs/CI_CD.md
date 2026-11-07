@@ -65,6 +65,12 @@ Triggers on pull request events.
    - Warns if package exceeds 50MB
    - Prevents marketplace upload issues
 
+### 3. VS Code Minimum Workflow (`.github/workflows/vscode-minimum.yaml`)
+
+Runs on the first day of each quarter, and by hand. It compares the minimum VS Code version,
+`engines.vscode`, with the support window, the newest VS Code release that is at least 12 months
+old, and opens an issue when the minimum is due to move. See [VSCODE_SUPPORT.md](VSCODE_SUPPORT.md).
+
 ## Release Please Configuration
 
 ### Conventional Commits

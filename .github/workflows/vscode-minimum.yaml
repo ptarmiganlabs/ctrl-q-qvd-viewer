@@ -1,0 +1,52 @@
+name: VS Code minimum
+
+# Once a quarter, compares the minimum VS Code version (engines.vscode) with the support
+# window, the newest VS Code release that is at least 12 months old, and opens an issue when
+# the minimum is due to move. docs/VSCODE_SUPPORT.md describes the policy and the move.
+on:
+  schedule:
+    # 06:00 UTC on the first day of January, April, July and October
+    - cron: '0 6 1 1,4,7,10 *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Compare the minimum with the support window
+        id: minimum
+        run: node scripts/vscode-minimum.mjs --issue-body "$RUNNER_TEMP/issue.md"
+
+      # One such issue at a time: a quarter that finds the last one still open updates it
+      - name: Open or update the issue that asks for the move
+        if: steps.minimum.outputs.due == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ steps.minimum.outputs.target }}
+        run: |
+          title="Raise the minimum VS Code version to ${TARGET%.0}"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search 'in:title "Raise the minimum VS Code version"' \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$RUNNER_TEMP/issue.md"
+            echo "Updated issue #$existing: $title"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$RUNNER_TEMP/issue.md"
+          fi

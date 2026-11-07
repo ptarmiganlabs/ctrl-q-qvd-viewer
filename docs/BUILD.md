@@ -11,7 +11,7 @@ Before you begin, ensure you have the following installed:
   - Verify installation: `node --version`
 - **npm**: Version 8.x or later (comes with Node.js)
   - Verify installation: `npm --version`
-- **Visual Studio Code**: Version 1.105.0 or later
+- **Visual Studio Code**: The minimum in `engines.vscode` in `package.json`, or later. See [VSCODE_SUPPORT.md](VSCODE_SUPPORT.md)
 
   - Download from [code.visualstudio.com](https://code.visualstudio.com/)
 
