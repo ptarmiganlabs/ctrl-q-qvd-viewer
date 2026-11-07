@@ -18,7 +18,7 @@ let DataExporter;
  *   Where the export was saved, as VS Code names it, and the messages and errors it showed
  */
 async function exportThroughHandler(rows, { pick, timeZone = "" }) {
-  // The API as the handler imports it: on VS Code 1.101.0 a module's import of vscode
+  // The API as the handler imports it: on VS Code 1.103.0, the minimum, a module's import of vscode
   // gets another object than require() does
   const vscode = await import("vscode");
   const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-viewer-export-read-"));
