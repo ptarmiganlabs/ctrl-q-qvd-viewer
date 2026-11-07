@@ -4,6 +4,13 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [1.4.3](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.4.2...v1.4.3) (2026-11-07)
+
+
+### Miscellaneous
+
+* **deps-dev:** bump eslint from 10.13.0 to 10.14.0 in the dev-dependencies group ([8b013b4](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/8b013b46fbd537f1e7244fd7822fdb5282d0bead))
+
 ## [1.4.2](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.4.1...v1.4.2) (2026-11-07)
 
 
