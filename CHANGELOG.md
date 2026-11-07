@@ -4,6 +4,36 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [1.4.1](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.4.0...v1.4.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* require VS Code 1.103, so that QVD files open on Windows 11 24H2 ([83497ab](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/83497ab14d121bb0ebc43efdefbe9bd993888d1b)), closes [#191](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/191)
+* **viewer:** say why a QVD can't be read, instead of calling it corrupted ([bcae921](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/bcae9211b77297ffebd837a4563b004af9c4c858)), closes [#191](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/191)
+* **viewer:** tell the viewer's own failures from the file's ([4a74732](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/4a74732465e070cdbdf3293143bae53afab53111)), closes [#191](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/191)
+
+
+### Documentation
+
+* tell users who can't update VS Code to install version 1.3.2 ([fca2a9d](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/fca2a9d7ca93d83bd0e9dac7c94dc38aea2661c0)), closes [#191](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/191)
+
+
+### Tests
+
+* check on Windows too that a CSV export through a link keeps it ([c19a240](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/c19a2404ed25ca2c190e912bc5cfc795944c218c))
+* expect EBUSY from a held file, and stop when PowerShell can't hold it ([2da6245](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/2da6245242d128b61ece90eb155f83928acc1e30)), closes [#191](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/191)
+* expect the exported file's path as VS Code names it ([f77e4a7](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/f77e4a7a61bd2d4a89ecb98b31c67b718a4665b1))
+* look at a page's body up to its scripts, instead of stripping tags ([5c50e21](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/5c50e21c0705b6fbbe327f4c4cdc613864c5943c)), closes [#191](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/191)
+* name VS Code 1.103.0, the new minimum, where comments named 1.101.0 ([3dadd81](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/3dadd81bccb3c2fd4958a17a7ab2a11258e9cf00)), closes [#191](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/191)
+* read a QVD PowerShell holds open on Windows, and check its page ([f2792a5](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/f2792a5383e690527b6df14905b92209928bc307)), closes [#191](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/191)
+* read the taxi QVD within its own folder, not the working directory ([debe08a](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/debe08afb5c54abb5156004ce3ae7b75184e2a58)), closes [#191](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/191)
+
+
+### Build System
+
+* leave parquetjs's optional LZO codec out of the bundle ([ecb43f7](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/ecb43f752bedff1f2b60ed9da73e084d0752e04e)), closes [#191](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/191)
+
 ## [1.4.0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.3.2...v1.4.0) (2026-11-06)
 
 
