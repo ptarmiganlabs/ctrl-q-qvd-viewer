@@ -73,3 +73,14 @@ export function getHistogramViewJs(extensionPath) {
   const scriptPath = join(extensionPath, "dist", "webview", "histogramView.js");
   return readFileSync(scriptPath, "utf8");
 }
+
+/**
+ * Get escapeHtml() and the html tag, which the extension uses too, inlined as
+ * string: see src/webview/client/html.js
+ * @param {string} extensionPath - The extension path
+ * @returns {string} Script content
+ */
+export function getHtmlJs(extensionPath) {
+  const scriptPath = join(extensionPath, "dist", "webview", "html.js");
+  return readFileSync(scriptPath, "utf8");
+}

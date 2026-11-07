@@ -13,8 +13,12 @@ let QvdEditorProvider;
 let getVisualAnalysisHtml;
 let profileFields;
 let escapeHtml;
+let html;
+let trustedHtml;
 let scriptJson;
-let ESCAPE_HTML_JS;
+let metricHelpContent;
+let createHelpIconHtml;
+let helpIconsHtml;
 
 const root = path.join(__dirname, "..");
 
@@ -46,6 +50,19 @@ const ROWS = [
 ];
 // The file's text that would be markup in a page, were it not escaped
 const MARKUP = [FIELD, COMMENT, ESCAPE, STATEMENT, EMAIL, VALUE];
+
+// A file with nothing to escape, whose fields get each of the profiling cards: numbers,
+// dates, and strings that are email addresses, duplicates, prefixes and suffixes
+const PLAIN_FIELDS = ["Amount", "When", "Name"];
+const PLAIN = Array.from({ length: 30 }, (_, i) => ({
+  Amount: i * 1.5,
+  When: `2024-${String(1 + (i % 12)).padStart(2, "0")}-${String(1 + (i % 28)).padStart(2, "0")}`,
+  Name: `user${i % 5}@example.com`,
+}));
+// Markup shown as text: what a literal that isn't html\`...\` gives, put into one that is
+const ESCAPED_TAG = /&lt;\/?[a-z]/i;
+// The cards each kind of field gets
+const CARDS = ["📈 Statistical Analysis", "📅 Temporal Analysis", "📝 String Analysis", "🎯 Data Quality Assessment"];
 
 /**
  * Open a file the way the editor does
@@ -143,7 +160,7 @@ function assertStrictCsp(html) {
  * @returns {object} The page
  */
 function fakePage() {
-  const page = { written: [], created: [], tables: [], posted: [], listeners: {}, elements: new Map() };
+  const page = { written: [], untagged: [], created: [], tables: [], posted: [], listeners: {}, elements: new Map() };
   const element = (tagName = "div") => {
     let html = "";
     const el = {
@@ -170,6 +187,10 @@ function fakePage() {
       set: (value) => {
         html = String(value);
         page.written.push(html);
+        // HTML the page's script wrote other than with html\`...\`, whose values it escapes
+        if (html !== "" && value?.constructor?.name !== "HtmlMarkup") {
+          page.untagged.push(html);
+        }
       },
     });
     page.created.push(el);
@@ -234,7 +255,8 @@ suite("Page Escaping Test Suite", () => {
     ({ default: QvdEditorProvider } = await import("../src/qvdEditorProvider.mjs"));
     ({ getVisualAnalysisHtml } = await import("../src/webview/templates/visualAnalysisTemplate.mjs"));
     ({ profileFields } = await import("../src/qvdProfiler.mjs"));
-    ({ escapeHtml, scriptJson, ESCAPE_HTML_JS } = await import("../src/webview/templates/escaping.mjs"));
+    ({ escapeHtml, html, trustedHtml, scriptJson } = await import("../src/webview/templates/escaping.mjs"));
+    ({ metricHelpContent, createHelpIconHtml, helpIconsHtml } = await import("../src/webview/qualityMetricHelp.mjs"));
 
     // The crafted file, written by qvdjs's own writer
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-viewer-escaping-"));
@@ -269,16 +291,56 @@ suite("Page Escaping Test Suite", () => {
       assert.ok(!literal.includes(LS) && !literal.includes(PS), literal);
       assert.deepStrictEqual(JSON.parse(vm.runInNewContext(`JSON.stringify(${literal})`)), value);
     }
+    // What JSON has no literal for, the script reads as undefined, as it did before
+    for (const value of [undefined, () => 1]) {
+      assert.strictEqual(scriptJson(value), "undefined");
+    }
   });
 
-  test("The page's own escapeHtml() escapes as the extension's does", () => {
-    const context = vm.createContext({});
-    vm.runInContext(ESCAPE_HTML_JS, context);
-    const pageEscapeHtml = vm.runInContext("escapeHtml", context);
-    for (const text of [...MARKUP, `&<>"'`, "plain", 42, null]) {
-      assert.strictEqual(pageEscapeHtml(text), escapeHtml(text), String(text));
-    }
+  test("html escapes every value put into it, but not the HTML it made", () => {
     assert.strictEqual(escapeHtml(`&<>"'`), "&amp;&lt;&gt;&quot;&#039;");
+    assert.strictEqual(String(html`<p title="${VALUE}">${EMAIL}</p>`), `<p title="${escapeHtml(VALUE)}">${escapeHtml(EMAIL)}</p>`);
+    for (const value of [null, undefined, 0, 42, false]) {
+      assert.strictEqual(String(html`<b>${value}</b>`), `<b>${String(value)}</b>`);
+    }
+    // HTML it made, lists of it, and what trustedHtml() vouches for go in as they are
+    const items = [EMAIL, VALUE].map((value) => html`<li>${value}</li>`);
+    assert.strictEqual(
+      String(html`<ul>${items}</ul>`),
+      `<ul><li>${escapeHtml(EMAIL)}</li><li>${escapeHtml(VALUE)}</li></ul>`
+    );
+    assert.strictEqual(String(html`${trustedHtml("<hr>")}${[VALUE]}`), `<hr>${escapeHtml(VALUE)}`);
+    // A string of HTML isn't HTML to it: it is text
+    assert.strictEqual(String(html`${"<hr>"}`), "&lt;hr&gt;");
+  });
+
+  test("The editor page's escapeHtml() and html are the extension's", () => {
+    // The page inlines the file the extension imports, as it is
+    const shipped = fs.readFileSync(path.join(root, "dist", "webview", "html.js"), "utf8");
+    assert.strictEqual(shipped, fs.readFileSync(path.join(root, "src", "webview", "client", "html.js"), "utf8"));
+    assert.ok(!/<\/script|<!--/i.test(shipped), "it can't end the script it is inlined in");
+    const context = vm.createContext({});
+    vm.runInContext(shipped, context);
+    const page = vm.runInContext("({ escapeHtml, html, trustedHtml })", context);
+    for (const text of [...MARKUP, `&<>"'`, "plain", 42, null]) {
+      assert.strictEqual(page.escapeHtml(text), escapeHtml(text), String(text));
+      assert.strictEqual(String(page.html`<b>${text}</b>`), String(html`<b>${text}</b>`), String(text));
+    }
+  });
+
+  test("A help icon escapes its text and its link, and the editor page gets the extension's", () => {
+    metricHelpContent.craftedForTest = { text: COMMENT, link: `https://example.com/?a="b"&c=${VALUE}` };
+    try {
+      const icon = String(createHelpIconHtml("craftedForTest"));
+      assertNoMarkupFrom(icon);
+      assert.ok(icon.includes(escapeHtml(COMMENT)), icon);
+      assert.ok(icon.includes(`href="https://example.com/?a=&quot;b&quot;&amp;c=${escapeHtml(VALUE)}"`), icon);
+      assert.strictEqual(helpIconsHtml().craftedForTest, icon);
+    } finally {
+      delete metricHelpContent.craftedForTest;
+    }
+    assert.strictEqual(String(createHelpIconHtml("noSuchMetric")), "");
+    assert.deepStrictEqual(Object.keys(helpIconsHtml()), Object.keys(metricHelpContent));
   });
 
   test("The file reads as it was written", () => {
@@ -310,6 +372,8 @@ suite("Page Escaping Test Suite", () => {
     assert.strictEqual(metadata["Creator Document"], ESCAPE);
     assert.strictEqual(page.read("lineageData")[0].statement, STATEMENT);
     assert.deepStrictEqual(page.read("availableFields"), [FIELD, "Id"]);
+    // Its help icons are the extension's
+    assert.deepStrictEqual(page.read("HELP_ICONS"), helpIconsHtml());
   });
 
   test("The editor page writes the file's field names and values into the page as text", async () => {
@@ -354,7 +418,10 @@ suite("Page Escaping Test Suite", () => {
       [EMAIL, VALUE]
     );
 
+    // What the cards write: the QVD structure table, written when the page loads,
+    // holds only the extension's numbers
     page.written.length = 0;
+    page.untagged.length = 0;
     page.dispatch("message", { data: { command: "profilingResults", results } });
     assert.match(page.elements.get("profiling-status").textContent, /^✅ Profiling complete/);
 
@@ -378,7 +445,46 @@ suite("Page Escaping Test Suite", () => {
     for (const { value } of duplicates) {
       assert.ok(written.includes(`<span>${escapeHtml(value)}</span>`), value);
     }
+    // All of it written with html\`...\`, which escapes each value
+    assert.deepStrictEqual(page.untagged, []);
     // With nothing gone wrong on the page
+    assert.deepStrictEqual(
+      page.posted.filter((message) => message.level === "error").map((message) => message.message),
+      []
+    );
+  });
+
+  test("The editor page writes each profiling card with html, and none shows markup as text", async () => {
+    const { html: pageHtml } = await openPage(crafted);
+    const page = fakePage();
+    page.load(pageHtml);
+    page.dispatch("DOMContentLoaded");
+    const results = profileFields(PLAIN, PLAIN_FIELDS);
+    assert.deepStrictEqual(
+      results.fields.map(({ isNumeric, isDate, isString }) => [isNumeric, isDate, isString]),
+      [
+        [true, false, false],
+        [false, true, false],
+        [false, false, true],
+      ]
+    );
+
+    // What the cards write: the QVD structure table, written when the page loads,
+    // holds only the extension's numbers
+    page.written.length = 0;
+    page.untagged.length = 0;
+    page.dispatch("message", { data: { command: "profilingResults", results } });
+    assert.match(page.elements.get("profiling-status").textContent, /^✅ Profiling complete/);
+    const written = page.written.join("\n");
+    for (const card of CARDS) {
+      assert.ok(written.includes(card), card);
+    }
+    // Every piece of it html\`...\`, and each one inside it too: a literal that isn't
+    // would be escaped, and show its markup as text
+    assert.deepStrictEqual(page.untagged, []);
+    assert.doesNotMatch(written, ESCAPED_TAG);
+    assert.ok(written.includes(String(createHelpIconHtml("temporalEarliest"))), "help icons go in as HTML");
+    assert.ok(written.includes(`<div style="padding: 2px 0;">user0@example.com</div>`), "the samples are listed");
     assert.deepStrictEqual(
       page.posted.filter((message) => message.level === "error").map((message) => message.message),
       []
@@ -387,7 +493,7 @@ suite("Page Escaping Test Suite", () => {
 
   test("The visual-analysis panel shows a field's result as text, and its script reads it whole", () => {
     const [fieldResult] = profileFields(rows, [FIELD]).fields;
-    const html = getVisualAnalysisHtml(recordingWebview(), root, fieldResult, "<b>crafted</b>");
+    const html = getVisualAnalysisHtml(root, fieldResult, "<b>crafted</b>");
 
     // Tabulator, Chart.js, the histogram view and the page's own
     assertScriptsWhole(html, 4);
@@ -410,5 +516,19 @@ suite("Page Escaping Test Suite", () => {
     const table = page.tables.find((built) => built.selector === "#profiling-table");
     const value = [...table.options.columns].find((column) => column.field === "value");
     assert.strictEqual(value.formatter, undefined);
+  });
+
+  test("The visual-analysis panel writes each card with html, and none shows markup as text", () => {
+    for (const fieldResult of profileFields(PLAIN, PLAIN_FIELDS).fields) {
+      const page = getVisualAnalysisHtml(root, fieldResult, "plain.qvd");
+      const body = page.slice(page.indexOf("<body>"), page.indexOf("<script"));
+      assert.ok(
+        CARDS.slice(0, 3).some((card) => body.includes(card)),
+        `${fieldResult.fieldName} gets its card`
+      );
+      assert.ok(body.includes(CARDS[3]), `${fieldResult.fieldName} gets the quality card`);
+      assert.doesNotMatch(body, ESCAPED_TAG, fieldResult.fieldName);
+      assert.ok(body.includes(String(createHelpIconHtml("totalRowsProfiling"))), "help icons go in as HTML");
+    }
   });
 });

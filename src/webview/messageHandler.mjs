@@ -703,7 +703,6 @@ export function setupMessageHandler(
 
             // Generate HTML for the visual analysis
             panel.webview.html = getVisualAnalysisHtml(
-              panel.webview,
               context.extensionPath,
               fieldResult,
               fileName

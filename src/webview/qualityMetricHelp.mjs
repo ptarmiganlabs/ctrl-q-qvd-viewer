@@ -3,6 +3,8 @@
  * Each metric has explanatory text and a Wikipedia link for further reading
  */
 
+import { html } from "./templates/escaping.mjs";
+
 export const metricHelpContent = {
   nonNullPercentage: {
     text: "Percentage of values that are not null or undefined. High percentages indicate better data completeness.",
@@ -231,27 +233,31 @@ export const metricHelpContent = {
 };
 
 /**
- * Create help icon HTML with tooltip
+ * Create help icon HTML with tooltip: the one place both webviews' help icons are
+ * written, the editor page's through helpIconsHtml()
  * @param {string} metricKey - The metric key to look up help content
- * @returns {string} HTML string for the help icon and tooltip
+ * @returns {import('./client/html.js').HtmlMarkup} The help icon and its tooltip,
+ *   or nothing for a metric without help
  */
 export function createHelpIconHtml(metricKey) {
   const help = metricHelpContent[metricKey];
-  if (!help) return "";
+  if (!help) return html``;
 
-  // Escape HTML special characters in the text
-  const escapedText = help.text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-
-  return `<span class="quality-metric-help">?
+  return html`<span class="quality-metric-help">?
       <span class="quality-metric-tooltip">
-          ${escapedText}
+          ${help.text}
           <br/><br/>
           <a href="${help.link}" target="_blank" rel="noopener noreferrer">Learn more →</a>
       </span>
   </span>`;
+}
+
+/**
+ * Every metric's help icon, for a page's script to show
+ * @returns {Object<string, string>} Each icon's HTML, by metric key
+ */
+export function helpIconsHtml() {
+  return Object.fromEntries(
+    Object.keys(metricHelpContent).map((key) => [key, String(createHelpIconHtml(key))])
+  );
 }
