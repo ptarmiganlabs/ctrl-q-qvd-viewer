@@ -15,14 +15,16 @@ let DataExporter;
  * @param {function(Array): *} answers.pick - Answers each QuickPick, given its items
  * @param {string} [answers.timeZone] - What the exportTimeZone setting holds
  * @returns {Promise<{filePath: string, messages: Array<string>, errors: Array<{message: string, items: Array<string>}>}>}
- *   Where the export was saved, and the messages and errors it showed
+ *   Where the export was saved, as VS Code names it, and the messages and errors it showed
  */
 async function exportThroughHandler(rows, { pick, timeZone = "" }) {
-  // The API as the handler imports it: on VS Code 1.101.0 a module's import of vscode
+  // The API as the handler imports it: on VS Code 1.103.0, the minimum, a module's import of vscode
   // gets another object than require() does
   const vscode = await import("vscode");
   const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-viewer-export-read-"));
-  const filePath = path.join(outputDir, "zoned.parquet");
+  // Where the save dialog answers. The export names it by its fsPath, which on
+  // Windows has its drive letter in lower case: c:\Users, not C:\Users
+  const saveUri = vscode.Uri.file(path.join(outputDir, "zoned.parquet"));
   const messages = [];
   const errors = [];
   const saved = {
@@ -40,7 +42,7 @@ async function exportThroughHandler(rows, { pick, timeZone = "" }) {
   };
   try {
     vscode.window.showQuickPick = async (items) => pick(items);
-    vscode.window.showSaveDialog = async () => vscode.Uri.file(filePath);
+    vscode.window.showSaveDialog = async () => saveUri;
     vscode.window.showInformationMessage = async (message) => {
       messages.push(message);
       return undefined;
@@ -54,7 +56,7 @@ async function exportThroughHandler(rows, { pick, timeZone = "" }) {
     });
     setupMessageHandler(panel, "zoned.qvd", reader, {}, async () => {}, 25);
     await onMessage({ command: "exportData", format: "parquet" });
-    return { filePath, messages, errors };
+    return { filePath: saveUri.fsPath, messages, errors };
   } finally {
     Object.assign(vscode.window, {
       showQuickPick: saved.showQuickPick,

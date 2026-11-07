@@ -2,7 +2,7 @@
   "name": "ctrl-q-qvd-viewer",
   "displayName": "Ctrl-Q QVD Viewer",
   "description": "View Qlik Sense and QlikView QVD files from within VS Code",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "publisher": "ptarmiganlabs",
   "icon": "media/ctrl-q-logo-no-text.png",
   "repository": {
@@ -30,7 +30,7 @@
     "xml"
   ],
   "engines": {
-    "vscode": "^1.101.0"
+    "vscode": "^1.103.0"
   },
   "categories": [
     "Data Science",
@@ -130,8 +130,8 @@
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/node": "~22.15.0",
-    "@types/vscode": "^1.101.0",
+    "@types/node": "~22.17.0",
+    "@types/vscode": "^1.103.0",
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^4.1.0",
@@ -147,7 +147,7 @@
     "js-yaml": "^5.5.0",
     "papaparse": "^5.7.0",
     "parquetjs": "^0.11.2",
-    "qvdjs": "^4.0.2",
+    "qvdjs": "^4.0.3",
     "sql.js": "^1.15.2",
     "tabulator-tables": "^6.7.1",
     "xml-js": "^1.6.11"

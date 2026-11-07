@@ -111,7 +111,12 @@ const buildOptions = {
   sourcesContent: false,
   platform: "node",
   outfile: "dist/extension.js",
-  external: ["vscode"],
+  // lzo is parquetjs's optional LZO codec, a native module it loads only for a
+  // Parquet file compressed with LZO. The extension writes Parquet uncompressed, and
+  // from a bundle lzo can't find its native part anyway. Where npm couldn't build
+  // it, as on a Windows machine without a C++ compiler, it isn't installed at all,
+  // and bundling it would stop the build.
+  external: ["vscode", "lzo"],
   logLevel: "warning",
   // Define __filename and __dirname for ESM-style code
   define: {
