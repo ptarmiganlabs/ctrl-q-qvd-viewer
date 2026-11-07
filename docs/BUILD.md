@@ -73,7 +73,7 @@ ctrl-q-qvd-viewer/
 │   ├── qvdReader.js             # Core QVD file reading and metadata extraction
 │   ├── qvdEditorProvider.js     # Custom editor provider for webview
 │   └── webview/
-│       └── pagination.js        # Client-side pagination logic
+│       └── client/              # Scripts the webviews inline, such as html.js
 ├── package.json                 # Extension manifest and dependencies
 ├── test/
 │   └── extension.test.js        # Automated tests

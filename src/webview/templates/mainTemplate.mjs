@@ -12,7 +12,7 @@ import {
   FAILURE_BUTTONS_JS,
   FAILURE_NOTICE_CSS,
 } from "./errorTemplate.mjs";
-import { escapeHtml, scriptJson } from "./escaping.mjs";
+import { html, scriptJson } from "./escaping.mjs";
 import DataExporter from "../../exporters/index.mjs";
 import { helpIconsHtml } from "../qualityMetricHelp.mjs";
 import { getLoadMoreRowCount } from "../loadMore.mjs";
@@ -132,18 +132,14 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
   const exportMenuItems = [
     ...stableFormats.map(
       (format) =>
-        `<div class="export-dropdown-item" data-format="${format.name}">${format.label}</div>`
+        html`<div class="export-dropdown-item" data-format="${format.name}">${format.label}</div>`
     ),
-    betaFormats.length > 0
-      ? '<div class="export-dropdown-separator"></div>'
-      : "",
+    betaFormats.length > 0 ? html`<div class="export-dropdown-separator"></div>` : "",
     ...betaFormats.map(
       (format) =>
-        `<div class="export-dropdown-item" data-format="${format.name}">${format.label} <span class="beta-badge">BETA</span></div>`
+        html`<div class="export-dropdown-item" data-format="${format.name}">${format.label} <span class="beta-badge">BETA</span></div>`
     ),
-  ]
-    .filter(Boolean)
-    .join("\n                        ");
+  ];
 
   // Calculate QVD structure data for visualization
   const qvdStructureData =
@@ -188,9 +184,11 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
           indexTableSize: 0,
         };
 
-  // Scripts and style elements run by nonce only. Style attributes are allowed, as
-  // the page's own markup sets many of them; a style element that isn't the page's
-  // own, say one written in a field's name, styles nothing.
+  // The page's body is an html`...` literal, so every value in it, such as each
+  // field's name in the list to profile, is escaped, and only HTML that html made goes
+  // in as it is. Scripts and style elements run by nonce only. Style attributes are
+  // allowed, as the page's own markup sets many of them; a style element that isn't
+  // the page's own, say one written in a field's name, styles nothing.
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1197,9 +1195,10 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
     </style>
 </head>
 <body>
+    ${html`
     ${
       !embedData
-        ? `
+        ? html`
     <!-- Loading indicator for postMessage data -->
     <div id="loading-indicator" style="
         position: fixed;
@@ -1293,7 +1292,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             <div id="lineage-tab" class="tab-content">
                 ${
                   lineageData.length > 0
-                    ? `
+                    ? html`
                 <div class="search-container">
                     <input type="text" class="search-input" id="lineage-search" placeholder="🔍 Search in lineage..." />
                     <button class="clear-search-btn" id="clear-lineage-search">✕ Clear</button>
@@ -1302,7 +1301,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                     <div id="lineage-table"></div>
                 </div>
                 `
-                    : `
+                    : html`
                 <div class="info-banner">
                     ℹ️ No lineage information available for this QVD file.
                 </div>
@@ -1343,7 +1342,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                     </div>
                     ${
                       totalRows > 100000
-                        ? `
+                        ? html`
                     <div class="info-banner warning-banner">
                         ⚠️ <strong>Large File Warning:</strong> This QVD contains ${totalRows.toLocaleString()} rows. 
                         Profiling will load all data into memory, which may take some time and use significant resources.
@@ -1357,29 +1356,19 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                         <div id="field-checkboxes" class="field-checkboxes">
                             ${
                               metadata && metadata.fields
-                                ? metadata.fields
-                                    .map(
-                                      (field) =>
-                                        `<div class="field-checkbox-item">
+                                ? metadata.fields.map(
+                                    (field) =>
+                                      html`<div class="field-checkbox-item">
                                             <input type="checkbox" 
-                                                   id="field-${escapeHtml(
-                                                     field.name
-                                                   )}" 
+                                                   id="field-${field.name}" 
                                                    name="field-checkbox" 
-                                                   value="${escapeHtml(
-                                                     field.name
-                                                   )}">
-                                            <label for="field-${escapeHtml(
-                                              field.name
-                                            )}">
-                                                ${escapeHtml(field.name)}
-                                                <span class="field-unique-count">(${
-                                                  field.noOfSymbols
-                                                } unique values)</span>
+                                                   value="${field.name}">
+                                            <label for="field-${field.name}">
+                                                ${field.name}
+                                                <span class="field-unique-count">(${field.noOfSymbols} unique values)</span>
                                             </label>
                                         </div>`
-                                    )
-                                    .join("\n")
+                                  )
                                 : ""
                             }
                         </div>
@@ -1399,6 +1388,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
     <div id="context-menu" class="context-menu" style="display: none;">
         <div class="context-menu-item" id="copy-cell-btn">📋 Copy Cell Value</div>
     </div>
+    `}
     
     <script nonce="${nonce}">
         /* Tabulator library - inlined */
@@ -1808,34 +1798,14 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                 // Populate the table with structure data
                 const tableBody = document.getElementById('qvd-structure-table-body');
                 if (tableBody) {
-                    const headerRow = '<tr>' +
-                        '<td class="section-name">' +
-                        '<span class="color-indicator" style="background-color: ' + colors.header + ';"></span>' +
-                        'Header' +
-                        '</td>' +
-                        '<td class="size-value">' + formatBytes(headerSize) + '</td>' +
-                        '<td class="percent-value">' + headerPercent + '%</td>' +
-                        '</tr>';
-                    
-                    const symbolRow = '<tr>' +
-                        '<td class="section-name">' +
-                        '<span class="color-indicator" style="background-color: ' + colors.symbolTables + ';"></span>' +
-                        'Symbol Tables' +
-                        '</td>' +
-                        '<td class="size-value">' + formatBytes(symbolTablesSize) + '</td>' +
-                        '<td class="percent-value">' + symbolPercent + '%</td>' +
-                        '</tr>';
-                    
-                    const indexRow = '<tr>' +
-                        '<td class="section-name">' +
-                        '<span class="color-indicator" style="background-color: ' + colors.indexTable + ';"></span>' +
-                        'Index Table' +
-                        '</td>' +
-                        '<td class="size-value">' + formatBytes(indexTableSize) + '</td>' +
-                        '<td class="percent-value">' + indexPercent + '%</td>' +
-                        '</tr>';
-                    
-                    tableBody.innerHTML = headerRow + symbolRow + indexRow;
+                    // A row of the table: a section, its colour, its size and its share
+                    const row = (section, color, size, percent) =>
+                        html\`<tr><td class="section-name"><span class="color-indicator" style="background-color: \${color};"></span>\${section}</td><td class="size-value">\${formatBytes(size)}</td><td class="percent-value">\${percent}%</td></tr>\`;
+                    tableBody.innerHTML = html\`\${[
+                        row('Header', colors.header, headerSize, headerPercent),
+                        row('Symbol Tables', colors.symbolTables, symbolTablesSize, symbolPercent),
+                        row('Index Table', colors.indexTable, indexTableSize, indexPercent),
+                    ]}\`;
                 }
                 
                 new Chart(ctx, {
@@ -1960,6 +1930,9 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                     dataTable = new Tabulator("#data-table", {
                         data: tableData,
                         columns: columns,
+                        // A field's name is its name, dots and all: Tabulator would read
+                        // Orders.Amount, as Qlik's QUALIFY names a field, as a path
+                        nestedFieldSeparator: false,
                         layout: "fitDataStretch",
                         pagination: true,
                         paginationSize: 100,
@@ -2966,7 +2939,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                     const qualityCard = document.createElement('div');
                     qualityCard.className = \`quality-card quality-\${assessment.color === 'green' ? 'good' : assessment.color === 'yellow' ? 'warning' : 'error'}\`;
                     
-                    const qualityHtml = [html\`
+                    qualityCard.innerHTML = html\`
                         <div class="quality-header">
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <h4 style="margin: 0; color: var(--vscode-foreground);">🎯 Data Quality Assessment</h4>
@@ -2981,28 +2954,17 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                                 \${createHelpIcon('dataQualityAssessment')}
                             </div>
                         </div>
-                    \`];
-                    
-                    // Show issues if any
-                    if (assessment.issues.length > 0) {
-                        qualityHtml.push(html\`<div class="quality-issues">\`);
-                        assessment.issues.forEach(issue => {
-                            qualityHtml.push(html\`<div class="quality-issue-item error">❌ \${issue}</div>\`);
-                        });
-                        qualityHtml.push(html\`</div>\`);
-                    }
-                    
-                    // Show warnings if any
-                    if (assessment.warnings.length > 0) {
-                        qualityHtml.push(html\`<div class="quality-issues">\`);
-                        assessment.warnings.forEach(warning => {
-                            qualityHtml.push(html\`<div class="quality-issue-item warning">⚠️ \${warning}</div>\`);
-                        });
-                        qualityHtml.push(html\`</div>\`);
-                    }
-                    
-                    // Completeness section
-                    qualityHtml.push(html\`
+                        \${assessment.issues.length > 0 ? html\`
+                        <div class="quality-issues">
+                            \${assessment.issues.map(issue => html\`<div class="quality-issue-item error">❌ \${issue}</div>\`)}
+                        </div>
+                        \` : ''}
+                        \${assessment.warnings.length > 0 ? html\`
+                        <div class="quality-issues">
+                            \${assessment.warnings.map(warning => html\`<div class="quality-issue-item warning">⚠️ \${warning}</div>\`)}
+                        </div>
+                        \` : ''}
+                        
                         <div class="quality-section">
                             <h5 style="margin: 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">📋 Completeness</h5>
                             <div class="quality-metric-grid">
@@ -3027,10 +2989,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                                     </div>
                                     <div class="quality-metric-value">\${quality.completeness.missingCount.toLocaleString()} (\${quality.completeness.missingPercentage.toFixed(1)}%)</div>
                                 </div>
-                    \`);
-                    
-                    if (quality.completeness.emptyStringCount > 0) {
-                        qualityHtml.push(html\`
+                                \${quality.completeness.emptyStringCount > 0 ? html\`
                                 <div class="quality-metric-item">
                                     <div class="quality-metric-label">
                                         <span>Empty Strings</span>
@@ -3038,13 +2997,10 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                                     </div>
                                     <div class="quality-metric-value">\${quality.completeness.emptyStringCount.toLocaleString()} (\${quality.completeness.emptyStringPercentage.toFixed(1)}%)</div>
                                 </div>
-                        \`);
-                    }
-                    
-                    qualityHtml.push(html\`</div></div>\`);
-                    
-                    // Cardinality section
-                    qualityHtml.push(html\`
+                                \` : ''}
+                            </div>
+                        </div>
+                        
                         <div class="quality-section">
                             <h5 style="margin: 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">🔢 Cardinality</h5>
                             <div class="quality-metric-grid">
@@ -3067,10 +3023,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                                 💡 <strong>Recommendation:</strong> \${quality.cardinality.recommendation}
                             </div>
                         </div>
-                    \`);
-                    
-                    // Uniqueness section
-                    qualityHtml.push(html\`
+                        
                         <div class="quality-section">
                             <h5 style="margin: 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">🔍 Uniqueness</h5>
                             <div class="quality-metric-grid">
@@ -3088,10 +3041,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                                     </div>
                                     <div class="quality-metric-value">\${quality.uniqueness.duplicateCount.toLocaleString()} (\${quality.uniqueness.duplicatePercentage.toFixed(1)}%)</div>
                                 </div>
-                    \`);
-                    
-                    if (quality.uniqueness.duplicatedDistinctValues > 0) {
-                        qualityHtml.push(html\`
+                                \${quality.uniqueness.duplicatedDistinctValues > 0 ? html\`
                                 <div class="quality-metric-item">
                                     <div class="quality-metric-label">
                                         <span>Duplicated Distinct Values</span>
@@ -3099,35 +3049,23 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                                     </div>
                                     <div class="quality-metric-value">\${quality.uniqueness.duplicatedDistinctValues.toLocaleString()}</div>
                                 </div>
-                        \`);
-                    }
-                    
-                    qualityHtml.push(html\`</div>\`);
-                    
-                    // Show top duplicates if any
-                    if (quality.uniqueness.topDuplicates && quality.uniqueness.topDuplicates.length > 0) {
-                        qualityHtml.push(html\`
+                                \` : ''}
+                            </div>
+                            \${quality.uniqueness.topDuplicates && quality.uniqueness.topDuplicates.length > 0 ? html\`
                             <div style="margin-top: 10px;">
                                 <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 6px;">Top Duplicated Values:</div>
                                 <div class="quality-duplicates-list">
-                        \`);
-                        
-                        quality.uniqueness.topDuplicates.forEach(dup => {
-                            qualityHtml.push(html\`
-                                <div class="quality-duplicate-item">
-                                    <span>\${dup.value}</span>
-                                    <span>\${dup.count.toLocaleString()} (\${dup.percentage}%)</span>
+                                    \${quality.uniqueness.topDuplicates.map(dup => html\`
+                                    <div class="quality-duplicate-item">
+                                        <span>\${dup.value}</span>
+                                        <span>\${dup.count.toLocaleString()} (\${dup.percentage}%)</span>
+                                    </div>
+                                    \`)}
                                 </div>
-                            \`);
-                        });
+                            </div>
+                            \` : ''}
+                        </div>
                         
-                        qualityHtml.push(html\`</div></div>\`);
-                    }
-                    
-                    qualityHtml.push(html\`</div>\`);
-                    
-                    // Distribution quality section
-                    qualityHtml.push(html\`
                         <div class="quality-section">
                             <h5 style="margin: 10px 0; color: var(--vscode-descriptionForeground); font-size: 0.9em;">📊 Distribution Quality</h5>
                             <div class="quality-metric-grid">
@@ -3154,9 +3092,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                                 </div>
                             </div>
                         </div>
-                    \`);
-                    
-                    qualityCard.innerHTML = html\`\${qualityHtml}\`;
+                    \`;
                     card.appendChild(qualityCard);
                 }
                 

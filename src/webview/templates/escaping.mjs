@@ -6,7 +6,8 @@
  * escaped, by escapeHtml() or the html tag: both come from
  * src/webview/client/html.js, which the editor page's own script inlines too. As
  * data in a page's script they are written by scriptJson(), so that the HTML
- * parser can't end the script early.
+ * parser can't end the script early. In the profiling report, which is Markdown,
+ * they are written by markdownText().
  */
 
 import htmlEscaping from "../client/html.js";
@@ -29,4 +30,19 @@ export function scriptJson(value) {
     .replace(/</g, "\\u003c")
     .replace(/\u2028/g, "\\u2028")
     .replace(/\u2029/g, "\\u2029");
+}
+
+/**
+ * Text from a QVD as Markdown, for the profiling report's headings, lines and table
+ * cells. Each character Markdown would read as an escape, a column of a table, HTML
+ * or a link is escaped with a backslash, and each line break is written as a space,
+ * so that what the file says shows as it is: it can't end a table's row, add markup,
+ * or load an image when the report is previewed.
+ * @param {*} value - The text; anything else as String() writes it
+ * @returns {string} The Markdown
+ */
+export function markdownText(value) {
+  return String(value)
+    .replace(/[\\|<[\]&]/g, "\\$&")
+    .replace(/\r\n|[\r\n\u0085\u2028\u2029]/g, " ");
 }

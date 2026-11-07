@@ -23,8 +23,14 @@ const HTML_ESCAPES = {
   "'": "&#039;",
 };
 
-// The characters HTML_ESCAPES escapes, and no others
-const HTML_SPECIAL = new RegExp(`[${Object.keys(HTML_ESCAPES).join("")}]`, "g");
+// The characters HTML_ESCAPES escapes, and no others. Each is escaped for the
+// character class, where ], \, ^ and - would mean something else
+const HTML_SPECIAL = new RegExp(
+  `[${Object.keys(HTML_ESCAPES)
+    .map((c) => c.replace(/[\\\]^-]/g, "\\$&"))
+    .join("")}]`,
+  "g"
+);
 
 /**
  * Escape HTML special characters

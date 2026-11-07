@@ -5,17 +5,23 @@ const path = require("path");
 const vm = require("vm");
 const vscode = require("vscode");
 const { recordingWebview } = require("./fakes");
+// The one table of escapes, from the file the extension imports and the page inlines
+const { HTML_ESCAPES } = require("../src/webview/client/html.js");
 
 // qvdjs's writer, for the crafted file, and the modules that put its text into pages
 let QvdDataFrame;
 let QvdReader;
 let QvdEditorProvider;
 let getVisualAnalysisHtml;
+let getHtmlForWebview;
+let getErrorHtml;
 let profileFields;
 let escapeHtml;
 let html;
 let trustedHtml;
 let scriptJson;
+let markdownText;
+let setupMessageHandler;
 let metricHelpContent;
 let createHelpIconHtml;
 let helpIconsHtml;
@@ -59,10 +65,47 @@ const PLAIN = Array.from({ length: 30 }, (_, i) => ({
   When: `2024-${String(1 + (i % 12)).padStart(2, "0")}-${String(1 + (i % 28)).padStart(2, "0")}`,
   Name: `user${i % 5}@example.com`,
 }));
+// Plain strings of each format the profiler detects, some of them blank, and a field
+// mostly null: profiled with a limit of 4 unique values, their cards show each of the
+// parts the cards above don't, from issues and warnings to a truncated distribution
+const CONTACTS = ["user@example.com", "555-123-4567", "https://example.com/page", "123-45-6789", "01/02/2024", "", ""];
+const BRANCHED_FIELDS = ["Contact", "Sparse"];
+const BRANCHED = Array.from({ length: 40 }, (_, i) => ({
+  Contact: CONTACTS[i % CONTACTS.length],
+  Sparse: i % 4 === 0 ? `v${i % 3}` : null,
+}));
+const BRANCHED_LIMIT = 4;
+// Those parts, as the cards show them
+const PARTS = [
+  "quality-issue-item error",
+  "quality-issue-item warning",
+  "Empty Strings",
+  "Duplicated Distinct Values",
+  "Top Duplicated Values:",
+  "Phone Numbers",
+  "SSN/ID Numbers",
+  "URLs",
+  "Date Strings",
+  "Sample Phone Numbers:",
+  "Sample URLs:",
+  `Showing top ${BRANCHED_LIMIT} unique values`,
+];
 // Markup shown as text: what a literal that isn't html\`...\` gives, put into one that is
 const ESCAPED_TAG = /&lt;\/?[a-z]/i;
 // The cards each kind of field gets
 const CARDS = ["📈 Statistical Analysis", "📅 Temporal Analysis", "📝 String Analysis", "🎯 Data Quality Assessment"];
+
+/**
+ * The plain files' fields, profiled as the extension does it: between them, they get
+ * every card and every part of one
+ * @returns {Array<object>} Each field's result
+ */
+function plainFields() {
+  return [
+    ...profileFields(PLAIN, PLAIN_FIELDS).fields,
+    ...profileFields(BRANCHED, BRANCHED_FIELDS, BRANCHED_LIMIT).fields,
+  ];
+}
 
 /**
  * Open a file the way the editor does
@@ -138,6 +181,15 @@ function assertNoMarkupFrom(html) {
   for (const text of MARKUP) {
     assert.ok(!html.includes(text), `${text} is only there escaped`);
   }
+}
+
+/**
+ * A page's markup, without its scripts
+ * @param {string} html - The page
+ * @returns {string} Its markup
+ */
+function markupOf(html) {
+  return html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
 }
 
 /**
@@ -254,8 +306,11 @@ suite("Page Escaping Test Suite", () => {
     ({ default: QvdReader } = await import("../src/qvdReader.mjs"));
     ({ default: QvdEditorProvider } = await import("../src/qvdEditorProvider.mjs"));
     ({ getVisualAnalysisHtml } = await import("../src/webview/templates/visualAnalysisTemplate.mjs"));
+    ({ getHtmlForWebview } = await import("../src/webview/templates/mainTemplate.mjs"));
+    ({ getErrorHtml } = await import("../src/webview/templates/errorTemplate.mjs"));
     ({ profileFields } = await import("../src/qvdProfiler.mjs"));
-    ({ escapeHtml, html, trustedHtml, scriptJson } = await import("../src/webview/templates/escaping.mjs"));
+    ({ escapeHtml, html, trustedHtml, scriptJson, markdownText } = await import("../src/webview/templates/escaping.mjs"));
+    ({ setupMessageHandler } = await import("../src/webview/messageHandler.mjs"));
     ({ metricHelpContent, createHelpIconHtml, helpIconsHtml } = await import("../src/webview/qualityMetricHelp.mjs"));
 
     // The crafted file, written by qvdjs's own writer
@@ -299,6 +354,24 @@ suite("Page Escaping Test Suite", () => {
 
   test("html escapes every value put into it, but not the HTML it made", () => {
     assert.strictEqual(escapeHtml(`&<>"'`), "&amp;&lt;&gt;&quot;&#039;");
+    // The characters in the table, and no others
+    for (let code = 0; code < 128; code++) {
+      const c = String.fromCharCode(code);
+      assert.strictEqual(escapeHtml(c), HTML_ESCAPES[c] ?? c, `character ${code}`);
+    }
+    // And whatever the table holds: with ], \, ^ and - in it too, which mean something
+    // else in a regex's character class, each character is escaped as the table says
+    const source = fs.readFileSync(path.join(root, "src", "webview", "client", "html.js"), "utf8");
+    const entry = `"'": "&#039;",`;
+    assert.ok(source.includes(entry), "the table ends with the apostrophe");
+    const wider = vm.createContext({});
+    vm.runInContext(source.replace(entry, `${entry} "]": "&#93;", "\\\\": "&#92;", "^": "&#94;", "-": "&#45;",`), wider);
+    const [table, escape] = vm.runInContext("[HTML_ESCAPES, escapeHtml]", wider);
+    assert.strictEqual(Object.keys(table).length, 9);
+    for (let code = 0; code < 128; code++) {
+      const c = String.fromCharCode(code);
+      assert.strictEqual(escape(c), table[c] ?? c, `character ${code}, with more in the table`);
+    }
     assert.strictEqual(String(html`<p title="${VALUE}">${EMAIL}</p>`), `<p title="${escapeHtml(VALUE)}">${escapeHtml(EMAIL)}</p>`);
     for (const value of [null, undefined, 0, 42, false]) {
       assert.strictEqual(String(html`<b>${value}</b>`), `<b>${String(value)}</b>`);
@@ -312,6 +385,22 @@ suite("Page Escaping Test Suite", () => {
     assert.strictEqual(String(html`${trustedHtml("<hr>")}${[VALUE]}`), `<hr>${escapeHtml(VALUE)}`);
     // A string of HTML isn't HTML to it: it is text
     assert.strictEqual(String(html`${"<hr>"}`), "&lt;hr&gt;");
+  });
+
+  test("markdownText() writes text that can't change a Markdown report's structure, or add to it", () => {
+    const cases = [
+      ["a|b", "a\\|b"],
+      ["back\\slash", "back\\\\slash"],
+      ['<img src="https://tracker.example/x">', '\\<img src="https://tracker.example/x">'],
+      ["![i](https://tracker.example/y)", "!\\[i\\](https://tracker.example/y)"],
+      ["AT&T", "AT\\&T"],
+      [`one\r\ntwo\nthree\rfour${LS}five${PS}six${String.fromCharCode(0x85)}`, "one two three four five six "],
+      [42, "42"],
+      [null, "null"],
+    ];
+    for (const [text, markdown] of cases) {
+      assert.strictEqual(markdownText(text), markdown, String(text));
+    }
   });
 
   test("The editor page's escapeHtml() and html are the extension's", () => {
@@ -401,6 +490,9 @@ suite("Page Escaping Test Suite", () => {
       ]
     );
     assert.ok(columns.every((column) => column.formatter === undefined));
+    // A field's name is its name: one with a dot in it, as Qlik's QUALIFY names a
+    // field, isn't a path into the row for Tabulator to follow
+    assert.strictEqual(table.options.nestedFieldSeparator, false);
 
     // Profiled as the extension does it, the field's markup is in its prefixes,
     // suffixes, email addresses and duplicates
@@ -418,10 +510,8 @@ suite("Page Escaping Test Suite", () => {
       [EMAIL, VALUE]
     );
 
-    // What the cards write: the QVD structure table, written when the page loads,
-    // holds only the extension's numbers
+    // What the cards write
     page.written.length = 0;
-    page.untagged.length = 0;
     page.dispatch("message", { data: { command: "profilingResults", results } });
     assert.match(page.elements.get("profiling-status").textContent, /^✅ Profiling complete/);
 
@@ -445,7 +535,8 @@ suite("Page Escaping Test Suite", () => {
     for (const { value } of duplicates) {
       assert.ok(written.includes(`<span>${escapeHtml(value)}</span>`), value);
     }
-    // All of it written with html\`...\`, which escapes each value
+    // All the HTML the page wrote, since it loaded, written with html\`...\`, which
+    // escapes each value
     assert.deepStrictEqual(page.untagged, []);
     // With nothing gone wrong on the page
     assert.deepStrictEqual(
@@ -459,36 +550,96 @@ suite("Page Escaping Test Suite", () => {
     const page = fakePage();
     page.load(pageHtml);
     page.dispatch("DOMContentLoaded");
-    const results = profileFields(PLAIN, PLAIN_FIELDS);
+    const fields = plainFields();
     assert.deepStrictEqual(
-      results.fields.map(({ isNumeric, isDate, isString }) => [isNumeric, isDate, isString]),
+      fields.map(({ isNumeric, isDate, isString, truncated }) => [isNumeric, isDate, isString, truncated]),
       [
-        [true, false, false],
-        [false, true, false],
-        [false, false, true],
+        [true, false, false, false],
+        [false, true, false, false],
+        [false, false, true, false],
+        [false, false, true, true],
+        [false, false, true, false],
       ]
     );
 
-    // What the cards write: the QVD structure table, written when the page loads,
-    // holds only the extension's numbers
+    // What the cards write
     page.written.length = 0;
-    page.untagged.length = 0;
-    page.dispatch("message", { data: { command: "profilingResults", results } });
+    page.dispatch("message", { data: { command: "profilingResults", results: { fields } } });
     assert.match(page.elements.get("profiling-status").textContent, /^✅ Profiling complete/);
     const written = page.written.join("\n");
-    for (const card of CARDS) {
-      assert.ok(written.includes(card), card);
+    for (const part of [...CARDS, ...PARTS]) {
+      assert.ok(written.includes(part), part);
     }
-    // Every piece of it html\`...\`, and each one inside it too: a literal that isn't
-    // would be escaped, and show its markup as text
+    // All the HTML the page wrote, since it loaded, html\`...\`, and each piece inside
+    // it too: a literal that isn't would be escaped, and show its markup as text
     assert.deepStrictEqual(page.untagged, []);
     assert.doesNotMatch(written, ESCAPED_TAG);
     assert.ok(written.includes(String(createHelpIconHtml("temporalEarliest"))), "help icons go in as HTML");
     assert.ok(written.includes(`<div style="padding: 2px 0;">user0@example.com</div>`), "the samples are listed");
+    assert.ok(written.includes(`<div style="padding: 2px 0;">555-123-4567</div>`), "the samples are listed");
     assert.deepStrictEqual(
       page.posted.filter((message) => message.level === "error").map((message) => message.message),
       []
     );
+  });
+
+  test("The editor page and the read-failure notice write their own markup with html, and none shows as text", () => {
+    // A failure, a header and rows with nothing to escape, in every case the pages
+    // write markup for: rows still to send, too many rows to profile lightly, rows
+    // that couldn't be read, lineage or none, and the error page
+    const failure = {
+      kind: "memory",
+      title: "Not enough memory",
+      summary: "The rows didn't fit",
+      advice: ["Close other files", "Try fewer rows"],
+      actions: [
+        { command: "retry", label: "Retry" },
+        { command: "loadRows", label: "Load 1,000 rows", rows: 1000 },
+        { command: "openSetting", label: "Settings", setting: "ctrl-q-qvd-viewer.maxPreviewRows" },
+      ],
+      detail: "Error: out of memory",
+    };
+    const metadata = {
+      fields: [{ name: "Amount", noOfSymbols: 3 }],
+      tableName: "Plain",
+      offset: 0,
+      length: 0,
+      lineage: [{ Discriminator: "STORE;", Statement: "LOAD 1" }],
+    };
+    const webview = recordingWebview();
+    const context = { extensionPath: root, extensionUri: vscode.Uri.file(root) };
+    const markup = [
+      getHtmlForWebview({ metadata, data: [], totalRows: 200000, dataError: failure, fileSize: 10 }, webview, context, {
+        embedData: false,
+      }),
+      getHtmlForWebview({ metadata: { ...metadata, lineage: [] }, data: [{ Amount: 1 }], totalRows: 1, fileSize: 10 }, webview, context),
+      getErrorHtml(failure),
+    ]
+      .map(markupOf)
+      .join("\n");
+
+    // Each part of it is there as markup, and none of it as text, which a literal
+    // that isn't html\`...\` would give, put into one that is
+    const parts = [
+      'id="loading-indicator"',
+      '<div class="export-dropdown-item" data-format="csv">',
+      '<div class="export-dropdown-separator">',
+      '<span class="beta-badge">BETA</span>',
+      'class="info-banner warning-banner"',
+      '<div class="field-checkbox-item">',
+      'id="lineage-search"',
+      "No lineage information available",
+      "<p>The file's header could still be read",
+      '<ul class="read-failure-advice">',
+      "<li>Close other files</li>",
+      'data-rows="1000"',
+      'data-setting="ctrl-q-qvd-viewer.maxPreviewRows"',
+      "<pre>Error: out of memory</pre>",
+    ];
+    for (const part of parts) {
+      assert.ok(markup.includes(part), part);
+    }
+    assert.doesNotMatch(markup, ESCAPED_TAG);
   });
 
   test("The visual-analysis panel shows a field's result as text, and its script reads it whole", () => {
@@ -519,7 +670,7 @@ suite("Page Escaping Test Suite", () => {
   });
 
   test("The visual-analysis panel writes each card with html, and none shows markup as text", () => {
-    for (const fieldResult of profileFields(PLAIN, PLAIN_FIELDS).fields) {
+    const bodies = plainFields().map((fieldResult) => {
       const page = getVisualAnalysisHtml(root, fieldResult, "plain.qvd");
       const body = page.slice(page.indexOf("<body>"), page.indexOf("<script"));
       assert.ok(
@@ -529,6 +680,66 @@ suite("Page Escaping Test Suite", () => {
       assert.ok(body.includes(CARDS[3]), `${fieldResult.fieldName} gets the quality card`);
       assert.doesNotMatch(body, ESCAPED_TAG, fieldResult.fieldName);
       assert.ok(body.includes(String(createHelpIconHtml("totalRowsProfiling"))), "help icons go in as HTML");
+      return body;
+    });
+    // Between them, every part of a card
+    for (const part of PARTS) {
+      assert.ok(
+        bodies.some((body) => body.includes(part)),
+        part
+      );
+    }
+  });
+
+  test("The Markdown report shows a field's name and values as text, one row each", async () => {
+    // A field whose name and values would add rows, columns, markup, links and images
+    const name = "Name|<b>x</b>\n# Heading";
+    const values = ["a|b", "ends\\", "line\nbreak", '<img src="https://tracker.example/x">', "![i](https://tracker.example/y)"];
+    const [fieldResult] = profileFields(
+      values.map((value) => ({ [name]: value })),
+      [name]
+    ).fields;
+
+    // The report is an untitled document, opened beside the viewer: it is read as
+    // VS Code opened it, then closed
+    const panel = { webview: recordingWebview() };
+    const opened = [];
+    const errors = [];
+    const { showErrorMessage } = vscode.window;
+    const listening = vscode.workspace.onDidOpenTextDocument((document) => opened.push(document));
+    try {
+      vscode.window.showErrorMessage = async (message) => {
+        errors.push(message);
+        return undefined;
+      };
+      setupMessageHandler(panel, path.join(dir, "a|<i>b.qvd"), new QvdReader(), {}, async () => {}, 5000);
+      await panel.webview.listener({ command: "openProfilingInWindow", fieldResult, displayType: "markdown" });
+    } finally {
+      listening.dispose();
+      vscode.window.showErrorMessage = showErrorMessage;
+    }
+    const reports = opened.filter((document) => document.isUntitled && document.languageId === "markdown");
+    try {
+      assert.deepStrictEqual(errors, []);
+      assert.strictEqual(reports.length, 1);
+      const report = reports[0].getText();
+      const lines = report.split("\n");
+      // The heading and the source are one line each, their text escaped
+      assert.strictEqual(lines[0], `# Profiling: ${markdownText(name)}`);
+      assert.strictEqual(lines[2], `**Source:** ${markdownText("a|<i>b.qvd")}`);
+      // Each value is one row of three columns, its text escaped
+      for (const value of values) {
+        const row = lines.find((line) => line.startsWith(`| ${markdownText(value)} |`));
+        assert.ok(row, value);
+        assert.strictEqual(row.match(/(?<!\\)\|/g).length, 4, row);
+      }
+      // And nothing in the report is markup, a link or an image
+      assert.doesNotMatch(report, /(?<!\\)[<[]/);
+    } finally {
+      for (const document of reports) {
+        await vscode.window.showTextDocument(document);
+        await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor");
+      }
     }
   });
 });

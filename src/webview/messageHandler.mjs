@@ -5,6 +5,7 @@ import DataExporter from "../exporters/index.mjs";
 import { describeTimeShifts } from "../exporters/zonedTimestamps.mjs";
 import { PROFILE_BYTES_PER_VALUE, profileFields, generateQvsScript } from "../qvdProfiler.mjs";
 import { getVisualAnalysisHtml } from "./templates/visualAnalysisTemplate.mjs";
+import { markdownText } from "./templates/escaping.mjs";
 import { getLoadMoreRowCount, LOAD_MORE_MAX_ROWS, previewRows } from "./loadMore.mjs";
 import {
   describeExportRefusal,
@@ -468,9 +469,10 @@ export function setupMessageHandler(
           const fileName = basename(filePath, extname(filePath));
 
           if (displayType === "markdown") {
-            // Create markdown content with profiling results
-            let markdownContent = `# Profiling: ${fieldResult.fieldName}\n\n`;
-            markdownContent += `**Source:** ${basename(filePath)}\n\n`;
+            // Create markdown content with profiling results. What the file says, its
+            // field's name and values, is written by markdownText(): see escaping.mjs
+            let markdownContent = `# Profiling: ${markdownText(fieldResult.fieldName)}\n\n`;
+            markdownContent += `**Source:** ${markdownText(basename(filePath))}\n\n`;
             markdownContent += `## Statistics\n\n`;
             markdownContent += `- **Total Rows:** ${fieldResult.totalRows.toLocaleString()}\n`;
             markdownContent += `- **Unique Values:** ${fieldResult.uniqueValues.toLocaleString()}\n`;
@@ -670,9 +672,9 @@ export function setupMessageHandler(
             markdownContent += `|-------|-------|------------|\n`;
 
             fieldResult.distributions.forEach((dist) => {
-              markdownContent += `| ${
+              markdownContent += `| ${markdownText(
                 dist.value
-              } | ${dist.count.toLocaleString()} | ${dist.percentage}% |\n`;
+              )} | ${dist.count.toLocaleString()} | ${dist.percentage}% |\n`;
             });
 
             // Create a new untitled document with markdown content
