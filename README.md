@@ -85,6 +85,12 @@ Learn more about the Butler family at [https://ptarmiganlabs.com/the-butler-fami
 
 ## Getting Started
 
+### Requirements
+
+- **Visual Studio Code 1.103 or later**, released in August 2025. The extension runs in VS Code on Windows, macOS and Linux.
+
+VS Code 1.101 and 1.102 can't install this version, only version 1.4.0, which can't open any QVD file on Windows 11 24H2 and later or on Windows Server 2025. There each file fails with "the file was replaced by a different one after it was checked". The Node.js those versions of VS Code run extensions on gets a file's volume wrong when it looks the file up by name, so the check that the file opened is the file found sees two different files. If you see that message, update VS Code (**Help → Check for Updates**), and then the extension.
+
 ### Quick Start (3 Steps)
 
 1. **Install the Extension**
