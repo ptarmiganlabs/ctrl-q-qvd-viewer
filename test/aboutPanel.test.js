@@ -57,9 +57,21 @@ suite("About Panel Test Suite", () => {
     assert.strictEqual(linkForLog("file:///etc/passwd"), '"file:///etc/passwd"');
     assert.strictEqual(linkForLog("a\nERROR forged line"), '"a\\nERROR forged line"');
     assert.strictEqual(linkForLog(undefined), '"undefined"');
+    // What JSON leaves as it is but a log viewer may break a line at, or reorder text by:
+    // NEL, another C1 control, the line and paragraph separators, and a bidi override
+    const unsafe = [0x85, 0x9b, 0x2028, 0x2029, 0x202e].map((code) => String.fromCharCode(code));
+    assert.strictEqual(
+      linkForLog(`a${unsafe.join("b")}c`),
+      '"a\\u0085b\\u009bb\\u2028b\\u2029b\\u202ec"'
+    );
+    // 200 characters, quoted, then an ellipsis
     const long = linkForLog(`https://example.com/${"x".repeat(1000)}`);
-    assert.strictEqual(long.length, 201);
-    assert.ok(long.startsWith('"https://example.com/xxx') && long.endsWith("…"), long);
+    assert.strictEqual(long.length, 203);
+    assert.ok(long.startsWith('"https://example.com/xxx') && long.endsWith('x"…'), long);
+    // Cut by character, so a character outside the BMP isn't cut in two
+    const emoji = linkForLog("😀".repeat(300));
+    assert.strictEqual(emoji, `"${"😀".repeat(200)}"…`);
+    assert.strictEqual(linkForLog("😀".repeat(200)), `"${"😀".repeat(200)}"`);
   });
 
   test("The About page runs only its own script and style, and its links open web pages only", async () => {

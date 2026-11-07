@@ -4,7 +4,7 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import logger from "./logger.mjs";
 import { getNonce } from "./webview/assetLoader.mjs";
-import { escapeHtml } from "./webview/templates/escaping.mjs";
+import { html } from "./webview/templates/escaping.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -28,18 +28,34 @@ export function externalLink(url) {
   }
 }
 
-// Of a refused link, as much as the log shows
+// Of a refused link, as many characters as the log shows
 const LOGGED_LINK_LENGTH = 200;
+
+// What JSON.stringify() leaves as it is that a log viewer may still take for a line
+// break, or that reorders the text around it: the C1 controls, NEL among them, the
+// line and paragraph separators, and the bidirectional marks, embeddings, overrides
+// and isolates
+const LOG_UNSAFE = /[\u007f-\u009f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g;
 
 /**
  * A refused link as the log shows it: quoted, on one line, and cut short. It is
- * whatever the page sent, so it gets no line of the log to itself.
+ * whatever the page sent, so it gets no line of the log to itself, and can't change
+ * how the log around it reads. It is cut by character before it is quoted, so that
+ * neither an escape nor a character is cut in two.
  * @param {unknown} url - The link's address, as the panel sent it
  * @returns {string} The address for the log
  */
 export function linkForLog(url) {
-  const quoted = JSON.stringify(String(url));
-  return quoted.length > LOGGED_LINK_LENGTH ? `${quoted.slice(0, LOGGED_LINK_LENGTH)}…` : quoted;
+  const text = String(url);
+  // Twice as many UTF-16 units as characters shown is enough for them, however wide
+  const shown = Array.from(text.slice(0, 2 * LOGGED_LINK_LENGTH))
+    .slice(0, LOGGED_LINK_LENGTH)
+    .join("");
+  const quoted = JSON.stringify(shown).replace(
+    LOG_UNSAFE,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`
+  );
+  return shown.length < text.length ? `${quoted}…` : quoted;
 }
 
 /**
@@ -184,8 +200,9 @@ class AboutPanel {
       )
     );
 
-    // Scripts and style elements run by nonce only, so the page's links open through
-    // its one script rather than handlers of their own. Style attributes are allowed,
+    // The page's body is an html`...` literal, so each value in it, from package.json,
+    // is escaped. Scripts and style elements run by nonce only, so the page's links
+    // open through its one script rather than handlers of their own. Style attributes are allowed,
     // as the page's markup sets many of them.
     const nonce = getNonce();
     return `<!DOCTYPE html>
@@ -407,18 +424,15 @@ class AboutPanel {
             </style>
         </head>
         <body>
+            ${html`
             <div class="container">
                 <div class="header">
                     <div class="header-top">
                         <div class="header-left">
                             <img src="${ctrlqLogoUri}" alt="Ctrl-Q Logo" class="logo ctrl-q">
-                            <h1>${escapeHtml(displayName)}</h1>
-                            <div class="version">Version ${escapeHtml(
-                              version
-                            )}</div>
-                            <div class="description">${escapeHtml(
-                              description
-                            )}</div>
+                            <h1>${displayName}</h1>
+                            <div class="version">Version ${version}</div>
+                            <div class="description">${description}</div>
                         </div>
                         <div class="header-right">
                             <span class="sponsor-text">Sponsored by</span>
@@ -582,7 +596,7 @@ class AboutPanel {
                 <div class="section">
                     <h2>Resources & Links</h2>
                     <div class="link-section">
-                        <button class="link-button" data-url="${escapeHtml(repository)}">
+                        <button class="link-button" data-url="${repository}">
                             <svg class="button-icon" viewBox="0 0 16 16" fill="currentColor">
                                 <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
                             </svg>
@@ -603,9 +617,7 @@ class AboutPanel {
                 <div class="section">
                     <h2>Technical Information</h2>
                     <div class="tech-info">
-                        <p><strong>License:</strong> ${escapeHtml(
-                          license
-                        )}</p>
+                        <p><strong>License:</strong> ${license}</p>
                     </div>
                 </div>
                 
@@ -614,6 +626,7 @@ class AboutPanel {
                     <p style="margin-top: 10px; font-size: 0.9em;">© 2025 Ptarmigan Labs. All rights reserved.</p>
                 </div>
             </div>
+            `}
             
             <script nonce="${nonce}">
                 const vscode = acquireVsCodeApi();
