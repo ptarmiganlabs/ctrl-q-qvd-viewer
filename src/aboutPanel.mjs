@@ -28,6 +28,18 @@ export function externalLink(url) {
   }
 }
 
+/**
+ * The repository's web page, from package.json's repository URL. npm writes that URL
+ * as git+https://….git, as npm pkg fix does and npm publish suggests, and neither the
+ * git+ nor the .git is part of the page's address: externalLink() refuses a git+https:
+ * address, and the .git one is the clone's.
+ * @param {string} url - The repository's URL, as package.json gives it
+ * @returns {string} The repository's web page
+ */
+export function repositoryPage(url) {
+  return String(url).replace(/^git\+/, "").replace(/\.git$/, "");
+}
+
 // Of a refused link, as many characters as the log shows
 const LOGGED_LINK_LENGTH = 200;
 
@@ -178,7 +190,7 @@ class AboutPanel {
       version = packageJson.version;
       displayName = packageJson.displayName;
       description = packageJson.description;
-      repository = packageJson.repository.url;
+      repository = repositoryPage(packageJson.repository.url);
       license = packageJson.license;
     } catch (error) {
       logger.error("Failed to read package.json:", error);

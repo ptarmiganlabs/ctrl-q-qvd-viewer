@@ -6,6 +6,7 @@ const { recordingWebview } = require("./fakes");
 let AboutPanel;
 let externalLink;
 let linkForLog;
+let repositoryPage;
 let logger;
 
 const root = path.join(__dirname, "..");
@@ -27,7 +28,7 @@ function fakePanel() {
 
 suite("About Panel Test Suite", () => {
   suiteSetup(async () => {
-    ({ default: AboutPanel, externalLink, linkForLog } = await import("../src/aboutPanel.mjs"));
+    ({ default: AboutPanel, externalLink, linkForLog, repositoryPage } = await import("../src/aboutPanel.mjs"));
     ({ default: logger } = await import("../src/logger.mjs"));
   });
 
@@ -51,6 +52,14 @@ suite("About Panel Test Suite", () => {
     for (const url of refused) {
       assert.strictEqual(externalLink(url), null, String(url));
     }
+  });
+
+  test("The repository's button opens its web page, however npm writes its URL", () => {
+    const page = "https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer";
+    for (const url of [`${page}.git`, `git+${page}.git`, `git+${page}`, page]) {
+      assert.strictEqual(repositoryPage(url), page, url);
+    }
+    assert.ok(externalLink(repositoryPage(`git+${page}.git`)), "a page the panel opens");
   });
 
   test("A refused link goes into the log quoted, on one line, and cut short", () => {
@@ -94,6 +103,8 @@ suite("About Panel Test Suite", () => {
       assert.ok(!/\son[a-z]+\s*=/i.test(html), "no event handlers in the markup");
       const urls = [...html.matchAll(/data-url="([^"]*)"/g)].map(([, url]) => url);
       assert.strictEqual(urls.length, 11);
+      // The repository's web page, not its clone's .git address
+      assert.ok(urls.includes("https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer"), urls.join(" "));
       assert.ok(
         urls.every((url) => externalLink(url)),
         urls.join(" ")

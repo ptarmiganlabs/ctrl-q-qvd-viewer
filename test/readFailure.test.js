@@ -518,6 +518,8 @@ suite("Read Failure Test Suite", () => {
     const nonce = /script-src 'nonce-([A-Za-z0-9]+)'/.exec(html)?.[1];
     assert.ok(nonce, "the CSP allows scripts by nonce only");
     assert.ok(html.includes(`default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';`));
+    // Nor can it send a form, or change where its links lead, as the viewer's pages can't
+    assert.ok(html.includes("form-action 'none'; base-uri 'none';"));
     assert.ok(html.includes(`<script nonce="${nonce}">`));
     assert.ok(html.includes(`<style nonce="${nonce}">`));
     assert.strictEqual((html.match(/<script/g) ?? []).length, 1, "one script, the page's own");
