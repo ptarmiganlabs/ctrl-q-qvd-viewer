@@ -1325,8 +1325,11 @@ suite("Exporter Test Suite", () => {
     const taxi = (name) => path.join(__dirname, "..", "test-data", "chicago_taxi_rides", name);
     const field = "trip_start_timestamp";
 
-    // Of every row, only this field, and only the trips from 01:00 to 03:59 on 2016-03-13
-    const df = await QvdDataFrame.fromQvd(taxi("chicago_taxi_rides_2016_03.qvd"), { fields: [field], duals: "both" });
+    // Of every row, only this field, and only the trips from 01:00 to 03:59 on 2016-03-13.
+    // qvdjs reads only within allowedDir, which is otherwise the working directory, and on
+    // Windows the extension host's isn't the repository
+    const trips = taxi("chicago_taxi_rides_2016_03.qvd");
+    const df = await QvdDataFrame.fromQvd(trips, { fields: [field], duals: "both", allowedDir: path.dirname(trips) });
     const from = Date.UTC(2016, 2, 13, 1);
     const to = Date.UTC(2016, 2, 13, 4);
     const night = df.data.filter(([value]) => {
