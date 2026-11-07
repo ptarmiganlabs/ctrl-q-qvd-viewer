@@ -5,6 +5,8 @@ const { recordingWebview } = require("./fakes");
 
 let AboutPanel;
 let externalLink;
+let linkForLog;
+let logger;
 
 const root = path.join(__dirname, "..");
 const context = { extensionUri: vscode.Uri.file(root) };
@@ -25,7 +27,8 @@ function fakePanel() {
 
 suite("About Panel Test Suite", () => {
   suiteSetup(async () => {
-    ({ default: AboutPanel, externalLink } = await import("../src/aboutPanel.mjs"));
+    ({ default: AboutPanel, externalLink, linkForLog } = await import("../src/aboutPanel.mjs"));
+    ({ default: logger } = await import("../src/logger.mjs"));
   });
 
   test("Only a web page at an https: address is a link to open", () => {
@@ -48,6 +51,15 @@ suite("About Panel Test Suite", () => {
     for (const url of refused) {
       assert.strictEqual(externalLink(url), null, String(url));
     }
+  });
+
+  test("A refused link goes into the log quoted, on one line, and cut short", () => {
+    assert.strictEqual(linkForLog("file:///etc/passwd"), '"file:///etc/passwd"');
+    assert.strictEqual(linkForLog("a\nERROR forged line"), '"a\\nERROR forged line"');
+    assert.strictEqual(linkForLog(undefined), '"undefined"');
+    const long = linkForLog(`https://example.com/${"x".repeat(1000)}`);
+    assert.strictEqual(long.length, 201);
+    assert.ok(long.startsWith('"https://example.com/xxx') && long.endsWith("…"), long);
   });
 
   test("The About page runs only its own script and style, and its links open web pages only", async () => {
@@ -75,21 +87,28 @@ suite("About Panel Test Suite", () => {
         urls.join(" ")
       );
 
-      // The panel opens what its links ask for, and nothing else
+      // The panel opens what its links ask for, and nothing else, and says so in the log
       const opened = [];
+      const warned = [];
       const openExternal = api.env.openExternal;
+      const warn = logger.warn;
       try {
         api.env.openExternal = async (uri) => {
           opened.push(uri.toString());
           return true;
         };
-        for (const url of [urls[0], "file:///etc/passwd", "command:workbench.action.terminal.new"]) {
+        logger.warn = (message) => warned.push(message);
+        for (const url of [urls[0], "file:///etc/passwd", "command:x\nERROR forged line"]) {
           panel.webview.listener({ command: "openExternal", url });
         }
       } finally {
         api.env.openExternal = openExternal;
+        logger.warn = warn;
       }
       assert.deepStrictEqual(opened, [vscode.Uri.parse(urls[0]).toString()]);
+      assert.strictEqual(warned.length, 2);
+      assert.ok(warned[0].endsWith('"file:///etc/passwd"'), warned[0]);
+      assert.ok(!warned[1].includes("\n"), warned[1]);
     } finally {
       about.dispose();
     }

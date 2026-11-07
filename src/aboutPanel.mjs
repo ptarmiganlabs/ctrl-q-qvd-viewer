@@ -28,6 +28,20 @@ export function externalLink(url) {
   }
 }
 
+// Of a refused link, as much as the log shows
+const LOGGED_LINK_LENGTH = 200;
+
+/**
+ * A refused link as the log shows it: quoted, on one line, and cut short. It is
+ * whatever the page sent, so it gets no line of the log to itself.
+ * @param {unknown} url - The link's address, as the panel sent it
+ * @returns {string} The address for the log
+ */
+export function linkForLog(url) {
+  const quoted = JSON.stringify(String(url));
+  return quoted.length > LOGGED_LINK_LENGTH ? `${quoted.slice(0, LOGGED_LINK_LENGTH)}…` : quoted;
+}
+
 /**
  * Manages the About panel webview
  */
@@ -56,7 +70,7 @@ class AboutPanel {
             if (link) {
               vscode.env.openExternal(link);
             } else {
-              logger.warn(`The About panel asked to open a link that isn't a web page: ${message.url}`);
+              logger.warn(`The About panel asked to open a link that isn't a web page: ${linkForLog(message.url)}`);
             }
             break;
           }
