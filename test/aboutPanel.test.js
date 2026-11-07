@@ -103,8 +103,9 @@ suite("About Panel Test Suite", () => {
       assert.ok(!/\son[a-z]+\s*=/i.test(html), "no event handlers in the markup");
       const urls = [...html.matchAll(/data-url="([^"]*)"/g)].map(([, url]) => url);
       assert.strictEqual(urls.length, 11);
-      // The repository's web page, not its clone's .git address
-      assert.ok(urls.includes("https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer"), urls.join(" "));
+      // The repository's web page, not its clone's .git address: one link is exactly it
+      const repositoryUrl = repositoryPage("git+https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer.git");
+      assert.strictEqual(urls.filter((url) => url === repositoryUrl).length, 1, urls.join(" "));
       assert.ok(
         urls.every((url) => externalLink(url)),
         urls.join(" ")
