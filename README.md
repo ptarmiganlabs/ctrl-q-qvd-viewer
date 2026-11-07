@@ -89,6 +89,8 @@ Learn more about the Butler family at [https://ptarmiganlabs.com/the-butler-fami
 
 - **Visual Studio Code 1.103 or later**, released in August 2025. The extension runs in VS Code on Windows, macOS and Linux.
 
+The extension supports the VS Code releases of at least the last 12 months. Once a quarter, its minimum moves up to the newest VS Code release that is at least 12 months old. An older VS Code keeps the last version of the extension that supports it, which the Marketplace offers it on its own.
+
 VS Code 1.101 and 1.102 can't install this version. The Marketplace offers them version 1.4.0 instead, which can't open any QVD file on Windows 11 24H2 and later or on Windows Server 2025. There each file fails with "the file was replaced by a different one after it was checked". The Node.js those versions of VS Code run extensions on gets a file's volume wrong when it looks the file up by name, so the check that the file opened is the file found sees two different files. If you see that message:
 
 - **Update VS Code** (**Help → Check for Updates**), and then the extension.
