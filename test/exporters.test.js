@@ -740,20 +740,32 @@ suite("Exporter Test Suite", () => {
   });
 
   test("CSV export - replacing a file keeps its permissions and symlinks", async function () {
-    if (process.platform === "win32") {
-      this.skip();
-    }
+    // Windows has no permission bits for chmod to set, only a read-only attribute, so
+    // there the test is of the link alone
+    const permissions = process.platform !== "win32";
     const real = path.join(outputDir, "real.csv");
     const link = path.join(outputDir, "link.csv");
     fs.writeFileSync(real, "previous export");
-    fs.chmodSync(real, 0o600);
-    fs.symlinkSync(real, link);
+    if (permissions) {
+      fs.chmodSync(real, 0o600);
+    }
+    try {
+      fs.symlinkSync(real, link);
+    } catch (error) {
+      // Creating a symlink needs extra rights on Windows
+      if (error.code === "EPERM") {
+        this.skip();
+      }
+      throw error;
+    }
 
     await csvExporter.exportToCSV([{ a: 1 }], link);
 
     assert.ok(fs.lstatSync(link).isSymbolicLink(), "The link should still be a link");
     assert.strictEqual(fs.readFileSync(real, "utf8"), '"a"\n"1"');
-    assert.strictEqual(fs.statSync(real).mode & 0o777, 0o600);
+    if (permissions) {
+      assert.strictEqual(fs.statSync(real).mode & 0o777, 0o600);
+    }
   });
 
   test("Excel export - blank text next to numbers or booleans is an empty cell, and text elsewhere", async () => {
@@ -1313,8 +1325,11 @@ suite("Exporter Test Suite", () => {
     const taxi = (name) => path.join(__dirname, "..", "test-data", "chicago_taxi_rides", name);
     const field = "trip_start_timestamp";
 
-    // Of every row, only this field, and only the trips from 01:00 to 03:59 on 2016-03-13
-    const df = await QvdDataFrame.fromQvd(taxi("chicago_taxi_rides_2016_03.qvd"), { fields: [field], duals: "both" });
+    // Of every row, only this field, and only the trips from 01:00 to 03:59 on 2016-03-13.
+    // qvdjs reads only within allowedDir, which is otherwise the working directory, and on
+    // Windows the extension host's isn't the repository
+    const trips = taxi("chicago_taxi_rides_2016_03.qvd");
+    const df = await QvdDataFrame.fromQvd(trips, { fields: [field], duals: "both", allowedDir: path.dirname(trips) });
     const from = Date.UTC(2016, 2, 13, 1);
     const to = Date.UTC(2016, 2, 13, 4);
     const night = df.data.filter(([value]) => {

@@ -28,9 +28,9 @@ updates:
         update-types: [minor, patch]
     ignore:
       # Types for the Node.js that the minimum VS Code (engines.vscode) runs extensions on:
-      # 22.15 for VS Code 1.101
+      # 22.17 for VS Code 1.103
       - dependency-name: "@types/node"
-        versions: [">=22.16.0"]
+        versions: [">=22.18.0"]
       # Moves only together with engines.vscode: vsce refuses to package when it is newer
       - dependency-name: "@types/vscode"
 
