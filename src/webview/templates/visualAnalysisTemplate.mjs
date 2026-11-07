@@ -5,37 +5,35 @@ import {
   getChartJs,
   getHistogramViewJs,
 } from "../assetLoader.mjs";
-import { escapeHtml } from "./errorTemplate.mjs";
+import { escapeHtml, html, scriptJson } from "./escaping.mjs";
 import { createHelpIconHtml } from "../qualityMetricHelp.mjs";
 
 /**
- * Generate HTML for visual analysis webview
- * @param {object} webview - The webview object
+ * Generate HTML for visual analysis webview. The page loads nothing of the
+ * webview's: its libraries are inlined, so it needs no webview resource URIs.
  * @param {string} extensionPath - The extension path
  * @param {object} fieldResult - The field profiling result
  * @param {string} qvdFileName - The QVD file name
  * @returns {string} HTML content for visual analysis
  */
-export function getVisualAnalysisHtml(
-  webview,
-  extensionPath,
-  fieldResult,
-  qvdFileName
-) {
+export function getVisualAnalysisHtml(extensionPath, fieldResult, qvdFileName) {
   const nonce = getNonce();
   const tabulatorJs = getTabulatorJs(extensionPath);
   const tabulatorCss = getTabulatorCss(extensionPath);
   const chartJs = getChartJs(extensionPath);
   const histogramViewJs = getHistogramViewJs(extensionPath);
 
+  // The page's body is an html`...` literal, so every value in it is escaped, and
+  // only HTML that html made, such as each help icon, goes in as it is. The field's
+  // result comes back from the editor's page, and its text is the file's;
+  // scriptJson() writes it into the script. Scripts and style elements run by nonce
+  // only; style attributes are allowed, as the page's own markup sets many of them.
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${
-      webview.cspSource
-    } 'unsafe-inline'; script-src 'nonce-${nonce}';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src-elem 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; script-src 'nonce-${nonce}'; form-action 'none'; base-uri 'none';">
     <title>Profiling: ${escapeHtml(fieldResult.fieldName)}</title>
     <style nonce="${nonce}">
         ${tabulatorCss}
@@ -433,8 +431,9 @@ export function getVisualAnalysisHtml(
     </style>
 </head>
 <body>
-    <h1>📊 ${escapeHtml(fieldResult.fieldName)}</h1>
-    <div class="source">Source: ${escapeHtml(qvdFileName)}</div>
+    ${html`
+    <h1>📊 ${fieldResult.fieldName}</h1>
+    <div class="source">Source: ${qvdFileName}</div>
     
     <div class="stats-container">
         <div class="stat-item">
@@ -458,7 +457,7 @@ export function getVisualAnalysisHtml(
       fieldResult.isNumeric &&
       fieldResult.statistics &&
       fieldResult.statistics.isNumeric
-        ? `
+        ? html`
     <div style="background-color: var(--vscode-textBlockQuote-background); border: 1px solid var(--vscode-panel-border); border-radius: 4px; padding: 15px; margin-bottom: 20px;">
         <h2 style="margin: 0 0 15px 0; font-size: 1.2em;">📈 Statistical Analysis</h2>
         
@@ -562,7 +561,7 @@ export function getVisualAnalysisHtml(
       fieldResult.isDate &&
       fieldResult.temporalAnalysis &&
       fieldResult.temporalAnalysis.isDate
-        ? `
+        ? html`
     <div style="background-color: var(--vscode-textBlockQuote-background); border: 1px solid var(--vscode-panel-border); border-radius: 4px; padding: 15px; margin-bottom: 20px;">
         <h2 style="margin: 0 0 15px 0; font-size: 1.2em;">📅 Temporal Analysis</h2>
         
@@ -599,24 +598,20 @@ export function getVisualAnalysisHtml(
                     Time Span
                     ${createHelpIconHtml("temporalTimeSpan")}
                 </span>
-                <span class="stat-value">${
-                  fieldResult.temporalAnalysis.range.spanDescription
-                }</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.range.spanDescription}</span>
             </div>
             <div class="stat-item">
                 <span class="stat-label">
                     Format
                     ${createHelpIconHtml("temporalFormat")}
                 </span>
-                <span class="stat-value">${
-                  fieldResult.temporalAnalysis.range.format.formatDescription
-                }</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.range.format.formatDescription}</span>
             </div>
         </div>
         
         ${
           fieldResult.temporalAnalysis.distribution.byYear.length > 0
-            ? `
+            ? html`
         <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">
             Yearly Distribution
             ${createHelpIconHtml("temporalYearlyDistribution")}
@@ -625,14 +620,13 @@ export function getVisualAnalysisHtml(
             ${fieldResult.temporalAnalysis.distribution.byYear
               .slice(0, 10)
               .map(
-                (item) => `
+                (item) => html`
             <div class="stat-item">
                 <span class="stat-label">${item.period}</span>
                 <span class="stat-value">${item.count.toLocaleString()}</span>
             </div>
             `
-              )
-              .join("")}
+              )}
         </div>
         `
             : ""
@@ -640,7 +634,7 @@ export function getVisualAnalysisHtml(
         
         ${
           fieldResult.temporalAnalysis.distribution.byMonth.length > 0
-            ? `
+            ? html`
         <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">
             Monthly Distribution
             ${createHelpIconHtml("temporalMonthlyDistribution")}
@@ -648,14 +642,13 @@ export function getVisualAnalysisHtml(
         <div class="stats-container" style="margin-bottom: 15px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
             ${fieldResult.temporalAnalysis.distribution.byMonth
               .map(
-                (item) => `
+                (item) => html`
             <div class="stat-item">
                 <span class="stat-label">${item.period}</span>
                 <span class="stat-value">${item.count.toLocaleString()}</span>
             </div>
             `
-              )
-              .join("")}
+              )}
         </div>
         `
             : ""
@@ -663,7 +656,7 @@ export function getVisualAnalysisHtml(
         
         ${
           fieldResult.temporalAnalysis.distribution.byDayOfWeek.length > 0
-            ? `
+            ? html`
         <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">
             Day of Week Distribution
             ${createHelpIconHtml("temporalDayOfWeekDistribution")}
@@ -671,14 +664,13 @@ export function getVisualAnalysisHtml(
         <div class="stats-container" style="margin-bottom: 15px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
             ${fieldResult.temporalAnalysis.distribution.byDayOfWeek
               .map(
-                (item) => `
+                (item) => html`
             <div class="stat-item">
                 <span class="stat-label">${item.period}</span>
                 <span class="stat-value">${item.count.toLocaleString()}</span>
             </div>
             `
-              )
-              .join("")}
+              )}
         </div>
         `
             : ""
@@ -686,7 +678,7 @@ export function getVisualAnalysisHtml(
         
         ${
           fieldResult.temporalAnalysis.gaps
-            ? `
+            ? html`
         <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Gap Analysis</h3>
         <div class="stats-container" style="margin-bottom: 15px;">
             <div class="stat-item">
@@ -718,7 +710,7 @@ export function getVisualAnalysisHtml(
             </div>
             ${
               fieldResult.temporalAnalysis.gaps.largestGap
-                ? `
+                ? html`
             <div class="stat-item">
                 <span class="stat-label">
                     Largest Gap
@@ -738,7 +730,7 @@ export function getVisualAnalysisHtml(
         
         ${
           fieldResult.temporalAnalysis.trends
-            ? `
+            ? html`
         <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Trend Analysis</h3>
         <div class="stats-container" style="margin-bottom: 15px;">
             <div class="stat-item">
@@ -746,19 +738,14 @@ export function getVisualAnalysisHtml(
                     Trend Type
                     ${createHelpIconHtml("temporalTrendType")}
                 </span>
-                <span class="stat-value">${fieldResult.temporalAnalysis.trends.trendType.replace(
-                  /_/g,
-                  " "
-                )}</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.trends.trendType.replace(/_/g, " ")}</span>
             </div>
             <div class="stat-item" style="grid-column: span 2;">
                 <span class="stat-label">
                     Description
                     ${createHelpIconHtml("temporalTrendDescription")}
                 </span>
-                <span class="stat-value">${
-                  fieldResult.temporalAnalysis.trends.description
-                }</span>
+                <span class="stat-value">${fieldResult.temporalAnalysis.trends.description}</span>
             </div>
         </div>
         `
@@ -804,7 +791,7 @@ export function getVisualAnalysisHtml(
       fieldResult.isString &&
       fieldResult.stringAnalysis &&
       fieldResult.stringAnalysis.isString
-        ? `
+        ? html`
     <div style="background-color: var(--vscode-textBlockQuote-background); border: 1px solid var(--vscode-panel-border); border-radius: 4px; padding: 15px; margin-bottom: 20px;">
         <h2 style="margin: 0 0 15px 0; font-size: 1.2em;">📝 String Analysis</h2>
         
@@ -848,11 +835,11 @@ export function getVisualAnalysisHtml(
           fieldResult.stringAnalysis.patterns &&
           (fieldResult.stringAnalysis.patterns.prefixes.length > 0 ||
             fieldResult.stringAnalysis.patterns.suffixes.length > 0)
-            ? `
+            ? html`
         <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Pattern Detection</h3>
         ${
           fieldResult.stringAnalysis.patterns.prefixes.length > 0
-            ? `
+            ? html`
         <div style="margin-bottom: 10px;">
             <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px; display: flex; align-items: center; gap: 4px;">
                 Common Prefixes:
@@ -862,15 +849,14 @@ export function getVisualAnalysisHtml(
                 ${fieldResult.stringAnalysis.patterns.prefixes
                   .slice(0, 5)
                   .map(
-                    (p) => `
+                    (p) => html`
                     <span style="background-color: var(--vscode-badge-background); color: var(--vscode-badge-foreground); padding: 4px 8px; border-radius: 3px; font-size: 0.85em;">
-                        "${escapeHtml(p.prefix)}" (${p.count}x, ${
+                        "${p.prefix}" (${p.count}x, ${
                       p.percentage
                     }%)
                     </span>
                 `
-                  )
-                  .join("")}
+                  )}
             </div>
         </div>
         `
@@ -878,7 +864,7 @@ export function getVisualAnalysisHtml(
         }
         ${
           fieldResult.stringAnalysis.patterns.suffixes.length > 0
-            ? `
+            ? html`
         <div style="margin-bottom: 15px;">
             <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px; display: flex; align-items: center; gap: 4px;">
                 Common Suffixes:
@@ -888,15 +874,14 @@ export function getVisualAnalysisHtml(
                 ${fieldResult.stringAnalysis.patterns.suffixes
                   .slice(0, 5)
                   .map(
-                    (s) => `
+                    (s) => html`
                     <span style="background-color: var(--vscode-badge-background); color: var(--vscode-badge-foreground); padding: 4px 8px; border-radius: 3px; font-size: 0.85em;">
-                        "${escapeHtml(s.suffix)}" (${s.count}x, ${
+                        "${s.suffix}" (${s.count}x, ${
                       s.percentage
                     }%)
                     </span>
                 `
-                  )
-                  .join("")}
+                  )}
             </div>
         </div>
         `
@@ -1045,12 +1030,12 @@ export function getVisualAnalysisHtml(
             fieldResult.stringAnalysis.formatDetection.ssn.count > 0 ||
             fieldResult.stringAnalysis.formatDetection.url.count > 0 ||
             fieldResult.stringAnalysis.formatDetection.dateString.count > 0)
-            ? `
+            ? html`
         <h3 style="margin: 15px 0 10px 0; font-size: 1em; color: var(--vscode-descriptionForeground);">Format Detection</h3>
         <div class="stats-container" style="margin-bottom: 15px;">
             ${
               fieldResult.stringAnalysis.formatDetection.email.count > 0
-                ? `
+                ? html`
             <div class="stat-item">
                 <span class="stat-label">
                     Email Addresses
@@ -1067,7 +1052,7 @@ export function getVisualAnalysisHtml(
             }
             ${
               fieldResult.stringAnalysis.formatDetection.phone.count > 0
-                ? `
+                ? html`
             <div class="stat-item">
                 <span class="stat-label">
                     Phone Numbers
@@ -1084,7 +1069,7 @@ export function getVisualAnalysisHtml(
             }
             ${
               fieldResult.stringAnalysis.formatDetection.ssn.count > 0
-                ? `
+                ? html`
             <div class="stat-item">
                 <span class="stat-label">
                     SSN/ID Numbers
@@ -1101,7 +1086,7 @@ export function getVisualAnalysisHtml(
             }
             ${
               fieldResult.stringAnalysis.formatDetection.url.count > 0
-                ? `
+                ? html`
             <div class="stat-item">
                 <span class="stat-label">
                     URLs
@@ -1118,7 +1103,7 @@ export function getVisualAnalysisHtml(
             }
             ${
               fieldResult.stringAnalysis.formatDetection.dateString.count > 0
-                ? `
+                ? html`
             <div class="stat-item">
                 <span class="stat-label">
                     Date Strings
@@ -1137,16 +1122,15 @@ export function getVisualAnalysisHtml(
         </div>
         ${
           fieldResult.stringAnalysis.formatDetection.email.samples.length > 0
-            ? `
+            ? html`
         <div style="margin-top: 10px;">
             <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px;">Sample Email Addresses:</div>
             <div style="font-family: var(--vscode-editor-font-family); font-size: 0.85em; color: var(--vscode-foreground);">
                 ${fieldResult.stringAnalysis.formatDetection.email.samples
                   .slice(0, 3)
                   .map(
-                    (s) => `<div style="padding: 2px 0;">${escapeHtml(s)}</div>`
-                  )
-                  .join("")}
+                    (s) => html`<div style="padding: 2px 0;">${s}</div>`
+                  )}
             </div>
         </div>
         `
@@ -1154,16 +1138,15 @@ export function getVisualAnalysisHtml(
         }
         ${
           fieldResult.stringAnalysis.formatDetection.phone.samples.length > 0
-            ? `
+            ? html`
         <div style="margin-top: 10px;">
             <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px;">Sample Phone Numbers:</div>
             <div style="font-family: var(--vscode-editor-font-family); font-size: 0.85em; color: var(--vscode-foreground);">
                 ${fieldResult.stringAnalysis.formatDetection.phone.samples
                   .slice(0, 3)
                   .map(
-                    (s) => `<div style="padding: 2px 0;">${escapeHtml(s)}</div>`
-                  )
-                  .join("")}
+                    (s) => html`<div style="padding: 2px 0;">${s}</div>`
+                  )}
             </div>
         </div>
         `
@@ -1171,16 +1154,15 @@ export function getVisualAnalysisHtml(
         }
         ${
           fieldResult.stringAnalysis.formatDetection.url.samples.length > 0
-            ? `
+            ? html`
         <div style="margin-top: 10px;">
             <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 5px;">Sample URLs:</div>
             <div style="font-family: var(--vscode-editor-font-family); font-size: 0.85em; color: var(--vscode-foreground);">
                 ${fieldResult.stringAnalysis.formatDetection.url.samples
                   .slice(0, 3)
                   .map(
-                    (s) => `<div style="padding: 2px 0;">${escapeHtml(s)}</div>`
-                  )
-                  .join("")}
+                    (s) => html`<div style="padding: 2px 0;">${s}</div>`
+                  )}
             </div>
         </div>
         `
@@ -1196,7 +1178,7 @@ export function getVisualAnalysisHtml(
     
     ${
       fieldResult.qualityMetrics && !fieldResult.qualityMetrics.error
-        ? `
+        ? html`
     <div class="quality-card quality-${
       fieldResult.qualityMetrics.assessment.color === "green"
         ? "good"
@@ -1220,9 +1202,7 @@ export function getVisualAnalysisHtml(
                     }">
                         ${
                           fieldResult.qualityMetrics.assessment.qualityScore
-                        }/100 - ${
-            fieldResult.qualityMetrics.assessment.qualityLevel
-          }
+                        }/100 - ${fieldResult.qualityMetrics.assessment.qualityLevel}
                     </span>
                     <span class="beta-badge">Beta</span>
                 </div>
@@ -1232,14 +1212,13 @@ export function getVisualAnalysisHtml(
         
         ${
           fieldResult.qualityMetrics.assessment.issues.length > 0
-            ? `
+            ? html`
         <div class="quality-issues">
             ${fieldResult.qualityMetrics.assessment.issues
               .map(
                 (issue) =>
-                  `<div class="quality-issue-item error">❌ ${issue}</div>`
-              )
-              .join("")}
+                  html`<div class="quality-issue-item error">❌ ${issue}</div>`
+              )}
         </div>
         `
             : ""
@@ -1247,14 +1226,13 @@ export function getVisualAnalysisHtml(
         
         ${
           fieldResult.qualityMetrics.assessment.warnings.length > 0
-            ? `
+            ? html`
         <div class="quality-issues">
             ${fieldResult.qualityMetrics.assessment.warnings
               .map(
                 (warning) =>
-                  `<div class="quality-issue-item warning">⚠️ ${warning}</div>`
-              )
-              .join("")}
+                  html`<div class="quality-issue-item warning">⚠️ ${warning}</div>`
+              )}
         </div>
         `
             : ""
@@ -1292,7 +1270,7 @@ export function getVisualAnalysisHtml(
                 </div>
                 ${
                   fieldResult.qualityMetrics.completeness.emptyStringCount > 0
-                    ? `
+                    ? html`
                 <div class="quality-metric-item">
                     <div class="quality-metric-label">
                         <span>Empty Strings</span>
@@ -1325,15 +1303,11 @@ export function getVisualAnalysisHtml(
                         <span>Classification</span>
                         ${createHelpIconHtml("classification")}
                     </div>
-                    <div class="quality-metric-value">${
-                      fieldResult.qualityMetrics.cardinality.level
-                    }</div>
+                    <div class="quality-metric-value">${fieldResult.qualityMetrics.cardinality.level}</div>
                 </div>
             </div>
             <div class="quality-recommendation">
-                💡 <strong>Recommendation:</strong> ${
-                  fieldResult.qualityMetrics.cardinality.recommendation
-                }
+                💡 <strong>Recommendation:</strong> ${fieldResult.qualityMetrics.cardinality.recommendation}
             </div>
         </div>
         
@@ -1361,7 +1335,7 @@ export function getVisualAnalysisHtml(
                 ${
                   fieldResult.qualityMetrics.uniqueness
                     .duplicatedDistinctValues > 0
-                    ? `
+                    ? html`
                 <div class="quality-metric-item">
                     <div class="quality-metric-label">
                         <span>Duplicated Distinct Values</span>
@@ -1376,13 +1350,13 @@ export function getVisualAnalysisHtml(
             ${
               fieldResult.qualityMetrics.uniqueness.topDuplicates &&
               fieldResult.qualityMetrics.uniqueness.topDuplicates.length > 0
-                ? `
+                ? html`
             <div style="margin-top: 10px;">
                 <div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 6px;">Top Duplicated Values:</div>
                 <div style="max-height: 200px; overflow-y: auto;">
                     ${fieldResult.qualityMetrics.uniqueness.topDuplicates
                       .map(
-                        (dup) => `
+                        (dup) => html`
                     <div style="display: flex; justify-content: space-between; padding: 4px 8px; font-size: 0.85em; border-bottom: 1px solid var(--vscode-panel-border);">
                         <span>${dup.value}</span>
                         <span>${dup.count.toLocaleString()} (${
@@ -1390,8 +1364,7 @@ export function getVisualAnalysisHtml(
                         }%)</span>
                     </div>
                     `
-                      )
-                      .join("")}
+                      )}
                 </div>
             </div>
             `
@@ -1417,9 +1390,7 @@ export function getVisualAnalysisHtml(
                         <span>Distribution Type</span>
                         ${createHelpIconHtml("distributionType")}
                     </div>
-                    <div class="quality-metric-value">${
-                      fieldResult.qualityMetrics.distribution.skewness
-                    }</div>
+                    <div class="quality-metric-value">${fieldResult.qualityMetrics.distribution.skewness}</div>
                 </div>
                 <div class="quality-metric-item">
                     <div class="quality-metric-label">
@@ -1441,7 +1412,7 @@ export function getVisualAnalysisHtml(
       fieldResult.isNumeric &&
       fieldResult.statistics &&
       fieldResult.statistics.isNumeric
-        ? `
+        ? html`
     <div style="margin: 15px 0; display: flex; gap: 10px; justify-content: center;">
         <button id="btn-histogram" class="chart-toggle-btn active" style="padding: 8px 16px; border: 1px solid var(--vscode-button-border); background: var(--vscode-button-background); color: var(--vscode-button-foreground); cursor: pointer; border-radius: 3px;">Histogram</button>
         <button id="btn-frequency" class="chart-toggle-btn" style="padding: 8px 16px; border: 1px solid var(--vscode-button-border); background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); cursor: pointer; border-radius: 3px;">Frequency Chart</button>
@@ -1459,7 +1430,7 @@ export function getVisualAnalysisHtml(
             <div class="table-title">Value Distribution</div>
             ${
               fieldResult.truncated
-                ? `<span style="color: var(--vscode-descriptionForeground); font-size: 0.85em;">Showing top ${
+                ? html`<span style="color: var(--vscode-descriptionForeground); font-size: 0.85em;">Showing top ${
                     fieldResult.truncatedAt
                   } unique values ${createHelpIconHtml(
                     "truncatedDistribution"
@@ -1469,6 +1440,7 @@ export function getVisualAnalysisHtml(
         </div>
         <div id="profiling-table"></div>
     </div>
+    `}
     
     <script nonce="${nonce}">
         ${tabulatorJs}
@@ -1484,7 +1456,7 @@ export function getVisualAnalysisHtml(
     </script>
     
     <script nonce="${nonce}">
-        const fieldResult = ${JSON.stringify(fieldResult)};
+        const fieldResult = ${scriptJson(fieldResult)};
         
         // Create chart
         const ctx = document.getElementById('profiling-chart').getContext('2d');

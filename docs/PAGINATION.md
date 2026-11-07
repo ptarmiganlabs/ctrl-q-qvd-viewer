@@ -155,7 +155,7 @@ When `qvdjs` adds streaming/lazy loading support, the extension is architected t
 
 - ✅ `qvdEditorProvider.js` - Added pagination HTML, CSS, and inline JS
 - ✅ `qvdReader.js` - Added future `readPage()` method stub
-- ✅ `src/webview/pagination.js` - Standalone pagination class (for reference)
+- ✅ `src/webview/pagination.js` - Standalone pagination class (for reference; since removed, as nothing loaded it)
 
 ## Testing
 

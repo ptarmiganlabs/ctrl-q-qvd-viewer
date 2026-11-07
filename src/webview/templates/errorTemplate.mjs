@@ -4,22 +4,7 @@
  */
 
 import { getNonce } from "../assetLoader.mjs";
-
-/**
- * Escape HTML special characters
- * @param {string} text - Text to escape
- * @returns {string} Escaped HTML string
- */
-export function escapeHtml(text) {
-  const map = {
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;",
-  };
-  return String(text).replace(/[&<>"']/g, (m) => map[m]);
-}
+import { escapeHtml, html } from "./escaping.mjs";
 
 /**
  * Styles for the notice that says why a read failed, on the error page and in the viewer
@@ -134,36 +119,38 @@ export const FAILURE_BUTTONS_JS = `
  * @param {import('../readFailure.mjs').ReadFailure} failure - Why, as describeReadFailure() says it
  * @param {{headerShown?: boolean, heading?: string}} [options] - headerShown: the file's
  *   header is shown in the viewer's other tabs; heading: the title's element
- * @returns {string} HTML
+ * @returns {import('../client/html.js').HtmlMarkup} HTML, written with html, so that
+ *   each part of the failure is escaped
  */
 export function failureNoticeHtml(failure, { headerShown = false, heading = "h2" } = {}) {
-  const advice = failure.advice.map((line) => `<li>${escapeHtml(line)}</li>`).join("\n                ");
-  const buttons = failure.actions
-    .map((action, index) => {
-      const rows = action.rows ? ` data-rows="${escapeHtml(action.rows)}"` : "";
-      const setting = action.setting ? ` data-setting="${escapeHtml(action.setting)}"` : "";
-      return (
-        `<button type="button" class="read-failure-button${index === 0 ? " primary" : ""}" ` +
-        `data-command="${escapeHtml(action.command)}"${rows}${setting}>${escapeHtml(action.label)}</button>`
-      );
-    })
-    .join("\n                ");
-  return `
-            <div class="read-failure" role="alert" data-kind="${escapeHtml(failure.kind)}">
-                <${heading} class="read-failure-title">${escapeHtml(failure.title)}</${heading}>
-                <p class="read-failure-summary">${escapeHtml(failure.summary)}</p>
+  const advice = failure.advice.map(
+    (line) => html`
+                <li>${line}</li>`
+  );
+  const buttons = failure.actions.map(
+    (action, index) => html`
+                <button type="button" class="read-failure-button${index === 0 ? " primary" : ""}" data-command="${
+                  action.command
+                }"${action.rows ? html` data-rows="${action.rows}"` : ""}${
+                  action.setting ? html` data-setting="${action.setting}"` : ""
+                }>${action.label}</button>`
+  );
+  return html`
+            <div class="read-failure" role="alert" data-kind="${failure.kind}">
+                <${heading} class="read-failure-title">${failure.title}</${heading}>
+                <p class="read-failure-summary">${failure.summary}</p>
                 ${
                   headerShown
-                    ? "<p>The file's header could still be read: its fields, file metadata and lineage are in the other tabs.</p>"
+                    ? html`<p>The file's header could still be read: its fields, file metadata and lineage are in the other tabs.</p>`
                     : ""
                 }
-                ${advice ? `<ul class="read-failure-advice">\n                ${advice}\n                </ul>` : ""}
-                <div class="read-failure-actions">
-                ${buttons}
+                ${advice.length > 0 ? html`<ul class="read-failure-advice">${advice}
+                </ul>` : ""}
+                <div class="read-failure-actions">${buttons}
                 </div>
                 ${
                   failure.detail
-                    ? `<div class="read-failure-detail"><strong>Technical details</strong><pre>${escapeHtml(failure.detail)}</pre></div>`
+                    ? html`<div class="read-failure-detail"><strong>Technical details</strong><pre>${failure.detail}</pre></div>`
                     : ""
                 }
             </div>`;
@@ -181,7 +168,7 @@ export function getErrorHtml(failure) {
         <html lang="en">
         <head>
             <meta charset="UTF-8">
-            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
+            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; form-action 'none'; base-uri 'none';">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>${escapeHtml(failure.title)}</title>
             <style nonce="${nonce}">
