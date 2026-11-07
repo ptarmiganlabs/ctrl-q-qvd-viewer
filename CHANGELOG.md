@@ -4,6 +4,26 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [1.4.2](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.4.1...v1.4.2) (2026-11-07)
+
+
+### Bug Fixes
+
+* **about, error page:** open the repository's page, and keep forms off the error page ([c615788](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/c615788bfc25e1bdf128ade6728669bce252df67)), closes [#155](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/155)
+* **about:** keep a refused link from reshaping the log, and escape by default ([1eae9f3](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/1eae9f327d4c6caf2e38c0d7a2ee51117da6d078)), closes [#155](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/155)
+* **about:** log a refused link quoted, on one line, and cut short ([b154968](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/b154968df4679b7f13034d63c44246020894ccee)), closes [#155](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/155)
+* **about:** open only https: links, and run only the panel's own script ([ecdf8bb](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/ecdf8bbd2f5d505ba2cd32c1abccb612e7873f88)), closes [#155](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/155)
+* **deps:** upgrade qvdjs to 4.0.3 ([804f40c](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/804f40c5dc67a684dd21910392f9c2c1929eb284))
+* **viewer:** write every page's HTML with html, and the report's text escaped ([3acc070](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/3acc070da17a45b1dba5bde6573cccc8406a13cf)), closes [#155](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/155) [#161](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/161)
+* **viewer:** put a QVD's text into the viewer's pages as text, not markup ([9efa0df](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/9efa0dfbb6d36446e36381e45de0a2a29398687a)), closes [#155](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/155)
+* **viewer:** write the profiling cards with a tag that escapes every value ([e27d972](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/e27d97243cbfe950bd06d55bb6a325ee93337ada)), closes [#155](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/155)
+
+
+### Tests
+
+* **about:** find the repository's link by exact comparison ([c15bd81](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/c15bd8198ff58cea68e3d215bbfeb9ac4dc8f67e)), closes [#155](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/155)
+* **escaping:** cut a page's scripts out as the HTML parser does, not by regex ([9690569](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/9690569d41ca8ff08f338ad9940e6ed905df2f03)), closes [#155](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/155)
+
 ## [1.4.1](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.4.0...v1.4.1) (2026-11-07)
 
 
