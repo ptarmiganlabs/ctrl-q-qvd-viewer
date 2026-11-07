@@ -46,8 +46,11 @@ const HOLD_WAIT_MS = 30000;
  *   lets the file go, and resolves once it has
  */
 function holdOpen(filePath) {
-  // The path comes in an environment variable, so that it needs no quoting
+  // The path comes in an environment variable, so that it needs no quoting. A failed
+  // .NET call ends only its own statement, so without Stop the script would say it
+  // holds a file it couldn't open
   const script =
+    "$ErrorActionPreference = 'Stop'; " +
     "$held = [System.IO.File]::Open($env:QVD_HELD, 'Open', 'Read', 'None'); " +
     "[Console]::Out.WriteLine('held'); [Console]::Out.Flush(); Start-Sleep -Seconds 120";
   const powershell = spawn("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
@@ -374,13 +377,16 @@ suite("Read Failure Test Suite", () => {
     const hold = holdOpen(heldFile);
     try {
       await hold.held;
+      // A file held with no sharing is a sharing violation, which Windows reports as
+      // EBUSY: EPERM would be the page of a file this account may not read
       const { result, failure } = await failedRead(heldFile);
       assert.strictEqual(result.errorName, "QvdIOError");
-      assert.ok(["EBUSY", "EPERM"].includes(result.errorCode), `errorCode ${result.errorCode}`);
+      assert.strictEqual(result.errorCode, "EBUSY");
       assert.strictEqual(failure.kind, "locked");
+      assert.strictEqual(failure.title, "The file is in use by another program");
       assertSays(getErrorHtml(failure), "locked", failure.title);
       // The editor shows that page
-      assertSays(await pageFor(heldFile), "locked", failure.title);
+      assertSays(await pageFor(heldFile), "locked", "The file is in use by another program");
     } finally {
       await hold.release();
     }
