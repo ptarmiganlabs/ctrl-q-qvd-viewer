@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import { randomUUID } from "crypto";
 import { dirname, join } from "path";
+import { Writable } from "stream";
 
 /**
  * Write a file so that a failed export leaves an existing file as it was
@@ -33,4 +34,21 @@ export async function writeFileAtomically(filePath, write) {
     await fs.rm(temp, { force: true });
     throw error;
   }
+}
+
+/**
+ * A stream that writes to an open file, for a writer that takes a stream
+ * Not the file's own createWriteStream(), which holds the file open, so that
+ * closing it once the stream is done never settles. Each chunk is written before
+ * the next is taken.
+ * @param {import("fs").promises.FileHandle} file - The open file, such as the one
+ *   writeFileAtomically() hands its write
+ * @returns {import("stream").Writable} The stream
+ */
+export function fileWriter(file) {
+  return new Writable({
+    write(chunk, _encoding, callback) {
+      file.writeFile(chunk).then(() => callback(), callback);
+    },
+  });
 }

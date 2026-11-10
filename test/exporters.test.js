@@ -330,6 +330,42 @@ function parquetLogicalTypes(filePath) {
 }
 
 /**
+ * A cell's value as Excel shows it. An Excel export writes text as inline strings,
+ * which ExcelJS reads back as rich text
+ * @param {object} cell - An ExcelJS cell
+ * @returns {*} The value, with text as a string
+ */
+function excelValue(cell) {
+  const value = cell.value;
+  return value?.richText ? value.richText.map((run) => run.text).join("") : value;
+}
+
+/**
+ * Read back what an Excel export holds: each sheet's name and size, its columns'
+ * widths, and each cell's value, number format, boldness and fill
+ * @param {string} filePath - File path
+ * @returns {Promise<Array<Object>>} The sheets
+ */
+async function readExcel(filePath) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+  const sheets = [];
+  workbook.eachSheet((sheet) => {
+    const rows = [];
+    sheet.eachRow({ includeEmpty: true }, (row) => {
+      const cells = [];
+      row.eachCell({ includeEmpty: true }, (cell) => {
+        cells.push([excelValue(cell), cell.numFmt ?? null, cell.font?.bold ?? null, cell.fill?.fgColor?.argb ?? null]);
+      });
+      rows.push(cells);
+    });
+    const widths = Array.from({ length: sheet.columnCount }, (_, i) => sheet.getColumn(i + 1).width);
+    sheets.push({ name: sheet.name, rowCount: sheet.rowCount, widths, rows });
+  });
+  return sheets;
+}
+
+/**
  * Read an Arrow file's schema and rows
  * @param {string} filePath - File path
  * @returns {{schema: Object<string, string>, rows: Array<Object>}} Each column's type, and the rows
@@ -827,10 +863,138 @@ suite("Exporter Test Suite", () => {
 
     // exceljs reads an empty cell as null
     assert.deepStrictEqual(
-      [2, 3, 4].map((row) => [1, 2, 3, 4].map((column) => sheet.getRow(row).getCell(column).value)),
+      [2, 3, 4].map((row) => [1, 2, 3, 4].map((column) => excelValue(sheet.getRow(row).getCell(column)))),
       BLANK_ROWS_STORED.map((row) => Object.values(row))
     );
     assert.deepStrictEqual(rows, makeBlankRows(), "The rows should stay as they were");
+  });
+
+  test("Excel export - writing in chunks gives the same workbook as in one go", async () => {
+    for (const [name, rows] of [
+      ["rows", makeRows(25)],
+      ["dates", makeDateRows()],
+      ["blanks", makeBlankRows()],
+      ["awkward", makeAwkwardRows()],
+    ]) {
+      const chunks = path.join(outputDir, `chunks-${name}.xlsx`);
+      const oneChunk = path.join(outputDir, `one-chunk-${name}.xlsx`);
+      await excelExporter.exportToExcel(rows, chunks, { chunkRows: 2 });
+      await excelExporter.exportToExcel(rows, oneChunk, { chunkRows: rows.length });
+
+      const sheets = await readExcel(chunks);
+      assert.deepStrictEqual(sheets, await readExcel(oneChunk), name);
+      // The header row, bold on grey, then the rows
+      assert.deepStrictEqual(sheets[0].rows[0].map(([value]) => value), Object.keys(rows[0]), name);
+      assert.ok(sheets[0].rows[0].every(([, , bold, fill]) => bold === true && fill === "FFD3D3D3"), name);
+      assert.strictEqual(sheets[0].rowCount, rows.length + 1, name);
+      assert.ok(sheets[0].widths.every((width) => width === 15), name);
+    }
+  });
+
+  test("Excel export - text is written as inline strings that keep their spaces, empty text too", async () => {
+    const filePath = path.join(outputDir, "inline.xlsx");
+    const row = { lead: "  lead", trail: "trail  ", empty: "", lines: "two\nlines", markup: "<a & b>" };
+
+    await excelExporter.exportToExcel([row], filePath);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+    const cells = workbook.getWorksheet("Data").getRow(2);
+
+    Object.values(row).forEach((text, i) => {
+      const { value } = cells.getCell(i + 1);
+      // An inline string, which ExcelJS reads as rich text: a plain string would be
+      // written as a formula's result, and empty text would read back as no value
+      assert.deepStrictEqual(value, { richText: [{ text }] }, JSON.stringify(text));
+    });
+  });
+
+  test("Excel export - rows past what a sheet holds go on further sheets, each with the header row", async () => {
+    const filePath = path.join(outputDir, "sheets.xlsx");
+    const rows = makeRows(10);
+
+    // Four rows a sheet: the header row and three
+    await excelExporter.exportToExcel(rows, filePath, { sheetRows: 4, chunkRows: 2 });
+    const sheets = await readExcel(filePath);
+
+    assert.deepStrictEqual(
+      sheets.map((sheet) => [sheet.name, sheet.rowCount]),
+      [
+        ["Data", 4],
+        ["Data 2", 4],
+        ["Data 3", 4],
+        ["Data 4", 2],
+      ]
+    );
+    for (const sheet of sheets) {
+      assert.deepStrictEqual(sheet.rows[0].map(([value, , bold]) => [value, bold]), Object.keys(rows[0]).map((key) => [key, true]));
+    }
+    assert.deepStrictEqual(
+      sheets.flatMap((sheet) => sheet.rows.slice(1).map((cells) => cells[0][0])),
+      rows.map((row) => row.id),
+      "Every row, in order"
+    );
+  });
+
+  test("Excel export - the zip takes each chunk's rows before the next chunk is added", async () => {
+    // ExcelJS hands a sheet's XML to archiver without waiting for it. The most it holds
+    // when a row is added is a chunk's XML, where without the waits it would be the
+    // whole sheet's. This reads ExcelJS's insides, as the exporter does
+    const WorksheetWriter = require("exceljs/lib/stream/xlsx/worksheet-writer.js");
+    const addRow = WorksheetWriter.prototype.addRow;
+    let most = 0;
+    let seen = 0;
+    WorksheetWriter.prototype.addRow = function (...args) {
+      const state = this.stream?.pipes?.[0]?._writableState;
+      if (state) {
+        seen++;
+        most = Math.max(most, state.length);
+      }
+      return addRow.apply(this, args);
+    };
+    const rows = makeRows(30000);
+    try {
+      await excelExporter.exportToExcel(rows, path.join(outputDir, "drained.xlsx"), { chunkRows: 1000 });
+    } finally {
+      WorksheetWriter.prototype.addRow = addRow;
+    }
+
+    assert.strictEqual(seen, rows.length, "The sheet's PassThrough should be where the exporter looks for it");
+    // Six cells a row, about 40 bytes of XML each: about 240 KB a chunk, 7 MB a sheet
+    assert.ok(most < 1024 * 1024, `${most} bytes were waiting`);
+  });
+
+  test("Excel export - a failed export leaves the file it would replace as it was", async () => {
+    const filePath = path.join(outputDir, "keep.xlsx");
+    fs.writeFileSync(filePath, "previous export");
+    // A value that reads the first two times, for the type scan and the first chunk's
+    // cells, and fails in the second chunk, once the first is on its way to the file
+    let reads = 0;
+    const failing = Object.defineProperty({}, "a", {
+      enumerable: true,
+      get() {
+        reads++;
+        if (reads > 1) {
+          throw new Error("value can't be read");
+        }
+        return "x";
+      },
+    });
+
+    await assert.rejects(
+      excelExporter.exportToExcel([{ a: "first" }, failing], filePath, { chunkRows: 1 }),
+      (error) => {
+        assert.strictEqual(error.message, "Excel export failed: value can't be read");
+        assert.strictEqual(error.cause.message, "value can't be read");
+        return true;
+      }
+    );
+
+    assert.strictEqual(fs.readFileSync(filePath, "utf8"), "previous export");
+    assert.deepStrictEqual(
+      fs.readdirSync(outputDir).filter((name) => name.endsWith(".tmp")),
+      [],
+      "The temporary file should be removed"
+    );
   });
 
   test("JSON export - the file is what JSON.stringify gives for the metadata and every row", async () => {
@@ -1420,7 +1584,7 @@ suite("Exporter Test Suite", () => {
     await workbook.xlsx.readFile(file("xlsx"));
     const sheet = workbook.getWorksheet("Data");
     assert.deepStrictEqual(
-      [2, 3, 4].map((row) => sheet.getRow(row).getCell(1).value),
+      [2, 3, 4].map((row) => excelValue(sheet.getRow(row).getCell(1))),
       [when, null, null]
     );
   });
@@ -1518,7 +1682,7 @@ suite("Exporter Test Suite", () => {
     const cells = (column) =>
       [2, 3].map((row) => {
         const cell = sheet.getRow(row).getCell(column);
-        return [cell.value, cell.numFmt ?? null];
+        return [excelValue(cell), cell.numFmt ?? null];
       });
 
     // Excel can't show 1756-01-01, so the whole column is text
@@ -1574,7 +1738,7 @@ suite("Exporter Test Suite", () => {
     await excelExporter.exportToExcel(stockholm, excelPath);
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(excelPath);
-    assert.strictEqual(workbook.getWorksheet("Data").getRow(2).getCell(1).value, "1756-01-01");
+    assert.strictEqual(excelValue(workbook.getWorksheet("Data").getRow(2).getCell(1)), "1756-01-01");
 
     // Every format with date types reads them so, and none other
     assert.deepStrictEqual(
