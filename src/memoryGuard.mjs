@@ -296,18 +296,29 @@ function listed(names) {
  * @param {number} rows - Rows to export
  * @param {number} neededBytes - Heap the export needs
  * @param {number} leftBytes - Heap left for it
- * @param {Array<string>} [leaner] - The formats that write as they go, as the user
- *   sees them: suggested, but never the format refused
+ * @param {Array<string>} [leaner] - The formats to suggest, which write as they go, as
+ *   the user sees them: never the format refused
+ * @param {{everyOther?: boolean}} [options] - everyOther: whether they are every other
+ *   format, which is then said instead of naming them
  * @returns {string} The message
  */
-export function describeExportRefusal(formatLabel, rows, neededBytes, leftBytes, leaner = []) {
+export function describeExportRefusal(
+  formatLabel,
+  rows,
+  neededBytes,
+  leftBytes,
+  leaner = [],
+  { everyOther = false } = {}
+) {
   const others = leaner.filter((label) => label !== formatLabel);
   const suggestion =
     others.length === 0
       ? ""
-      : others.length === 1
-        ? ` ${others[0]} writes as it goes, and needs much less.`
-        : ` ${listed(others)} write as they go, and need much less.`;
+      : everyOther
+        ? " Every other format writes as it goes, and needs much less."
+        : others.length === 1
+          ? ` ${others[0]} writes as it goes, and needs much less.`
+          : ` ${listed(others)} write as they go, and need much less.`;
   return (
     `Exporting ${rows.toLocaleString()} rows to ${formatLabel} needs about ${size(neededBytes)} ` +
     `of memory, and about ${size(leftBytes)} is left in what VS Code gives its extensions.${suggestion}`

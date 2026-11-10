@@ -294,6 +294,26 @@ class DataExporter {
   }
 
   /**
+   * The formats to suggest when an export to this one is refused for memory
+   * A format that builds its whole file is offered those that write as they go, which
+   * need much less. One that writes as it goes is offered none: the others need about
+   * as much.
+   * @param {string} format - The export format refused
+   * @returns {{labels: Array<string>, everyOther: boolean}} labels: the formats to
+   *   suggest, as the user sees them; everyOther: whether they are every other format
+   */
+  static leanerFormats(format) {
+    if (Object.hasOwn(FORMATS, format) && FORMATS[format].cost.writesAsItGoes) {
+      return { labels: [], everyOther: false };
+    }
+    const others = DataExporter.getExportFormats().filter((entry) => entry.name !== format);
+    const labels = others
+      .filter((entry) => FORMATS[entry.name].cost.writesAsItGoes)
+      .map((entry) => DataExporter.formatLabel(entry.name));
+    return { labels, everyOther: labels.length > 0 && labels.length === others.length };
+  }
+
+  /**
    * Show save dialog and export data to the selected format
    * @param {Array<Object>} data - Array of row objects
    * @param {string} format - Export format ('csv', 'json', 'excel', 'parquet', 'yaml', 'avro', 'arrow', 'sqlite', 'xml', 'qlik', 'postgres')

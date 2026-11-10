@@ -127,6 +127,17 @@ suite("Memory Guard Test Suite", () => {
     const csv = DataExporter.memoryCost("csv");
     assert.ok(csv.bytesPerCell >= 108 * 1.5);
     assert.ok(csv.bytesPerTextChar >= 1.8 * 2);
+    // JSON, YAML and XML needed 19, 222 and 92 per cell in one chunk, and 2.1, at
+    // most 4.2 and at most 10.5 per character of the chunks they write
+    const json = DataExporter.memoryCost("json");
+    assert.ok(json.bytesPerCell >= 19 * 1.5);
+    assert.ok(json.bytesPerTextChar >= 2.1 * 2);
+    const yamlCost = DataExporter.memoryCost("yaml");
+    assert.ok(yamlCost.bytesPerCell >= 222 * 1.5);
+    assert.ok(yamlCost.bytesPerTextChar >= 4.2 * 2);
+    const xml = DataExporter.memoryCost("xml");
+    assert.ok(xml.bytesPerCell >= 92 * 1.5);
+    assert.ok(xml.bytesPerTextChar >= 10.5 * 2);
   });
 
   test("Every export format's exporter declares what it costs", () => {
@@ -139,7 +150,7 @@ suite("Memory Guard Test Suite", () => {
         assert.ok(Number.isInteger(cost.chunkRows) && cost.chunkRows > 0, name);
       }
     }
-    assert.deepStrictEqual(DataExporter.leanFormatLabels(), ["Avro", "CSV", "Parquet"]);
+    assert.deepStrictEqual(DataExporter.leanFormatLabels(), ["Avro", "CSV", "JSON", "Parquet", "XML", "YAML"]);
   });
 
   test("A name that isn't a format has no cost, not a function", () => {
@@ -267,15 +278,29 @@ suite("Memory Guard Test Suite", () => {
   });
 
   test("A refused export says what it needs and what is left", () => {
-    const leaner = DataExporter.leanFormatLabels();
-    const message = guard.describeExportRefusal("Excel", 300000, 6.5 * 2 ** 30, 380 * 2 ** 20, leaner);
-    assert.ok(message.startsWith(`Exporting ${(300000).toLocaleString()} rows to Excel needs about 6.5 GiB`));
+    const message = guard.describeExportRefusal("SQLite", 300000, 6.5 * 2 ** 30, 380 * 2 ** 20, ["Avro", "CSV", "Parquet"]);
+    assert.ok(message.startsWith(`Exporting ${(300000).toLocaleString()} rows to SQLite needs about 6.5 GiB`));
     assert.ok(message.includes("about 380 MiB is left"));
     assert.ok(message.endsWith(" Avro, CSV and Parquet write as they go, and need much less."));
-    // A format that writes as it goes isn't suggested for itself
-    const csv = guard.describeExportRefusal("CSV", 10, 2 ** 20, 0, leaner);
-    assert.ok(csv.endsWith(" Avro and Parquet write as they go, and need much less."));
+    assert.ok(guard.describeExportRefusal("SQLite", 10, 2 ** 20, 0, ["CSV"]).endsWith(" CSV writes as it goes, and needs much less."));
+    // Every other format, said rather than listed
+    const everyOther = guard.describeExportRefusal("SQLite", 10, 2 ** 20, 0, ["Arrow", "CSV"], { everyOther: true });
+    assert.ok(everyOther.endsWith(" Every other format writes as it goes, and needs much less."));
+    // With nothing to suggest, the message ends with what is left
+    assert.ok(guard.describeExportRefusal("CSV", 10, 2 ** 20, 0, []).endsWith("left in what VS Code gives its extensions."));
+    // A format isn't suggested for itself
     assert.ok(guard.describeExportRefusal("CSV", 10, 2 ** 20, 0, ["CSV", "Avro"]).endsWith(" Avro writes as it goes, and needs much less."));
+  });
+
+  test("Only a refused export that builds its whole file has formats to suggest", () => {
+    // One that writes as it goes is offered none: the others need about as much
+    assert.deepStrictEqual(DataExporter.leanerFormats("csv"), { labels: [], everyOther: false });
+    assert.deepStrictEqual(DataExporter.leanerFormats("json"), { labels: [], everyOther: false });
+    // SQLite builds its whole database
+    const sqlite = DataExporter.leanerFormats("sqlite");
+    assert.deepStrictEqual(sqlite.labels, DataExporter.leanFormatLabels());
+    const others = DataExporter.getExportFormats().length - 1;
+    assert.strictEqual(sqlite.everyOther, sqlite.labels.length === others);
   });
 
   test("A refused profile says what it needs, and to profile fewer fields", () => {
@@ -316,9 +341,18 @@ suite("Memory Guard Test Suite", () => {
     assert.ok(!profileReadFailure({ error: "x", refusal }, 2).includes("would fit"));
 
     const forCaller = { ...refusal, forCaller: true, neededBytes: 40 * 2 ** 30, leftBytes: 2 * 2 ** 30 };
-    const excel = exportReadFailure({ error: "x", refusal: forCaller }, "excel", false);
-    assert.ok(excel.startsWith(`Exporting ${(1975108).toLocaleString()} rows to Excel needs about 40.0 GiB`));
-    assert.ok(excel.endsWith(" Avro, CSV and Parquet write as they go, and need much less."));
+    const sqlite = exportReadFailure({ error: "x", refusal: forCaller }, "sqlite", false);
+    assert.ok(sqlite.startsWith(`Exporting ${(1975108).toLocaleString()} rows to SQLite needs about 40.0 GiB`));
+    // The formats that write as they go are suggested for one that builds its whole file
+    const suggested = sqlite.slice(sqlite.indexOf("extensions.") + "extensions.".length);
+    assert.ok(suggested.endsWith(" need much less.") || suggested.endsWith(" needs much less."));
+    for (const label of DataExporter.leanFormatLabels()) {
+      assert.ok(suggested.includes(label) || suggested.includes("Every other format"), label);
+    }
+    // and none for one that writes as it goes
+    assert.ok(
+      exportReadFailure({ error: "x", refusal: forCaller }, "csv", false).endsWith("left in what VS Code gives its extensions.")
+    );
     assert.ok(profileReadFailure({ error: "x", refusal: forCaller }, 3).startsWith("Profiling 3 fields"));
 
     // Any other failure keeps the reader's message

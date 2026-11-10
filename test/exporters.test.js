@@ -11,6 +11,7 @@ const initSqlJs = require("sql.js");
 // parquetjs's own Thrift, to read the logical types parquetjs reads past
 const thrift = require("thrift");
 const yaml = require("js-yaml");
+const xmljs = require("xml-js");
 const { buildOptions } = require("../esbuild.js");
 
 // Import exporter modules
@@ -19,9 +20,11 @@ let arrowExporter;
 let avroExporter;
 let csvExporter;
 let excelExporter;
+let jsonExporter;
 let parquetExporter;
 let postgresExporter;
 let sqliteExporter;
+let xmlExporter;
 let yamlExporter;
 let DataExporter;
 let QvdDataFrame;
@@ -352,6 +355,47 @@ async function exportCsvText(rows, name, options) {
 }
 
 /**
+ * Export rows with an exporter in the output directory and read the file back
+ * @param {function(Array<Object>, string, object=): Promise<*>} exporter - The export function
+ * @param {Array<Object>} rows - Array of row objects
+ * @param {string} name - File name in the output directory
+ * @param {object} [options] - The exporter's options
+ * @returns {Promise<string>} The file's text
+ */
+async function exportText(exporter, rows, name, options) {
+  const filePath = path.join(outputDir, name);
+  await exporter(rows, filePath, options);
+  return fs.readFileSync(filePath, "utf8");
+}
+
+/**
+ * A text export with the time it was made blanked out, which differs between runs
+ * @param {string} text - The file's text
+ * @returns {string} The text
+ */
+function withoutTimestamp(text) {
+  return text.replace(/Generated: \S+/g, "Generated: -").replace(/"generated": "[^"]*"/g, '"generated": "-"');
+}
+
+/**
+ * Build rows of values that text formats write in a way of their own: text that YAML
+ * writes as a block ending in an empty line, which ends its document with "...", line
+ * and paragraph separators, markup, an emoji, and a value that looks like a number
+ * @param {number} count - Number of rows
+ * @returns {Array<Object>} Array of row objects
+ */
+function makeTextEdgeRows(count) {
+  const texts = ["a & b <c>", "line\u2028separator", "😀 ok", "8E5597", "  spaced  ", "", "two\nlines"];
+  return Array.from({ length: count }, (_, i) => ({
+    id: i,
+    text: texts[i % texts.length],
+    none: null,
+    // Last in the row, so that a chunk's document ends with it
+    para: `para ${i}\n\n`,
+  }));
+}
+
+/**
  * Count the rows in the data table of an exported SQLite database
  * @param {string} filePath - Database file path
  * @returns {Promise<number>} Number of rows
@@ -398,9 +442,11 @@ suite("Exporter Test Suite", () => {
     avroExporter = await import("../src/exporters/avroExporter.mjs");
     csvExporter = await import("../src/exporters/csvExporter.mjs");
     excelExporter = await import("../src/exporters/excelExporter.mjs");
+    jsonExporter = await import("../src/exporters/jsonExporter.mjs");
     parquetExporter = await import("../src/exporters/parquetExporter.mjs");
     postgresExporter = await import("../src/exporters/postgresExporter.mjs");
     sqliteExporter = await import("../src/exporters/sqliteExporter.mjs");
+    xmlExporter = await import("../src/exporters/xmlExporter.mjs");
     yamlExporter = await import("../src/exporters/yamlExporter.mjs");
     ({ default: DataExporter } = await import("../src/exporters/index.mjs"));
     ({ QvdDataFrame, QvdDual, dateToQlikSerial, qlikSerialToDate } = await import("qvdjs"));
@@ -785,6 +831,41 @@ suite("Exporter Test Suite", () => {
     assert.deepStrictEqual(rows, makeBlankRows(), "The rows should stay as they were");
   });
 
+  test("JSON export - the file is what JSON.stringify gives for the metadata and every row", async () => {
+    for (const [name, rows] of [
+      ["none", []],
+      ["rows", makeRows(3)],
+      ["awkward", makeAwkwardRows()],
+      ["edges", makeTextEdgeRows(9)],
+    ]) {
+      const text = await exportText(jsonExporter.exportToJSON, rows, `whole-${name}.json`);
+      const { generated } = JSON.parse(text)._metadata;
+      const metadata = {
+        description: "JSON Data Export",
+        createdBy: "Ctrl-Q QVD Viewer for VS Code",
+        extension:
+          "https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer",
+        github: "https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer",
+        generated,
+        rows: rows.length,
+      };
+      assert.strictEqual(text, JSON.stringify({ _metadata: metadata, data: rows }, null, 2), name);
+    }
+  });
+
+  test("JSON export - writing in chunks gives the same file as in one go", async () => {
+    const rows = [...makeRows(25), ...makeTextEdgeRows(9)];
+    const chunks = await exportText(jsonExporter.exportToJSON, rows, "chunks.json", { chunkRows: 4 });
+
+    assert.strictEqual(
+      withoutTimestamp(chunks),
+      withoutTimestamp(
+        await exportText(jsonExporter.exportToJSON, rows, "one-chunk.json", { chunkRows: rows.length })
+      )
+    );
+    assert.strictEqual(JSON.parse(chunks).data.length, rows.length);
+  });
+
   test("Parquet export - blank text next to numbers or booleans is null, and text elsewhere", async () => {
     const filePath = path.join(outputDir, "blanks.parquet");
 
@@ -968,6 +1049,98 @@ suite("Exporter Test Suite", () => {
     assert.strictEqual(await countSqliteRows(filePath), rows.length);
   });
 
+  test("XML export - the file is what js2xml gives for the whole document", async () => {
+    // The exporter's own record for a row, as it was built before it wrote in chunks
+    const toRecord = (row) =>
+      Object.fromEntries(
+        Object.keys(row).map((key) => {
+          const value = row[key];
+          if (value === null || value === undefined) {
+            return [key, { _attributes: { nil: "true" } }];
+          }
+          return [key, { _text: value instanceof Date ? value.toISOString() : String(value) }];
+        })
+      );
+    for (const [name, rows] of [
+      ["none", []],
+      ["one", makeRows(1)],
+      ["rows", makeRows(3)],
+      ["awkward", makeAwkwardRows()],
+      ["edges", makeTextEdgeRows(9)],
+    ]) {
+      const text = await exportText(xmlExporter.exportToXML, rows, `whole-${name}.xml`);
+      const generated = /Generated: (\S+)/.exec(text)[1];
+      const document = {
+        _declaration: { _attributes: { version: "1.0", encoding: "UTF-8" } },
+        _comment: [
+          "XML Data Export",
+          "Created by: Ctrl-Q QVD Viewer for VS Code",
+          "VS Code Extension: https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer",
+          "GitHub: https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer",
+          `Generated: ${generated}`,
+          `Rows: ${rows.length}`,
+        ].join("\n"),
+        data: { record: rows.map(toRecord) },
+      };
+      assert.strictEqual(
+        text,
+        xmljs.js2xml(document, { compact: true, spaces: 2, ignoreComment: false }),
+        name
+      );
+    }
+  });
+
+  test("XML export - writing in chunks gives the same file as in one go", async () => {
+    const rows = [...makeRows(25), ...makeTextEdgeRows(9)];
+
+    assert.strictEqual(
+      withoutTimestamp(await exportText(xmlExporter.exportToXML, rows, "chunks.xml", { chunkRows: 4 })),
+      withoutTimestamp(
+        await exportText(xmlExporter.exportToXML, rows, "one-chunk.xml", { chunkRows: rows.length })
+      )
+    );
+  });
+
+  test("YAML export - the file is its header and what js-yaml dumps for every row", async () => {
+    // No text that only YAML 1.2 reads as a number, which the exporter quotes as js-yaml doesn't
+    for (const [name, rows] of [
+      ["none", []],
+      ["rows", makeRows(3)],
+      ["awkward", makeAwkwardRows()],
+    ]) {
+      const text = await exportText(yamlExporter.exportToYAML, rows, `whole-${name}.yaml`);
+      const generated = /Generated: (\S+)/.exec(text)[1];
+      const header = [
+        "# YAML Data Export",
+        "# Created by: Ctrl-Q QVD Viewer for VS Code",
+        "# VS Code Extension: https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer",
+        "# GitHub: https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer",
+        `# Generated: ${generated}`,
+        `# Rows: ${rows.length}`,
+        "",
+      ].join("\n");
+      assert.strictEqual(text, header + yaml.dump(rows, { indent: 2, lineWidth: -1, noRefs: true }), name);
+    }
+  });
+
+  test("YAML export - writing in chunks gives the same file as in one go", async () => {
+    // Every row ends with text that js-yaml ends a document after with "...", which the
+    // file has only once its last row is written
+    const rows = [...makeRows(25), ...makeTextEdgeRows(9)];
+    const chunks = await exportText(yamlExporter.exportToYAML, rows, "chunks.yaml", { chunkRows: 4 });
+
+    assert.strictEqual(
+      withoutTimestamp(chunks),
+      withoutTimestamp(
+        await exportText(yamlExporter.exportToYAML, rows, "one-chunk.yaml", { chunkRows: rows.length })
+      )
+    );
+    assert.ok(chunks.endsWith("\n...\n"));
+    assert.strictEqual(chunks.split("\n...\n").length, 2, "The document ends once, at the end");
+    // js-yaml reads a date back as its ISO text, as JSON writes it
+    assert.deepStrictEqual(yaml.load(chunks), JSON.parse(JSON.stringify(rows)));
+  });
+
   test("YAML export - text that YAML 1.2 reads as a number is quoted", async () => {
     const filePath = path.join(outputDir, "numeric-text.yaml");
     // Floats too large for a double, as keys too, next to text and numbers
@@ -997,6 +1170,37 @@ suite("Exporter Test Suite", () => {
       ]
     );
     assert.deepStrictEqual(yaml.load(text), [row]);
+  });
+
+  test("JSON, XML and YAML exports - a failed export leaves the file it would replace as it was", async () => {
+    // A row that can't be read, in the second chunk: the first is written before it fails
+    const failing = Object.defineProperty({}, "a", {
+      enumerable: true,
+      get() {
+        throw new Error("value can't be read");
+      },
+    });
+    for (const [label, exporter] of [
+      ["JSON", jsonExporter.exportToJSON],
+      ["XML", xmlExporter.exportToXML],
+      ["YAML", yamlExporter.exportToYAML],
+    ]) {
+      const filePath = path.join(outputDir, `keep.${label.toLowerCase()}`);
+      fs.writeFileSync(filePath, "previous export");
+
+      await assert.rejects(exporter([{ a: 1 }, failing], filePath, { chunkRows: 1 }), (error) => {
+        assert.strictEqual(error.message, `${label} export failed: value can't be read`);
+        assert.strictEqual(error.cause.message, "value can't be read");
+        return true;
+      });
+
+      assert.strictEqual(fs.readFileSync(filePath, "utf8"), "previous export", label);
+    }
+    assert.deepStrictEqual(
+      fs.readdirSync(outputDir).filter((name) => name.endsWith(".tmp")),
+      [],
+      "The temporary files should be removed"
+    );
   });
 
   test("Typed exports - blank text next to dates is null, and an empty cell in Excel", async () => {

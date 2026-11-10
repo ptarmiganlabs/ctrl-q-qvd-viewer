@@ -1,15 +1,26 @@
-import { promises as fs } from "fs";
 import * as yaml from "js-yaml";
+import { writeFileAtomically } from "./atomicWrite.mjs";
+
+// Rows turned into YAML text at a time, so a large export never holds the whole
+// file as one string
+export const CHUNK_ROWS = 2500;
 
 /**
- * Heap a YAML export builds from the rows, for the memory guard. It needed 226
- * bytes per cell and 1.9 per character of text. Measured by the smallest heap
- * that let 200,000 or 1,000,000 rows of chicago_taxi_rides_2016_03.qvd export,
- * against reading them alone, and 50,000 rows of four unique 400-character
- * values for the cost per character. See DataExporter.memoryCost() for the
- * margins.
+ * Heap a YAML export builds, a chunk of rows at a time, for the memory guard.
+ * With every row in one chunk it needed 222 bytes per cell, and in its own
+ * chunks up to 4.2 per character of a chunk's text: three runs needed 2.1 to 4.2.
+ * Only its largest chunk is priced. Measured by the smallest heap that let
+ * 1,000,000 rows of chicago_taxi_rides_2016_03.qvd export in one chunk, against
+ * reading them alone, and 50,000 rows of four unique 400-character values for the
+ * cost per character. All of the million rows, in its own chunks, needed 8 MiB
+ * beyond reading them. See DataExporter.memoryCost() for the margins.
  */
-export const memoryCost = { bytesPerCell: 352, bytesPerTextChar: 4 };
+export const memoryCost = {
+  bytesPerCell: 336,
+  bytesPerTextChar: 9,
+  chunkRows: CHUNK_ROWS,
+  writesAsItGoes: true,
+};
 
 // Text that YAML 1.2's core schema reads as a float
 const CORE_SCHEMA_FLOAT = /^[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?$/;
@@ -35,13 +46,30 @@ function quoteCoreSchemaFloats(layout) {
 // The rule above, then js-yaml's own, in their order
 const SCALAR_STYLE_RULES = [quoteCoreSchemaFloats, ...Object.values(yaml.DEFAULT_SCALAR_STYLE_RULES)];
 
+// How every chunk is dumped
+const DUMP_OPTIONS = {
+  indent: 2,
+  lineWidth: -1,
+  noRefs: true,
+  scalarStyleRules: SCALAR_STYLE_RULES,
+};
+
+// What js-yaml ends a document with when its last value is a literal block ending in
+// an empty line, so that a reader keeps that line
+const DOCUMENT_END = "...\n";
+
 /**
  * Export data to YAML format
+ *
+ * The file is the header comment, then what js-yaml dumps for every row, written a
+ * chunk of rows at a time.
  * @param {Array<Object>} data - Array of row objects
  * @param {string} filePath - Destination file path
+ * @param {object} [options]
+ * @param {number} [options.chunkRows] - Rows turned into text at a time
  * @returns {Promise<void>}
  */
-export async function exportToYAML(data, filePath) {
+export async function exportToYAML(data, filePath, { chunkRows = CHUNK_ROWS } = {}) {
   try {
     // Add header comment
     const header = [
@@ -54,15 +82,24 @@ export async function exportToYAML(data, filePath) {
       "",
     ].join("\n");
 
-    const yamlString = yaml.dump(data, {
-      indent: 2,
-      lineWidth: -1,
-      noRefs: true,
-      scalarStyleRules: SCALAR_STYLE_RULES,
+    await writeFileAtomically(filePath, async (file) => {
+      await file.writeFile(header);
+      if (data.length === 0) {
+        await file.writeFile(yaml.dump(data, DUMP_OPTIONS));
+        return;
+      }
+      for (let start = 0; start < data.length; start += chunkRows) {
+        let text = yaml.dump(data.slice(start, start + chunkRows), DUMP_OPTIONS);
+        // Within the file the next chunk's rows follow, so the document doesn't end here.
+        // In a list of rows every line starts with "- " or spaces, so only the end marker
+        // is "..." alone at a line's start
+        if (start + chunkRows < data.length && text.endsWith(`\n${DOCUMENT_END}`)) {
+          text = text.slice(0, -DOCUMENT_END.length);
+        }
+        await file.writeFile(text);
+      }
     });
-
-    await fs.writeFile(filePath, header + yamlString, "utf8");
   } catch (error) {
-    throw new Error(`YAML export failed: ${error.message}`);
+    throw new Error(`YAML export failed: ${error.message}`, { cause: error });
   }
 }
