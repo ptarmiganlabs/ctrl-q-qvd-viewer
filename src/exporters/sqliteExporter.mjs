@@ -1,8 +1,9 @@
 import initSqlJs from 'sql.js';
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { createRequire } from 'module';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { writeFileAtomically } from './atomicWrite.mjs';
 import { isMissing, scanColumnTypes } from './columnTypes.mjs';
 import { naiveDateText } from './naiveDates.mjs';
 import { utcText, zonedTimestampsFor } from './zonedTimestamps.mjs';
@@ -10,13 +11,18 @@ import { utcText, zonedTimestampsFor } from './zonedTimestamps.mjs';
 // sql.js, once it has started
 let sqlJs = null;
 
+// Rows inserted between turns of the event loop
+const CHUNK_ROWS = 10000;
+
 /**
- * Heap a SQLite export builds from the rows, for the memory guard. Its database
- * lives in sql.js's WebAssembly memory, outside the V8 heap, and it added
- * nothing measurable to the heap. Measured by the smallest heap that let
- * 200,000 or 1,000,000 rows of chicago_taxi_rides_2016_03.qvd export, against
- * reading them alone, and 50,000 rows of four unique 400-character values for
- * the cost per character. See DataExporter.memoryCost() for the margins.
+ * Heap a SQLite export builds from the rows, for the memory guard. It needed 0.42
+ * bytes per cell, and nothing measurable per character of text: its database lives
+ * in sql.js's in-memory file system, outside the V8 heap. Measured by the smallest
+ * heap that let 1,000,000 rows of chicago_taxi_rides_2016_03.qvd export, against
+ * reading them alone, and 50,000 rows of four unique 400-character values for the
+ * cost per character. Outside the heap, the database file grows an eighth at a
+ * time, copied each time, and the process peaked at 10 to 12 times its size: that
+ * isn't priced here. See DataExporter.memoryCost() for the margins.
  */
 export const memoryCost = { bytesPerCell: 16, bytesPerTextChar: 0 };
 
@@ -61,15 +67,12 @@ export async function exportToSQLite(data, filePath, options = {}) {
     // Initialize SQL.js once, handing it its WebAssembly file
     sqlJs ??= await initSqlJs({ wasmBinary: readSqlWasm() });
 
-    // Create a new database
-    const db = new sqlJs.Database();
-
     if (data.length === 0) {
       // Export empty database
+      const db = new sqlJs.Database();
       const binaryArray = db.export();
-      const buffer = Buffer.from(binaryArray);
-      writeFileSync(filePath, buffer);
       db.close();
+      await writeFileAtomically(filePath, (file) => file.writeFile(binaryArray));
       return;
     }
 
@@ -104,59 +107,67 @@ export async function exportToSQLite(data, filePath, options = {}) {
       })
       .join(", ");
 
-    // Create table
-    db.run(`CREATE TABLE data (${columns})`);
+    // Create a new database, closed once its bytes are out, or the export fails: sql.js
+    // holds it in memory until then
+    const db = new sqlJs.Database();
+    let binaryArray;
+    try {
+      // Create table
+      db.run(`CREATE TABLE data (${columns})`);
 
-    // Prepare insert statement
-    const placeholders = columnNames.map(() => "?").join(", ");
-    const insertSQL = `INSERT INTO data (${columnNames
-      .map((c) => `"${c}"`)
-      .join(", ")}) VALUES (${placeholders})`;
+      // Prepare insert statement
+      const placeholders = columnNames.map(() => "?").join(", ");
+      const insertSQL = `INSERT INTO data (${columnNames
+        .map((c) => `"${c}"`)
+        .join(", ")}) VALUES (${placeholders})`;
 
-    // Insert all rows
-    for (const row of data) {
-      const values = columnNames.map((col) => {
-        const value = row[col];
-        const typeInfo = columnTypes[col];
-
-        // Convert values based on schema expectations
-        if (isMissing(value, typeInfo)) {
-          return null;
-        } else if (value instanceof Date) {
-          if (zoned && !typeInfo.calendarDates) {
-            return utcText(zoned.instant(value, col));
+      // Insert all rows in one transaction, through one prepared statement: each insert
+      // on its own would be a transaction of its own, and compile the statement again
+      const insert = db.prepare(insertSQL);
+      db.run("BEGIN");
+      try {
+        for (let i = 0; i < data.length; i++) {
+          // sql.js works synchronously: let the event loop run between chunks of rows
+          if (i > 0 && i % CHUNK_ROWS === 0) {
+            await new Promise((resolve) => setImmediate(resolve));
           }
-          return naiveDateText(value, typeInfo.calendarDates);
-        } else if (typeInfo.hasString) {
-          // If schema expects TEXT, convert everything to string
-          return String(value);
-        } else if (typeof value === "boolean") {
-          return value ? 1 : 0;
+          const row = data[i];
+          const values = columnNames.map((col) => {
+            const value = row[col];
+            const typeInfo = columnTypes[col];
+
+            // Convert values based on schema expectations
+            if (isMissing(value, typeInfo)) {
+              return null;
+            } else if (value instanceof Date) {
+              if (zoned && !typeInfo.calendarDates) {
+                return utcText(zoned.instant(value, col));
+              }
+              return naiveDateText(value, typeInfo.calendarDates);
+            } else if (typeInfo.hasString) {
+              // If schema expects TEXT, convert everything to string
+              return String(value);
+            } else if (typeof value === "boolean") {
+              return value ? 1 : 0;
+            }
+            return value;
+          });
+
+          insert.run(values);
         }
-        return value;
-      });
+        db.run("COMMIT");
+      } finally {
+        insert.free();
+      }
 
-      db.run(insertSQL, values);
+      // Export the database to a binary array
+      binaryArray = db.export();
+    } finally {
+      db.close();
     }
-
-    // Export the database to a binary array and write to file
-    const binaryArray = db.export();
-    const buffer = Buffer.from(binaryArray);
-    writeFileSync(filePath, buffer);
-
-    // Close the database
-    db.close();
+    await writeFileAtomically(filePath, (file) => file.writeFile(binaryArray));
     return zoned?.summary();
   } catch (error) {
-    // Clean up the partially created file on error
-    try {
-      if (existsSync(filePath)) {
-        unlinkSync(filePath);
-      }
-    } catch {
-      // Ignore cleanup errors, throw original error
-    }
-
-    throw new Error(`SQLite export failed: ${error.message}`);
+    throw new Error(`SQLite export failed: ${error.message}`, { cause: error });
   }
 }

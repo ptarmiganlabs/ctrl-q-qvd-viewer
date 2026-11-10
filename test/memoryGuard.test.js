@@ -154,6 +154,8 @@ suite("Memory Guard Test Suite", () => {
     assert.ok(arrowCost.bytesPerCell >= 0.42 * 1.5);
     assert.ok(arrowCost.bytesPerTextChar >= 0.31 * 2);
     assert.strictEqual(arrowCost.chunkRows, undefined);
+    // A SQLite export needed 0.42 per cell on the heap: its database is outside it
+    assert.ok(DataExporter.memoryCost("sqlite").bytesPerCell >= 0.42 * 1.5);
   });
 
   test("Every export format's exporter declares what it costs", () => {

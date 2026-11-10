@@ -1440,6 +1440,40 @@ suite("Exporter Test Suite", () => {
     }
   });
 
+  test("SQLite export - a failed export leaves the file it would replace as it was, and the next export works", async () => {
+    const filePath = path.join(outputDir, "keep.db");
+    fs.writeFileSync(filePath, "previous export");
+    // A value that reads for the type scan, and fails as its row is inserted, once the
+    // first row is
+    let reads = 0;
+    const failing = Object.defineProperty({}, "a", {
+      enumerable: true,
+      get() {
+        reads++;
+        if (reads > 1) {
+          throw new Error("value can't be read");
+        }
+        return "x";
+      },
+    });
+
+    await assert.rejects(sqliteExporter.exportToSQLite([{ a: "first" }, failing], filePath), (error) => {
+      assert.strictEqual(error.message, "SQLite export failed: value can't be read");
+      assert.strictEqual(error.cause.message, "value can't be read");
+      return true;
+    });
+
+    assert.strictEqual(fs.readFileSync(filePath, "utf8"), "previous export");
+    assert.deepStrictEqual(
+      fs.readdirSync(outputDir).filter((name) => name.endsWith(".tmp")),
+      [],
+      "The temporary file should be removed"
+    );
+    // sql.js is still there for the next export
+    await sqliteExporter.exportToSQLite(makeRows(100), filePath);
+    assert.strictEqual(await countSqliteRows(filePath), 100);
+  });
+
   test("SQLite export - bundled exporter finds its wasm file without node_modules", async () => {
     const { exportToSQLite } = await bundleSqliteExporter("bundled");
     const rows = makeRows(100);
