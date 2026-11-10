@@ -148,6 +148,12 @@ suite("Memory Guard Test Suite", () => {
     const qlik = DataExporter.memoryCost("qlik");
     assert.ok(qlik.bytesPerCell >= 9.2 * 1.5);
     assert.ok(qlik.bytesPerTextChar >= 5.2 * 2);
+    // An Arrow export needed 0.42 per cell and 0.31 per character, and is priced
+    // whole: its dictionaries hold every distinct text to the end
+    const arrowCost = DataExporter.memoryCost("arrow");
+    assert.ok(arrowCost.bytesPerCell >= 0.42 * 1.5);
+    assert.ok(arrowCost.bytesPerTextChar >= 0.31 * 2);
+    assert.strictEqual(arrowCost.chunkRows, undefined);
   });
 
   test("Every export format's exporter declares what it costs", () => {
@@ -160,7 +166,7 @@ suite("Memory Guard Test Suite", () => {
         assert.ok(Number.isInteger(cost.chunkRows) && cost.chunkRows > 0, name);
       }
     }
-    assert.deepStrictEqual(DataExporter.leanFormatLabels(), ["Avro", "CSV", "Excel", "JSON", "Parquet", "PostgreSQL", "Qlik Inline Script", "XML", "YAML"]);
+    assert.deepStrictEqual(DataExporter.leanFormatLabels(), ["Arrow", "Avro", "CSV", "Excel", "JSON", "Parquet", "PostgreSQL", "Qlik Inline Script", "XML", "YAML"]);
   });
 
   test("A name that isn't a format has no cost, not a function", () => {

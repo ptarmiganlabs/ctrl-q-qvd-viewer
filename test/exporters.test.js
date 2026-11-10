@@ -557,6 +557,103 @@ suite("Exporter Test Suite", () => {
     assert.deepStrictEqual(rows, BLANK_ROWS_STORED);
   });
 
+  test("Arrow export - writing in batches gives the same table as in one go", async () => {
+    for (const [name, rows] of [
+      ["rows", makeRows(25)],
+      ["dates", makeDateRows()],
+      ["blanks", makeBlankRows()],
+      ["big", makeBigIntegerRows()],
+      ["awkward", makeAwkwardRows()],
+    ]) {
+      for (const timeZone of [null, "America/Chicago"]) {
+        const label = `${name}, ${timeZone ?? "no time zone"}`;
+        const batches = path.join(outputDir, `batches-${name}.arrow`);
+        const oneBatch = path.join(outputDir, `one-batch-${name}.arrow`);
+        const shifts = await arrowExporter.exportToArrow(rows, batches, { timeZone, chunkRows: 2 });
+
+        assert.deepStrictEqual(
+          shifts,
+          await arrowExporter.exportToArrow(rows, oneBatch, { timeZone, chunkRows: rows.length }),
+          label
+        );
+        assert.deepStrictEqual(readArrow(batches), readArrow(oneBatch), label);
+        assert.strictEqual(arrow.tableFromIPC(fs.readFileSync(batches)).batches.length, Math.ceil(rows.length / 2), label);
+      }
+    }
+  });
+
+  test("Arrow export - every field is typed and nullable as when Arrow built the table at once", async () => {
+    const filePath = path.join(outputDir, "fields.arrow");
+
+    await arrowExporter.exportToArrow(makeRows(5), filePath, { chunkRows: 2 });
+    const { schema } = arrow.tableFromIPC(fs.readFileSync(filePath));
+
+    // Nullable whether a column has a null or not, as a table made of vectors makes them
+    assert.deepStrictEqual(
+      schema.fields.map((field) => [field.name, String(field.type), field.nullable]),
+      [
+        ["id", "Float64", true],
+        ["price", "Float64", true],
+        ["name", "Dictionary<Int32, Utf8>", true],
+        ["active", "Bool", true],
+        ["note", "Dictionary<Int32, Utf8>", true],
+        ["created", "Timestamp<MILLISECOND>", true],
+      ]
+    );
+  });
+
+  test("Arrow export - a text column's dictionary is written once and whole, for every batch", async () => {
+    const filePath = path.join(outputDir, "dictionaries.arrow");
+    const rows = makeRows(25);
+
+    await arrowExporter.exportToArrow(rows, filePath, { chunkRows: 2 });
+    const bytes = fs.readFileSync(filePath);
+    const reader = arrow.RecordBatchReader.from(bytes);
+    reader.open();
+
+    // One dictionary for each text column, name and note: a dictionary that grew from
+    // batch to batch would add a delta of it for each batch, which polars can't read
+    assert.strictEqual(reader.footer.numDictionaries, 2);
+    assert.strictEqual(reader.footer.numRecordBatches, 13);
+    for (const batch of arrow.tableFromIPC(bytes).batches) {
+      assert.strictEqual(batch.getChild("name").data[0].dictionary.length, rows.length);
+    }
+  });
+
+  test("Arrow export - a failed export leaves the file it would replace as it was", async () => {
+    const filePath = path.join(outputDir, "keep.arrow");
+    fs.writeFileSync(filePath, "previous export");
+    // A value that reads for the type scan and the dictionary, and fails in the second
+    // batch, once the first is in the file
+    let reads = 0;
+    const failing = Object.defineProperty({}, "a", {
+      enumerable: true,
+      get() {
+        reads++;
+        if (reads > 2) {
+          throw new Error("value can't be read");
+        }
+        return "x";
+      },
+    });
+
+    await assert.rejects(
+      arrowExporter.exportToArrow([{ a: "first" }, failing], filePath, { chunkRows: 1 }),
+      (error) => {
+        assert.strictEqual(error.message, "Arrow export failed: value can't be read");
+        assert.strictEqual(error.cause.message, "value can't be read");
+        return true;
+      }
+    );
+
+    assert.strictEqual(fs.readFileSync(filePath, "utf8"), "previous export");
+    assert.deepStrictEqual(
+      fs.readdirSync(outputDir).filter((name) => name.endsWith(".tmp")),
+      [],
+      "The temporary file should be removed"
+    );
+  });
+
   test("Avro export - file is complete when the export resolves", async () => {
     // Enough rows for the file to span several 64 KB blocks
     const rows = makeRows(20000);
