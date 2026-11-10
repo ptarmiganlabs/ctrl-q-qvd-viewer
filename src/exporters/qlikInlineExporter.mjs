@@ -1,14 +1,34 @@
-import { promises as fs } from "fs";
+import { writeFileAtomically } from "./atomicWrite.mjs";
+
+// Rows turned into script text at a time, so a large export never holds the whole
+// script as one string
+export const CHUNK_ROWS = 10000;
 
 /**
- * Heap a Qlik inline script export builds from the rows, for the memory guard.
- * It needed 7.8 bytes per cell and 1.0 per character of text. Measured by the
- * smallest heap that let 200,000 or 1,000,000 rows of
- * chicago_taxi_rides_2016_03.qvd export, against reading them alone, and 50,000
- * rows of four unique 400-character values for the cost per character. See
- * DataExporter.memoryCost() for the margins.
+ * Heap a Qlik inline script export builds, a chunk of rows at a time, for the memory
+ * guard. With every row in one chunk it needed 9.2 bytes per cell, and in its own
+ * chunks up to 5.2 per character of a chunk's text: three runs needed 3.1 to 5.2.
+ * Only its largest chunk is priced. Measured by the smallest heap that let
+ * 1,000,000 rows of chicago_taxi_rides_2016_03.qvd export in one chunk, against
+ * reading them alone, and 50,000 rows of four unique 400-character values for the
+ * cost per character. All of the million rows, in its own chunks, needed nothing
+ * measurable beyond reading them. See DataExporter.memoryCost() for the margins.
  */
-export const memoryCost = { bytesPerCell: 16, bytesPerTextChar: 3 };
+export const memoryCost = {
+  bytesPerCell: 14,
+  bytesPerTextChar: 11,
+  chunkRows: CHUNK_ROWS,
+  writesAsItGoes: true,
+};
+
+/**
+ * A pattern that finds a delimiter wherever it is in a value
+ * @param {string} char - The delimiter
+ * @returns {RegExp} The pattern, global
+ */
+function delimiterPattern(char) {
+  return new RegExp(char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
+}
 
 /**
  * Auto-detect the best delimiter for the data
@@ -28,16 +48,13 @@ function autoDetectDelimiter(data) {
     ...d,
     count: 0,
   }));
+  const patterns = counts.map((d) => delimiterPattern(d.char));
 
   data.forEach((row) => {
     Object.values(row).forEach((value) => {
       if (typeof value === "string") {
-        counts.forEach((d) => {
-          d.count += (
-            value.match(
-              new RegExp(d.char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")
-            ) || []
-          ).length;
+        counts.forEach((d, i) => {
+          d.count += (value.match(patterns[i]) || []).length;
         });
       }
     });
@@ -82,17 +99,20 @@ function getDelimiterConfig(delimiterChoice, data) {
  * @param {string} filePath - Destination file path
  * @param {number} maxRows - Maximum number of rows to include (0 = all)
  * @param {string} delimiter - Delimiter choice ('tab', 'pipe', 'comma', 'semicolon', 'auto-detect')
+ * @param {object} [options]
+ * @param {number} [options.chunkRows] - Rows turned into text at a time
  * @returns {Promise<void>}
  */
 export async function exportToQlikInline(
   data,
   filePath,
   maxRows = 0,
-  delimiter = "tab"
+  delimiter = "tab",
+  { chunkRows = CHUNK_ROWS } = {}
 ) {
   try {
     if (data.length === 0) {
-      await fs.writeFile(filePath, "// No data to export", "utf8");
+      await writeFileAtomically(filePath, (file) => file.writeFile("// No data to export"));
       return;
     }
 
@@ -101,6 +121,7 @@ export async function exportToQlikInline(
 
     // Get delimiter configuration
     const delimiterConfig = getDelimiterConfig(delimiter, exportData);
+    const delimiterInValue = delimiterPattern(delimiterConfig.char);
 
     // Get column names from first row
     const columns = Object.keys(exportData[0]);
@@ -131,41 +152,43 @@ export async function exportToQlikInline(
     // Add column headers (with chosen delimiter)
     lines.push(columns.join(delimiterConfig.char));
 
-    // Add data rows (with chosen delimiter)
-    exportData.forEach((row) => {
-      const values = columns.map((col) => {
-        const value = row[col];
+    // A row's line, with the chosen delimiter
+    const rowLine = (row) =>
+      columns
+        .map((col) => {
+          const value = row[col];
 
-        // Handle different value types
-        if (value === null || value === undefined) {
-          return "";
-        } else if (typeof value === "string") {
-          // Escape special characters in strings
-          // Replace delimiter with space, and remove newlines/carriage returns
-          return value
-            .replace(
-              new RegExp(
-                delimiterConfig.char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-                "g"
-              ),
-              " "
-            )
-            .replace(/\n/g, " ")
-            .replace(/\r/g, "");
-        } else if (value instanceof Date) {
-          return value.toISOString();
-        } else {
-          return String(value);
+          // Handle different value types
+          if (value === null || value === undefined) {
+            return "";
+          } else if (typeof value === "string") {
+            // Escape special characters in strings
+            // Replace delimiter with space, and remove newlines/carriage returns
+            return value.replace(delimiterInValue, " ").replace(/\n/g, " ").replace(/\r/g, "");
+          } else if (value instanceof Date) {
+            return value.toISOString();
+          } else {
+            return String(value);
+          }
+        })
+        .join(delimiterConfig.char);
+
+    // The script so far, then its rows a chunk at a time, a line apart as they are
+    await writeFileAtomically(filePath, async (file) => {
+      await file.writeFile(lines.join("\n"));
+      for (let start = 0; start < exportData.length; start += chunkRows) {
+        const end = Math.min(start + chunkRows, exportData.length);
+        const rowLines = [];
+        for (let i = start; i < end; i++) {
+          rowLines.push(rowLine(exportData[i]));
         }
-      });
-      lines.push(values.join(delimiterConfig.char));
+        await file.writeFile(`\n${rowLines.join("\n")}`);
+      }
+
+      // Close the inline load with proper delimiter syntax
+      await file.writeFile(`\n] (Delimiter is '${delimiterConfig.escapeChar}');`);
     });
-
-    // Close the inline load with proper delimiter syntax
-    lines.push(`] (Delimiter is '${delimiterConfig.escapeChar}');`);
-
-    await fs.writeFile(filePath, lines.join("\n"), "utf8");
   } catch (error) {
-    throw new Error(`Qlik Sense inline script export failed: ${error.message}`);
+    throw new Error(`Qlik Sense inline script export failed: ${error.message}`, { cause: error });
   }
 }

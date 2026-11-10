@@ -138,6 +138,14 @@ suite("Memory Guard Test Suite", () => {
     const xml = DataExporter.memoryCost("xml");
     assert.ok(xml.bytesPerCell >= 92 * 1.5);
     assert.ok(xml.bytesPerTextChar >= 10.5 * 2);
+    // PostgreSQL and Qlik inline needed 20 and 9.2 per cell in one chunk, and at most
+    // 3.1 and 5.2 per character of the chunks they write
+    const postgres = DataExporter.memoryCost("postgres");
+    assert.ok(postgres.bytesPerCell >= 20 * 1.5);
+    assert.ok(postgres.bytesPerTextChar >= 3.1 * 2);
+    const qlik = DataExporter.memoryCost("qlik");
+    assert.ok(qlik.bytesPerCell >= 9.2 * 1.5);
+    assert.ok(qlik.bytesPerTextChar >= 5.2 * 2);
   });
 
   test("Every export format's exporter declares what it costs", () => {
@@ -150,7 +158,7 @@ suite("Memory Guard Test Suite", () => {
         assert.ok(Number.isInteger(cost.chunkRows) && cost.chunkRows > 0, name);
       }
     }
-    assert.deepStrictEqual(DataExporter.leanFormatLabels(), ["Avro", "CSV", "JSON", "Parquet", "XML", "YAML"]);
+    assert.deepStrictEqual(DataExporter.leanFormatLabels(), ["Avro", "CSV", "JSON", "Parquet", "PostgreSQL", "Qlik Inline Script", "XML", "YAML"]);
   });
 
   test("A name that isn't a format has no cost, not a function", () => {
