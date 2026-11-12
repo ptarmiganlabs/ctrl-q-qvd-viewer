@@ -1361,6 +1361,46 @@ suite("Exporter Test Suite", () => {
     );
   });
 
+  test("JSON, XML and YAML exports - a QVD with many fields is written in smaller chunks, the same file", async () => {
+    const fields = Array.from({ length: 300 }, (_, i) => `field${i}`);
+    const rows = Array.from({ length: 1000 }, (_, i) =>
+      Object.fromEntries(fields.map((field, j) => [field, j % 2 ? `${field} ${i}` : i * j]))
+    );
+    for (const [label, exporter, cost] of [
+      ["JSON", jsonExporter.exportToJSON, jsonExporter.memoryCost],
+      ["XML", xmlExporter.exportToXML, xmlExporter.memoryCost],
+      ["YAML", yamlExporter.exportToYAML, yamlExporter.memoryCost],
+    ]) {
+      const extension = label.toLowerCase();
+      const wide = await exportText(exporter, rows, `wide.${extension}`);
+      assert.strictEqual(
+        withoutTimestamp(wide),
+        withoutTimestamp(await exportText(exporter, rows, `wide-one-chunk.${extension}`, { chunkRows: rows.length })),
+        label
+      );
+      assert.ok(Math.floor(cost.chunkCells / fields.length) < Math.min(rows.length, cost.chunkRows), label);
+    }
+  });
+
+  test("JSON, XML and YAML exports - a chunk size that isn't a whole number of 1 or more fails before writing", async () => {
+    for (const [label, exporter] of [
+      ["JSON", jsonExporter.exportToJSON],
+      ["XML", xmlExporter.exportToXML],
+      ["YAML", yamlExporter.exportToYAML],
+    ]) {
+      const filePath = path.join(outputDir, `bad-chunks.${label.toLowerCase()}`);
+      fs.writeFileSync(filePath, "previous export");
+      for (const chunkRows of [0, -1, 2.5]) {
+        await assert.rejects(
+          exporter(makeRows(5), filePath, { chunkRows }),
+          new RegExp(`^Error: ${label} export failed: chunkRows must be a whole number of 1 or more`),
+          `${label} ${chunkRows}`
+        );
+      }
+      assert.strictEqual(fs.readFileSync(filePath, "utf8"), "previous export", label);
+    }
+  });
+
   test("Typed exports - blank text next to dates is null, and an empty cell in Excel", async () => {
     const when = new Date(Date.UTC(2024, 0, 2, 3, 4, 5));
     const rows = [{ when }, { when: "" }, { when: " " }];

@@ -157,6 +157,9 @@ suite("Memory Guard Test Suite", () => {
       if (cost.chunkRows !== undefined) {
         assert.ok(Number.isInteger(cost.chunkRows) && cost.chunkRows > 0, name);
       }
+      if (cost.chunkCells !== undefined) {
+        assert.ok(Number.isInteger(cost.chunkCells) && cost.chunkCells > 0 && cost.chunkRows > 0, name);
+      }
     }
     assert.deepStrictEqual(DataExporter.leanFormatLabels(), ["Avro", "CSV", "JSON", "Parquet", "PostgreSQL", "Qlik Inline Script", "XML", "YAML"]);
   });
@@ -271,6 +274,36 @@ suite("Memory Guard Test Suite", () => {
     });
     // A format that builds its whole output at once has no chunks
     assert.strictEqual(DataExporter.memoryCost("excel").chunkRows, undefined);
+  });
+
+  test("A chunk of a QVD with many fields has fewer rows, and is priced so", async () => {
+    const yamlCost = DataExporter.memoryCost("yaml");
+    assert.strictEqual(guard.rowsPerChunk(yamlCost, 2), yamlCost.chunkRows);
+    assert.strictEqual(guard.rowsPerChunk(yamlCost, 20), yamlCost.chunkRows);
+    assert.strictEqual(guard.rowsPerChunk(yamlCost, 300), Math.floor(yamlCost.chunkCells / 300));
+    assert.strictEqual(guard.rowsPerChunk(yamlCost, 10 * yamlCost.chunkCells), 1);
+    // Without chunkCells a chunk is chunkRows, whatever the fields
+    const csv = DataExporter.memoryCost("csv");
+    assert.strictEqual(guard.rowsPerChunk(csv, 300), csv.chunkRows);
+
+    // Two chunks of 300 fields: the second, with text, is priced
+    const chunk = guard.rowsPerChunk(yamlCost, 300);
+    const fields = Array.from({ length: 300 }, (_, i) => `f${i}`);
+    const rows = Array.from({ length: 2 * chunk }, (_, i) =>
+      Object.fromEntries(fields.map((field) => [field, i >= chunk && field === "f0" ? "x" : 0]))
+    );
+    assert.deepStrictEqual(await guard.exportHeapBytes(yamlCost, rows, 300), {
+      rows: rows.length,
+      bytes: chunk * 300 * yamlCost.bytesPerCell + chunk * yamlCost.bytesPerTextChar,
+    });
+  });
+
+  test("A chunk size that isn't a whole number of 1 or more is refused", () => {
+    const json = DataExporter.memoryCost("json");
+    assert.strictEqual(guard.rowsPerChunk(json, 20, 3), 3);
+    for (const chunkRows of [0, -1, 2.5, NaN, Infinity, "3", null]) {
+      assert.throws(() => guard.rowsPerChunk(json, 20, chunkRows), RangeError, String(chunkRows));
+    }
   });
 
   test("Pricing an export lets the event loop run as it looks at the rows", async () => {
