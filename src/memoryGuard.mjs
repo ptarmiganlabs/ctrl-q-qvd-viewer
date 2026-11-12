@@ -232,8 +232,34 @@ export function heldTextBytes(fields, rows, shares) {
  * @property {number} bytesPerCell - Heap per cell
  * @property {number} bytesPerTextChar - Heap per character of the rows' text, on top
  * @property {number} [chunkRows] - Rows it builds from at a time, so that only its largest chunk is priced
+ * @property {number} [chunkCells] - Cells it builds from at a time, at most, so that a chunk of a QVD
+ *   with many fields has fewer rows
  * @property {boolean} [writesAsItGoes] - Whether it writes as it goes, and so needs little
  */
+
+/**
+ * Rows an export that writes as it goes builds from at a time
+ * At most its chunkRows and, where it declares chunkCells, at most that many cells, so
+ * that a chunk of a QVD with many fields holds the event loop up no longer than one with
+ * few. At least one row.
+ * @param {ExportCost} cost - What the export builds, as its exporter declares it
+ * @param {number} columnCount - Fields per row
+ * @param {number} [chunkRows] - Rows a chunk instead, such as a test's
+ * @returns {number} Rows
+ * @throws {RangeError} For a chunkRows that isn't a whole number of 1 or more
+ */
+export function rowsPerChunk(cost, columnCount, chunkRows) {
+  if (chunkRows !== undefined) {
+    if (!Number.isInteger(chunkRows) || chunkRows < 1) {
+      throw new RangeError(`chunkRows must be a whole number of 1 or more, not ${String(chunkRows)}`);
+    }
+    return chunkRows;
+  }
+  if (!(cost.chunkCells > 0)) {
+    return cost.chunkRows;
+  }
+  return Math.max(1, Math.min(cost.chunkRows, Math.floor(cost.chunkCells / Math.max(1, columnCount))));
+}
 
 /**
  * Heap an export of these rows builds: per cell, and per character of their text
@@ -248,7 +274,7 @@ export function heldTextBytes(fields, rows, shares) {
  */
 export async function exportHeapBytes(cost, rows, columnCount, limit = 0) {
   const count = limit > 0 ? Math.min(limit, rows.length) : rows.length;
-  const chunkRows = cost.chunkRows > 0 ? cost.chunkRows : count;
+  const chunkRows = cost.chunkRows > 0 ? rowsPerChunk(cost, columnCount) : count;
   const rowsPerYield = Math.max(1, Math.floor(CELLS_PER_YIELD / Math.max(1, columnCount)));
   let bytes = 0;
   for (let start = 0; start < count; start += chunkRows) {
