@@ -963,6 +963,40 @@ suite("Exporter Test Suite", () => {
     assert.ok(most < 1024 * 1024, `${most} bytes were waiting`);
   });
 
+  test("Excel export - a QVD with many fields is written in smaller chunks, the same workbook", async () => {
+    const fields = Array.from({ length: 300 }, (_, i) => `field${i}`);
+    const rows = Array.from({ length: 400 }, (_, i) =>
+      Object.fromEntries(fields.map((field, j) => [field, j % 2 ? `${field} ${i}` : i * j]))
+    );
+    const wide = path.join(outputDir, "wide.xlsx");
+    const oneChunk = path.join(outputDir, "wide-one-chunk.xlsx");
+    await excelExporter.exportToExcel(rows, wide);
+    await excelExporter.exportToExcel(rows, oneChunk, { chunkRows: rows.length });
+
+    assert.deepStrictEqual(await readExcel(wide), await readExcel(oneChunk));
+    assert.ok(Math.floor(excelExporter.memoryCost.chunkCells / fields.length) < rows.length);
+  });
+
+  test("Excel export - a chunk or sheet size it can't use fails before writing", async () => {
+    const filePath = path.join(outputDir, "bad-sizes.xlsx");
+    fs.writeFileSync(filePath, "previous export");
+    for (const chunkRows of [0, -1, 2.5]) {
+      await assert.rejects(
+        excelExporter.exportToExcel(makeRows(5), filePath, { chunkRows }),
+        /^Error: Excel export failed: chunkRows must be a whole number of 1 or more/,
+        String(chunkRows)
+      );
+    }
+    for (const sheetRows of [0, 1, 2.5, NaN, excelExporter.SHEET_ROWS + 1]) {
+      await assert.rejects(
+        excelExporter.exportToExcel(makeRows(5), filePath, { sheetRows }),
+        /^Error: Excel export failed: sheetRows must be a whole number from 2 to 1048576/,
+        String(sheetRows)
+      );
+    }
+    assert.strictEqual(fs.readFileSync(filePath, "utf8"), "previous export");
+  });
+
   test("Excel export - a failed export leaves the file it would replace as it was", async () => {
     const filePath = path.join(outputDir, "keep.xlsx");
     fs.writeFileSync(filePath, "previous export");

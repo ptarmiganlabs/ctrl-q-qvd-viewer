@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import { once } from "events";
 import { isBlank } from "../cellValue.mjs";
 import { fileWriter, writeFileAtomically } from "./atomicWrite.mjs";
+import { rowsPerChunk } from "../memoryGuard.mjs";
 import { scanColumnTypes } from "./columnTypes.mjs";
 import { naiveDateText } from "./naiveDates.mjs";
 
@@ -12,13 +13,17 @@ const EXCEL_FIRST_DATE = Date.UTC(1900, 2, 1);
 // Rows added to a sheet at a time, before the file is given time to take them
 export const CHUNK_ROWS = 2000;
 
+// Cells added at a time: a QVD with many fields gets fewer rows in a chunk
+export const CHUNK_CELLS = CHUNK_ROWS * 20;
+
 // The rows of a worksheet, its header row included: Excel holds no more
 export const SHEET_ROWS = 1048576;
 
 /**
  * Heap an Excel export builds, a chunk of rows at a time, for the memory guard.
  * With every row in one chunk it needed 0.84 bytes per cell, and in its own chunks
- * 10.5 per character of a chunk's text. Only its largest chunk is priced. A sheet's
+ * 10.5 per character of a chunk's text. Only its largest chunk is priced, of
+ * CHUNK_ROWS rows or CHUNK_CELLS cells, whichever is fewer rows. A sheet's
  * XML waits for the zip in buffers outside the V8 heap, which the waits between
  * chunks keep to about a chunk's. Measured by the smallest heap that let 1,000,000
  * rows of chicago_taxi_rides_2016_03.qvd export in one chunk, against reading them
@@ -30,6 +35,7 @@ export const memoryCost = {
   bytesPerCell: 2,
   bytesPerTextChar: 21,
   chunkRows: CHUNK_ROWS,
+  chunkCells: CHUNK_CELLS,
   writesAsItGoes: true,
 };
 
@@ -46,6 +52,9 @@ function inlineText(text) {
   return { richText: [{ text }] };
 }
 
+// Whether sheetTaken() has said that it can't wait for the zip
+let warnedNoBackpressure = false;
+
 /**
  * Wait until the zip has taken the sheet's XML written so far
  * ExcelJS hands each 64 KB of a sheet's XML to archiver's PassThrough without waiting
@@ -59,7 +68,12 @@ async function sheetTaken(worksheet, failed) {
   const entry = worksheet.stream?.pipes?.[0];
   const state = entry?._writableState;
   if (!state) {
-    // ExcelJS's or archiver's insides have changed: give the zip a turn, at least
+    // ExcelJS's or archiver's insides have changed: give the zip a turn, at least, and
+    // say so once, since the sheet's XML may now pile up outside the heap
+    if (!warnedNoBackpressure) {
+      warnedNoBackpressure = true;
+      console.warn("Excel export: ExcelJS's sheet stream isn't where expected, so a sheet's XML may be held in memory until the zip takes it");
+    }
     await Promise.race([new Promise((resolve) => setImmediate(resolve)), failed]);
     return;
   }
@@ -77,11 +91,18 @@ async function sheetTaken(worksheet, failed) {
  * @param {string} filePath - Destination file path
  * @param {object} [options]
  * @param {number} [options.chunkRows] - Rows added at a time
- * @param {number} [options.sheetRows] - Rows in a sheet, its header row included
+ * @param {number} [options.sheetRows] - Rows in a sheet, its header row included: 2 to
+ *   SHEET_ROWS
  * @returns {Promise<void>}
  */
-export async function exportToExcel(data, filePath, { chunkRows = CHUNK_ROWS, sheetRows = SHEET_ROWS } = {}) {
+export async function exportToExcel(data, filePath, { chunkRows: rowsOption, sheetRows = SHEET_ROWS } = {}) {
   try {
+    const columnNames = data.length > 0 ? Object.keys(data[0]) : [];
+    const chunkRows = rowsPerChunk(memoryCost, columnNames.length, rowsOption);
+    if (!Number.isInteger(sheetRows) || sheetRows < 2 || sheetRows > SHEET_ROWS) {
+      throw new RangeError(`sheetRows must be a whole number from 2 to ${SHEET_ROWS}, not ${String(sheetRows)}`);
+    }
+
     await writeFileAtomically(filePath, async (file) => {
       const stream = fileWriter(file);
       const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
@@ -118,8 +139,6 @@ export async function exportToExcel(data, filePath, { chunkRows = CHUNK_ROWS, sh
         return;
       }
 
-      // Get column headers from first row
-      const columnNames = Object.keys(data[0]);
       const columnTypes = await scanColumnTypes(data, columnNames);
 
       // A column of dates shows them as dates, and one of timestamps with their time, to
@@ -130,39 +149,36 @@ export async function exportToExcel(data, filePath, { chunkRows = CHUNK_ROWS, sh
         const typeInfo = columnTypes[key];
         const column = { header: inlineText(key), key: key, width: 15 };
         if (typeInfo.hasDate) {
-          let early = false;
-          let milliseconds = false;
-          for (const row of data) {
-            const value = row[key];
-            if (value instanceof Date) {
-              early ||= value.getTime() < EXCEL_FIRST_DATE;
-              milliseconds ||= value.getTime() % 1000 !== 0;
-            }
-          }
-          if (early) {
+          if (typeInfo.earliestTime < EXCEL_FIRST_DATE) {
             textDateColumns.add(key);
           } else if (typeInfo.calendarDates) {
             column.style = { numFmt: "yyyy-mm-dd" };
           } else {
-            column.style = { numFmt: milliseconds ? "yyyy-mm-dd hh:mm:ss.000" : "yyyy-mm-dd hh:mm:ss" };
+            column.style = { numFmt: typeInfo.hasMilliseconds ? "yyyy-mm-dd hh:mm:ss.000" : "yyyy-mm-dd hh:mm:ss" };
           }
         }
         return column;
       });
 
-      // Blank text in a column of numbers, booleans or dates is an empty cell, which a
-      // formula reads as nothing: as text, =A2+1 would give #VALUE!
-      const blankColumns = new Set(columnNames.filter((key) => columnTypes[key].blanksAreNull));
+      // What each column's values need. Blank text in a column of numbers, booleans or
+      // dates is an empty cell, which a formula reads as nothing: as text, =A2+1 would
+      // give #VALUE!
+      const cellColumns = columnNames.map((key) => ({
+        key,
+        blanksAreNull: columnTypes[key].blanksAreNull,
+        textDates: textDateColumns.has(key),
+        calendarDates: columnTypes[key].calendarDates,
+      }));
 
       // A row's cells, so that the caller's row stays as it was
       const cellsOf = (row) => {
         const cells = {};
-        for (const key of columnNames) {
+        for (const { key, blanksAreNull, textDates, calendarDates } of cellColumns) {
           let value = row[key];
-          if (blankColumns.has(key) && isBlank(value)) {
+          if (blanksAreNull && isBlank(value)) {
             value = null;
-          } else if (textDateColumns.has(key) && value instanceof Date) {
-            value = naiveDateText(value, columnTypes[key].calendarDates);
+          } else if (textDates && value instanceof Date) {
+            value = naiveDateText(value, calendarDates);
           }
           cells[key] = typeof value === "string" ? inlineText(value) : value;
         }
