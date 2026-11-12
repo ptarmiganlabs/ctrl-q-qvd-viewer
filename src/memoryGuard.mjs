@@ -232,8 +232,34 @@ export function heldTextBytes(fields, rows, shares) {
  * @property {number} bytesPerCell - Heap per cell
  * @property {number} bytesPerTextChar - Heap per character of the rows' text, on top
  * @property {number} [chunkRows] - Rows it builds from at a time, so that only its largest chunk is priced
+ * @property {number} [chunkCells] - Cells it builds from at a time, at most, so that a chunk of a QVD
+ *   with many fields has fewer rows
  * @property {boolean} [writesAsItGoes] - Whether it writes as it goes, and so needs little
  */
+
+/**
+ * Rows an export that writes as it goes builds from at a time
+ * At most its chunkRows and, where it declares chunkCells, at most that many cells, so
+ * that a chunk of a QVD with many fields holds the event loop up no longer than one with
+ * few. At least one row.
+ * @param {ExportCost} cost - What the export builds, as its exporter declares it
+ * @param {number} columnCount - Fields per row
+ * @param {number} [chunkRows] - Rows a chunk instead, such as a test's
+ * @returns {number} Rows
+ * @throws {RangeError} For a chunkRows that isn't a whole number of 1 or more
+ */
+export function rowsPerChunk(cost, columnCount, chunkRows) {
+  if (chunkRows !== undefined) {
+    if (!Number.isInteger(chunkRows) || chunkRows < 1) {
+      throw new RangeError(`chunkRows must be a whole number of 1 or more, not ${String(chunkRows)}`);
+    }
+    return chunkRows;
+  }
+  if (!(cost.chunkCells > 0)) {
+    return cost.chunkRows;
+  }
+  return Math.max(1, Math.min(cost.chunkRows, Math.floor(cost.chunkCells / Math.max(1, columnCount))));
+}
 
 /**
  * Heap an export of these rows builds: per cell, and per character of their text
@@ -248,7 +274,7 @@ export function heldTextBytes(fields, rows, shares) {
  */
 export async function exportHeapBytes(cost, rows, columnCount, limit = 0) {
   const count = limit > 0 ? Math.min(limit, rows.length) : rows.length;
-  const chunkRows = cost.chunkRows > 0 ? cost.chunkRows : count;
+  const chunkRows = cost.chunkRows > 0 ? rowsPerChunk(cost, columnCount) : count;
   const rowsPerYield = Math.max(1, Math.floor(CELLS_PER_YIELD / Math.max(1, columnCount)));
   let bytes = 0;
   for (let start = 0; start < count; start += chunkRows) {
@@ -296,18 +322,29 @@ function listed(names) {
  * @param {number} rows - Rows to export
  * @param {number} neededBytes - Heap the export needs
  * @param {number} leftBytes - Heap left for it
- * @param {Array<string>} [leaner] - The formats that write as they go, as the user
- *   sees them: suggested, but never the format refused
+ * @param {Array<string>} [leaner] - The formats to suggest, which write as they go, as
+ *   the user sees them: never the format refused
+ * @param {{everyOther?: boolean}} [options] - everyOther: whether they are every other
+ *   format, which is then said instead of naming them
  * @returns {string} The message
  */
-export function describeExportRefusal(formatLabel, rows, neededBytes, leftBytes, leaner = []) {
+export function describeExportRefusal(
+  formatLabel,
+  rows,
+  neededBytes,
+  leftBytes,
+  leaner = [],
+  { everyOther = false } = {}
+) {
   const others = leaner.filter((label) => label !== formatLabel);
   const suggestion =
     others.length === 0
       ? ""
-      : others.length === 1
-        ? ` ${others[0]} writes as it goes, and needs much less.`
-        : ` ${listed(others)} write as they go, and need much less.`;
+      : everyOther
+        ? " Every other format writes as it goes, and needs much less."
+        : others.length === 1
+          ? ` ${others[0]} writes as it goes, and needs much less.`
+          : ` ${listed(others)} write as they go, and need much less.`;
   return (
     `Exporting ${rows.toLocaleString()} rows to ${formatLabel} needs about ${size(neededBytes)} ` +
     `of memory, and about ${size(leftBytes)} is left in what VS Code gives its extensions.${suggestion}`

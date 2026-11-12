@@ -17,6 +17,21 @@ import {
 import logger from "../logger.mjs";
 
 /**
+ * Say why an export is refused for memory, suggesting the formats that need much less
+ * @param {string} format - The export format refused
+ * @param {number} rows - Rows to export
+ * @param {number} neededBytes - Heap the export needs
+ * @param {number} leftBytes - Heap left for it
+ * @returns {string} The message
+ */
+function exportRefusal(format, rows, neededBytes, leftBytes) {
+  const { labels, everyOther } = DataExporter.leanerFormats(format);
+  return describeExportRefusal(DataExporter.formatLabel(format), rows, neededBytes, leftBytes, labels, {
+    everyOther,
+  });
+}
+
+/**
  * Say why the read for an export failed
  * A refusal of what the export would build is the export's, with the formats
  * that need less suggested. One of the rows themselves is the read's, with a row
@@ -29,13 +44,7 @@ import logger from "../logger.mjs";
 export function exportReadFailure(result, format, rowsChosen) {
   const refusal = result.refusal;
   if (refusal?.forCaller) {
-    return describeExportRefusal(
-      DataExporter.formatLabel(format),
-      refusal.rows,
-      refusal.neededBytes,
-      refusal.leftBytes,
-      DataExporter.leanFormatLabels()
-    );
+    return exportRefusal(format, refusal.rows, refusal.neededBytes, refusal.leftBytes);
   }
   const why = refusal ? describeReadRefusal(refusal, { offerRows: rowsChosen }) : result.error;
   return `Failed to read QVD for export: ${why}`;
@@ -255,15 +264,7 @@ export function setupMessageHandler(
                 const needed = await exportHeapBytes(cost, rows, columnCount, limit);
                 const booking = tryBookHeap(needed.bytes);
                 if (!booking.release) {
-                  throw new Error(
-                    describeExportRefusal(
-                      DataExporter.formatLabel(format),
-                      needed.rows,
-                      needed.bytes,
-                      booking.leftBytes,
-                      DataExporter.leanFormatLabels()
-                    )
-                  );
+                  throw new Error(exportRefusal(format, needed.rows, needed.bytes, booking.leftBytes));
                 }
                 return booking.release;
               },
