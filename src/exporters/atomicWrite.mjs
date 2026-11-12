@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import { randomUUID } from "crypto";
 import { dirname, join } from "path";
+import { requireChunkRows } from "../memoryGuard.mjs";
 
 /**
  * Write a file so that a failed export leaves an existing file as it was
@@ -32,5 +33,21 @@ export async function writeFileAtomically(filePath, write) {
   } catch (error) {
     await fs.rm(temp, { force: true });
     throw error;
+  }
+}
+
+/**
+ * Write rows' text a chunk of rows at a time, each chunk in the file before the next is made
+ * @param {import("fs").promises.FileHandle} file - The open file
+ * @param {number} count - Rows to write, from the first
+ * @param {number} chunkRows - Rows a chunk, as rowsPerChunk() gives it
+ * @param {(start: number, end: number) => string} render - The text of rows start to end, end excluded
+ * @returns {Promise<void>}
+ * @throws {RangeError} For a chunkRows that isn't a whole number of 1 or more
+ */
+export async function writeChunks(file, count, chunkRows, render) {
+  requireChunkRows(chunkRows);
+  for (let start = 0; start < count; start += chunkRows) {
+    await file.writeFile(render(start, Math.min(start + chunkRows, count)));
   }
 }

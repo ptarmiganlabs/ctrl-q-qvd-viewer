@@ -80,7 +80,7 @@ const BYTES_PER_TEXT_CHAR = 2;
 const SAMPLED_ROWS = 1000;
 
 // Cells an export's pricing looks at between yields to the event loop: a few milliseconds
-const CELLS_PER_YIELD = 1000000;
+export const CELLS_PER_YIELD = 1000000;
 
 // Heap booked by rows callers still hold
 let booked = 0;
@@ -238,6 +238,20 @@ export function heldTextBytes(fields, rows, shares) {
  */
 
 /**
+ * Refuse a chunk size that isn't a whole number of 1 or more, which would never end a
+ * chunk loop or would cut rows in two
+ * @param {number} chunkRows - Rows a chunk
+ * @returns {number} The same rows
+ * @throws {RangeError} For any other value
+ */
+export function requireChunkRows(chunkRows) {
+  if (!Number.isInteger(chunkRows) || chunkRows < 1) {
+    throw new RangeError(`chunkRows must be a whole number of 1 or more, not ${String(chunkRows)}`);
+  }
+  return chunkRows;
+}
+
+/**
  * Rows an export that writes as it goes builds from at a time
  * At most its chunkRows and, where it declares chunkCells, at most that many cells, so
  * that a chunk of a QVD with many fields holds the event loop up no longer than one with
@@ -250,10 +264,7 @@ export function heldTextBytes(fields, rows, shares) {
  */
 export function rowsPerChunk(cost, columnCount, chunkRows) {
   if (chunkRows !== undefined) {
-    if (!Number.isInteger(chunkRows) || chunkRows < 1) {
-      throw new RangeError(`chunkRows must be a whole number of 1 or more, not ${String(chunkRows)}`);
-    }
-    return chunkRows;
+    return requireChunkRows(chunkRows);
   }
   if (!(cost.chunkCells > 0)) {
     return cost.chunkRows;

@@ -306,6 +306,34 @@ suite("Memory Guard Test Suite", () => {
     }
   });
 
+  test("Scanning column types lets the event loop run as it looks at the rows", async () => {
+    const { scanColumnTypes } = await import("../src/exporters/columnTypes.mjs");
+    const rows = Array.from({ length: 300000 }, (_, i) => ({ a: i, b: "x", c: "", d: i % 2 === 0 }));
+    let ran = false;
+    setImmediate(() => {
+      ran = true;
+    });
+    const scanned = scanColumnTypes(rows, ["a", "b", "c", "d"]);
+    assert.strictEqual(ran, false);
+    const types = await scanned;
+    assert.strictEqual(ran, true);
+    assert.strictEqual(types.a.allIntegers, true);
+    assert.strictEqual(types.c.hasString, true);
+    assert.strictEqual(types.d.hasBoolean, true);
+  });
+
+  test("Writing chunks refuses a chunk size that would never end or would cut rows", async () => {
+    const { writeChunks } = await import("../src/exporters/atomicWrite.mjs");
+    const written = [];
+    const file = { writeFile: async (text) => written.push(text) };
+    await writeChunks(file, 5, 2, (start, end) => `${start}-${end}`);
+    assert.deepStrictEqual(written, ["0-2", "2-4", "4-5"]);
+    for (const chunkRows of [0, -1, 2.5, NaN]) {
+      await assert.rejects(writeChunks(file, 5, chunkRows, () => ""), RangeError, String(chunkRows));
+    }
+    assert.strictEqual(written.length, 3);
+  });
+
   test("Pricing an export lets the event loop run as it looks at the rows", async () => {
     const rows = Array.from({ length: 300000 }, (_, i) => ({ a: i, b: "x", c: "y", d: i }));
     let ran = false;

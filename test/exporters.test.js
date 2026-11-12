@@ -1107,6 +1107,104 @@ suite("Exporter Test Suite", () => {
     );
   });
 
+  test("PostgreSQL and Qlik inline exports - a QVD with many fields is written in smaller chunks, the same script", async () => {
+    const fields = Array.from({ length: 300 }, (_, i) => `field${i}`);
+    const rows = Array.from({ length: 1000 }, (_, i) =>
+      Object.fromEntries(fields.map((field, j) => [field, j % 2 ? `${field} ${i}` : i * j]))
+    );
+    for (const [label, exporter, cost] of [
+      ["PostgreSQL", (data, filePath, options) => postgresExporter.exportToPostgres(data, filePath, 0, options ?? {}), postgresExporter.memoryCost],
+      [
+        "Qlik inline",
+        (data, filePath, options) => qlikInlineExporter.exportToQlikInline(data, filePath, 0, "tab", options),
+        qlikInlineExporter.memoryCost,
+      ],
+    ]) {
+      const wide = await exportText(exporter, rows, `wide.${label}`);
+      assert.strictEqual(
+        withoutTimestamp(wide),
+        withoutTimestamp(await exportText(exporter, rows, `wide-one-chunk.${label}`, { chunkRows: rows.length })),
+        label
+      );
+      assert.ok(Math.floor(cost.chunkCells / fields.length) < rows.length, label);
+    }
+  });
+
+  test("CSV, PostgreSQL and Qlik inline exports - a chunk size that isn't a whole number of 1 or more fails before writing", async () => {
+    for (const [label, name, exporter] of [
+      ["CSV", "bad-chunks.csv", (rows, filePath, chunkRows) => csvExporter.exportToCSV(rows, filePath, { chunkRows })],
+      ["PostgreSQL", "bad-chunks.sql", (rows, filePath, chunkRows) => postgresExporter.exportToPostgres(rows, filePath, 0, { chunkRows })],
+      [
+        "Qlik Sense inline script",
+        "bad-chunks.qvs",
+        (rows, filePath, chunkRows) => qlikInlineExporter.exportToQlikInline(rows, filePath, 0, "tab", { chunkRows }),
+      ],
+    ]) {
+      const filePath = path.join(outputDir, name);
+      fs.writeFileSync(filePath, "previous export");
+      for (const chunkRows of [0, -1, 2.5]) {
+        await assert.rejects(
+          exporter(makeRows(5), filePath, chunkRows),
+          new RegExp(`^Error: ${label} export failed: chunkRows must be a whole number of 1 or more`),
+          `${label} ${chunkRows}`
+        );
+      }
+      assert.strictEqual(fs.readFileSync(filePath, "utf8"), "previous export", label);
+    }
+  });
+
+  test("PostgreSQL export - a double quote in a table or column name is doubled", async () => {
+    const filePath = path.join(outputDir, "quoted-names.sql");
+    await postgresExporter.exportToPostgres([{ 'size "XL"': 1 }], filePath, 0, {
+      tableName: 't"; DROP TABLE users; --',
+      dropTable: true,
+    });
+    const text = fs.readFileSync(filePath, "utf8");
+
+    assert.ok(text.includes('DROP TABLE IF EXISTS "t""; DROP TABLE users; --";'));
+    assert.ok(text.includes('CREATE TABLE "t""; DROP TABLE users; --" (\n  "size ""XL""" BIGINT NOT NULL\n);'));
+    assert.ok(text.includes('INSERT INTO "t""; DROP TABLE users; --" ("size ""XL""")'));
+  });
+
+  test("PostgreSQL export - NaN and infinities are written as the quoted text NUMERIC reads", async () => {
+    const filePath = path.join(outputDir, "non-finite.sql");
+    await postgresExporter.exportToPostgres(
+      [{ n: 1.5 }, { n: NaN }, { n: Infinity }, { n: -Infinity }],
+      filePath,
+      0,
+      {}
+    );
+    const text = fs.readFileSync(filePath, "utf8");
+
+    assert.ok(text.includes('  "n" NUMERIC NOT NULL'));
+    assert.ok(text.includes("VALUES\n  (1.5),\n  ('NaN'),\n  ('Infinity'),\n  ('-Infinity');"));
+  });
+
+  test("Qlik inline export - a ] is doubled, and a leading quote or a delimiter in a name is quoted", async () => {
+    const rows = [
+      { 'a\tb': "[draft]", '"q"': '"hi" there', plain: 'say "hi"' },
+      { 'a\tb': "a]b", '"q"': "x", plain: "y" },
+    ];
+    const text = await exportText(
+      (data, filePath) => qlikInlineExporter.exportToQlikInline(data, filePath, 0, "tab"),
+      rows,
+      "brackets.qvs"
+    );
+
+    assert.ok(
+      text.endsWith(
+        [
+          "LOAD * INLINE [",
+          '"a\tb"\t"""q"""\tplain',
+          '[draft]]\t"""hi"" there"\tsay "hi"',
+          "a]]b\tx\ty",
+          "] (Delimiter is '\\t');",
+        ].join("\n")
+      ),
+      text
+    );
+  });
+
   test("SQLite export - rows can be read back", async () => {
     const rows = makeRows(1000);
     const filePath = path.join(outputDir, "rows.db");

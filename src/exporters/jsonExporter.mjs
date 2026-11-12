@@ -1,5 +1,5 @@
 import { rowsPerChunk } from "../memoryGuard.mjs";
-import { writeFileAtomically } from "./atomicWrite.mjs";
+import { writeChunks, writeFileAtomically } from "./atomicWrite.mjs";
 
 // Rows turned into JSON text at a time, so a large export never holds the whole
 // file as one string, which V8 caps at about 537 million characters
@@ -65,15 +65,15 @@ export async function exportToJSON(data, filePath, { chunkRows: rowsOption } = {
         await file.writeFile("]\n}");
         return;
       }
-      for (let start = 0; start < data.length; start += chunkRows) {
+      await writeChunks(file, data.length, chunkRows, (start, end) => {
         // The chunk's rows in a data array of their own, at the depth the file has
         // them, without that array's brackets
-        const rows = JSON.stringify({ data: data.slice(start, start + chunkRows) }, null, 2).slice(
+        const rows = JSON.stringify({ data: data.slice(start, end) }, null, 2).slice(
           CHUNK_HEAD.length,
           -CHUNK_TAIL.length
         );
-        await file.writeFile(start === 0 ? rows : `,${rows}`);
-      }
+        return start === 0 ? rows : `,${rows}`;
+      });
       await file.writeFile("\n  ]\n}");
     });
   } catch (error) {
