@@ -330,6 +330,23 @@ suite("Memory Guard Test Suite", () => {
     assert.strictEqual(types.d.hasBoolean, true);
   });
 
+  test("Scanning column types records each date column's earliest time and whether one has milliseconds", async () => {
+    const { scanColumnTypes } = await import("../src/exporters/columnTypes.mjs");
+    const rows = [
+      { a: new Date(Date.UTC(2016, 2, 1)), b: new Date(Date.UTC(1899, 11, 31)), c: 1 },
+      { a: new Date(Date.UTC(2016, 2, 1, 0, 0, 0, 250)), b: new Date(Date.UTC(2020, 0, 1)), c: 2 },
+    ];
+    const types = await scanColumnTypes(rows, ["a", "b", "c"]);
+    assert.deepStrictEqual(
+      ["a", "b", "c"].map((key) => [types[key].earliestTime, types[key].hasMilliseconds]),
+      [
+        [Date.UTC(2016, 2, 1), true],
+        [Date.UTC(1899, 11, 31), false],
+        [Infinity, false],
+      ]
+    );
+  });
+
   test("Writing chunks refuses a chunk size that would never end or would cut rows", async () => {
     const { writeChunks } = await import("../src/exporters/atomicWrite.mjs");
     const written = [];
