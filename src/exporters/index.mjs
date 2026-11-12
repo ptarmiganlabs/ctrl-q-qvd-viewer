@@ -306,11 +306,10 @@ class DataExporter {
     if (Object.hasOwn(FORMATS, format) && FORMATS[format].cost.writesAsItGoes) {
       return { labels: [], everyOther: false };
     }
-    const others = DataExporter.getExportFormats().filter((entry) => entry.name !== format);
-    const labels = others
-      .filter((entry) => FORMATS[entry.name].cost.writesAsItGoes)
-      .map((entry) => DataExporter.formatLabel(entry.name));
-    return { labels, everyOther: labels.length > 0 && labels.length === others.length };
+    const label = DataExporter.formatLabel(format);
+    const labels = DataExporter.leanFormatLabels().filter((lean) => lean !== label);
+    const others = DataExporter.getExportFormats().length - (Object.hasOwn(FORMATS, format) ? 1 : 0);
+    return { labels, everyOther: labels.length > 0 && labels.length === others };
   }
 
   /**

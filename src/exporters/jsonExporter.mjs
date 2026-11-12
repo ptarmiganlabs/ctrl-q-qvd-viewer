@@ -1,8 +1,13 @@
+import { rowsPerChunk } from "../memoryGuard.mjs";
 import { writeFileAtomically } from "./atomicWrite.mjs";
 
 // Rows turned into JSON text at a time, so a large export never holds the whole
 // file as one string, which V8 caps at about 537 million characters
 export const CHUNK_ROWS = 10000;
+
+// At most as many cells as CHUNK_ROWS rows of chicago_taxi_rides_2016_03.qvd's 20
+// fields, on which a chunk's stall was measured, so a wider QVD has fewer rows a chunk
+export const CHUNK_CELLS = CHUNK_ROWS * 20;
 
 // What JSON.stringify writes around a chunk's rows, given them as an object's data
 const CHUNK_HEAD = '{\n  "data": [';
@@ -23,6 +28,7 @@ export const memoryCost = {
   bytesPerCell: 30,
   bytesPerTextChar: 5,
   chunkRows: CHUNK_ROWS,
+  chunkCells: CHUNK_CELLS,
   writesAsItGoes: true,
 };
 
@@ -34,11 +40,13 @@ export const memoryCost = {
  * @param {Array<Object>} data - Array of row objects
  * @param {string} filePath - Destination file path
  * @param {object} [options]
- * @param {number} [options.chunkRows] - Rows turned into text at a time
+ * @param {number} [options.chunkRows] - Rows turned into text at a time: a whole number
+ *   of 1 or more. By default CHUNK_ROWS, or fewer for a QVD of more than 20 fields
  * @returns {Promise<void>}
  */
-export async function exportToJSON(data, filePath, { chunkRows = CHUNK_ROWS } = {}) {
+export async function exportToJSON(data, filePath, { chunkRows: rowsOption } = {}) {
   try {
+    const chunkRows = rowsPerChunk(memoryCost, data.length > 0 ? Object.keys(data[0]).length : 0, rowsOption);
     const metadata = {
       description: "JSON Data Export",
       createdBy: "Ctrl-Q QVD Viewer for VS Code",
