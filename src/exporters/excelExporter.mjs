@@ -52,34 +52,34 @@ function inlineText(text) {
   return { richText: [{ text }] };
 }
 
-// Whether sheetTaken() has said that it can't wait for the zip
-let warnedNoBackpressure = false;
-
 /**
  * Wait until the zip has taken the sheet's XML written so far
  * ExcelJS hands each 64 KB of a sheet's XML to archiver's PassThrough without waiting
  * for it to be taken, so without this the whole sheet would pile up in memory, outside
  * the heap, before anything reached the file.
  * @param {object} worksheet - The sheet, as WorkbookWriter adds it
- * @param {Promise<never>} failed - Rejects when writing the file fails
- * @returns {Promise<void>} Resolves once the PassThrough is drained
+ * @param {AbortSignal} signal - Aborted, with the error as its reason, when writing
+ *   the file fails
+ * @returns {Promise<boolean>} Resolves once the PassThrough is drained: false if it
+ *   couldn't be found, and the zip was only given a turn of the event loop
  */
-async function sheetTaken(worksheet, failed) {
+async function sheetTaken(worksheet, signal) {
   const entry = worksheet.stream?.pipes?.[0];
   const state = entry?._writableState;
   if (!state) {
-    // ExcelJS's or archiver's insides have changed: give the zip a turn, at least, and
-    // say so once, since the sheet's XML may now pile up outside the heap
-    if (!warnedNoBackpressure) {
-      warnedNoBackpressure = true;
-      console.warn("Excel export: ExcelJS's sheet stream isn't where expected, so a sheet's XML may be held in memory until the zip takes it");
-    }
-    await Promise.race([new Promise((resolve) => setImmediate(resolve)), failed]);
-    return;
+    // ExcelJS's or archiver's insides have changed: give the zip a turn, at least
+    await new Promise((resolve) => setImmediate(resolve));
+    signal.throwIfAborted();
+    return false;
   }
   while (state.needDrain) {
-    await Promise.race([once(entry, "drain"), failed]);
+    try {
+      await once(entry, "drain", { signal });
+    } catch (error) {
+      throw signal.aborted ? signal.reason : error;
+    }
   }
+  return true;
 }
 
 /**
@@ -93,9 +93,10 @@ async function sheetTaken(worksheet, failed) {
  * @param {number} [options.chunkRows] - Rows added at a time
  * @param {number} [options.sheetRows] - Rows in a sheet, its header row included: 2 to
  *   SHEET_ROWS
+ * @param {function(string): void} [options.warn] - Called with a warning for the log
  * @returns {Promise<void>}
  */
-export async function exportToExcel(data, filePath, { chunkRows: rowsOption, sheetRows = SHEET_ROWS } = {}) {
+export async function exportToExcel(data, filePath, { chunkRows: rowsOption, sheetRows = SHEET_ROWS, warn = console.warn } = {}) {
   try {
     const columnNames = data.length > 0 ? Object.keys(data[0]) : [];
     const chunkRows = rowsPerChunk(memoryCost, columnNames.length, rowsOption);
@@ -116,12 +117,14 @@ export async function exportToExcel(data, filePath, { chunkRows: rowsOption, she
       });
       // ExcelJS listens for the file failing only once it finalizes: until then a failed
       // write would leave the export waiting for ever. Every error is listened to, so
-      // that none is left unhandled once the export has given up
-      let fail;
-      const failed = new Promise((_, reject) => (fail = reject));
+      // that none is left unhandled once the export has given up. The first aborts
+      // every wait, which then throws it
+      const failure = new AbortController();
+      const { signal } = failure;
+      const failed = new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
       failed.catch(() => {});
-      stream.on("error", (error) => fail(error));
-      workbook.zip.on("error", (error) => fail(error));
+      stream.on("error", (error) => failure.abort(error));
+      workbook.zip.on("error", (error) => failure.abort(error));
 
       // Add metadata to workbook properties, as the in-memory writer wrote them, the
       // ones it left empty included
@@ -141,34 +144,24 @@ export async function exportToExcel(data, filePath, { chunkRows: rowsOption, she
 
       const columnTypes = await scanColumnTypes(data, columnNames);
 
-      // A column of dates shows them as dates, and one of timestamps with their time, to
-      // the millisecond where one has them. A column with a date Excel can't show is
-      // written as ISO text instead
-      const textDateColumns = new Set();
-      const columns = columnNames.map((key) => {
-        const typeInfo = columnTypes[key];
+      // Each column as ExcelJS takes it, and what its values need. A column of dates
+      // shows them as dates, and one of timestamps with their time, to the millisecond
+      // where one has them. A column with a date Excel can't show is written as ISO text
+      // instead. Blank text in a column of numbers, booleans or dates is an empty cell,
+      // which a formula reads as nothing: as text, =A2+1 would give #VALUE!
+      const columns = [];
+      const cellColumns = [];
+      for (const key of columnNames) {
+        const { hasDate, earliestTime, calendarDates, hasMilliseconds, blanksAreNull } = columnTypes[key];
+        const textDates = hasDate && earliestTime < EXCEL_FIRST_DATE;
         const column = { header: inlineText(key), key: key, width: 15 };
-        if (typeInfo.hasDate) {
-          if (typeInfo.earliestTime < EXCEL_FIRST_DATE) {
-            textDateColumns.add(key);
-          } else if (typeInfo.calendarDates) {
-            column.style = { numFmt: "yyyy-mm-dd" };
-          } else {
-            column.style = { numFmt: typeInfo.hasMilliseconds ? "yyyy-mm-dd hh:mm:ss.000" : "yyyy-mm-dd hh:mm:ss" };
-          }
+        if (hasDate && !textDates) {
+          const numFmt = calendarDates ? "yyyy-mm-dd" : hasMilliseconds ? "yyyy-mm-dd hh:mm:ss.000" : "yyyy-mm-dd hh:mm:ss";
+          column.style = { numFmt };
         }
-        return column;
-      });
-
-      // What each column's values need. Blank text in a column of numbers, booleans or
-      // dates is an empty cell, which a formula reads as nothing: as text, =A2+1 would
-      // give #VALUE!
-      const cellColumns = columnNames.map((key) => ({
-        key,
-        blanksAreNull: columnTypes[key].blanksAreNull,
-        textDates: textDateColumns.has(key),
-        calendarDates: columnTypes[key].calendarDates,
-      }));
+        columns.push(column);
+        cellColumns.push({ key, blanksAreNull, textDates, calendarDates });
+      }
 
       // A row's cells, so that the caller's row stays as it was
       const cellsOf = (row) => {
@@ -185,7 +178,9 @@ export async function exportToExcel(data, filePath, { chunkRows: rowsOption, she
         return cells;
       };
 
-      // Each sheet's rows, below its header row
+      // Each sheet's rows, below its header row. If the zip's stream can't be waited on,
+      // the sheet's XML may pile up outside the heap: the log says so, once
+      let warned = false;
       const sheetDataRows = sheetRows - 1;
       for (let first = 0, sheet = 1; first < data.length; first += sheetDataRows, sheet++) {
         const worksheet = workbook.addWorksheet(sheet === 1 ? "Data" : `Data ${sheet}`);
@@ -207,7 +202,10 @@ export async function exportToExcel(data, filePath, { chunkRows: rowsOption, she
           for (let i = start; i < end; i++) {
             worksheet.addRow(cellsOf(data[i])).commit();
           }
-          await sheetTaken(worksheet, failed);
+          if (!(await sheetTaken(worksheet, signal)) && !warned) {
+            warned = true;
+            warn("Excel export: ExcelJS's sheet stream isn't where expected, so a sheet's XML may be held in memory until the zip takes it");
+          }
         }
         worksheet.commit();
       }

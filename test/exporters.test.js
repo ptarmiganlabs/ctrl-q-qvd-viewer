@@ -1067,11 +1067,43 @@ suite("Exporter Test Suite", () => {
     );
     const wide = path.join(outputDir, "wide.xlsx");
     const oneChunk = path.join(outputDir, "wide-one-chunk.xlsx");
-    await excelExporter.exportToExcel(rows, wide);
+
+    // The rows added in each turn of the event loop: a chunk's rows are added in one
+    // go, and the exporter waits for the zip before the next. This reads ExcelJS's
+    // insides, as the exporter does
+    const WorksheetWriter = require("exceljs/lib/stream/xlsx/worksheet-writer.js");
+    const addRow = WorksheetWriter.prototype.addRow;
+    let turn = 0;
+    let ticking = true;
+    const tick = () => {
+      turn++;
+      if (ticking) {
+        setImmediate(tick);
+      }
+    };
+    setImmediate(tick);
+    const added = [];
+    let lastTurn = -1;
+    WorksheetWriter.prototype.addRow = function (...args) {
+      if (turn !== lastTurn) {
+        added.push(0);
+        lastTurn = turn;
+      }
+      added[added.length - 1]++;
+      return addRow.apply(this, args);
+    };
+    try {
+      await excelExporter.exportToExcel(rows, wide);
+    } finally {
+      WorksheetWriter.prototype.addRow = addRow;
+      ticking = false;
+    }
     await excelExporter.exportToExcel(rows, oneChunk, { chunkRows: rows.length });
 
+    // 40,000 cells a chunk: 133 rows of 300 fields, not 2,000
+    const chunkRows = Math.floor(excelExporter.memoryCost.chunkCells / fields.length);
+    assert.deepStrictEqual(added, [chunkRows, chunkRows, chunkRows, rows.length - 3 * chunkRows]);
     assert.deepStrictEqual(await readExcel(wide), await readExcel(oneChunk));
-    assert.ok(Math.floor(excelExporter.memoryCost.chunkCells / fields.length) < rows.length);
   });
 
   test("Excel export - a chunk or sheet size it can't use fails before writing", async () => {
@@ -1092,6 +1124,47 @@ suite("Exporter Test Suite", () => {
       );
     }
     assert.strictEqual(fs.readFileSync(filePath, "utf8"), "previous export");
+  });
+
+  test("Excel export - a file that fails to be written fails the export, not leaves it waiting", async () => {
+    const filePath = path.join(outputDir, "disk-full.xlsx");
+    fs.writeFileSync(filePath, "previous export");
+    // The temporary file's writes: the first goes through, every one after it fails.
+    // The exporter imports fs as a module, which in VS Code isn't the object require gives
+    const { promises } = await import("fs");
+    const open = promises.open;
+    let writes = 0;
+    promises.open = async function (...args) {
+      const file = await open.apply(this, args);
+      const writeFile = file.writeFile.bind(file);
+      file.writeFile = (...data) => {
+        writes++;
+        return writes > 1 ? Promise.reject(new Error("disk full")) : writeFile(...data);
+      };
+      return file;
+    };
+    // Its own time limit, under the suite's, so that the open file is put back either way
+    let timer;
+    const waiting = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error("The export was still waiting after 10 s")), 10000);
+    });
+    try {
+      await assert.rejects(Promise.race([excelExporter.exportToExcel(makeRows(30000), filePath, { chunkRows: 1000 }), waiting]), (error) => {
+        assert.strictEqual(error.message, "Excel export failed: disk full");
+        return true;
+      });
+    } finally {
+      clearTimeout(timer);
+      promises.open = open;
+    }
+
+    assert.ok(writes > 1, "The file should have been written to again after the first write");
+    assert.strictEqual(fs.readFileSync(filePath, "utf8"), "previous export");
+    assert.deepStrictEqual(
+      fs.readdirSync(outputDir).filter((name) => name.endsWith(".tmp")),
+      [],
+      "The temporary file should be removed"
+    );
   });
 
   test("Excel export - a failed export leaves the file it would replace as it was", async () => {
