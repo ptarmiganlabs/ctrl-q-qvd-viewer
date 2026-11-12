@@ -12,6 +12,8 @@ import { CELLS_PER_YIELD } from "../memoryGuard.mjs";
  * @property {boolean} hasBoolean - Some value is a boolean
  * @property {boolean} hasDate - Some value is a Date
  * @property {boolean} calendarDates - Every Date is a CalendarDate: a date without a time
+ * @property {number} earliestTime - The earliest Date's time in milliseconds, Infinity with none
+ * @property {boolean} hasMilliseconds - Some Date's time isn't a whole second
  * @property {boolean} hasObject - Some value is an object other than a Date
  * @property {boolean} blanksAreNull - The column's blank text is a missing value
  */
@@ -39,6 +41,8 @@ export async function scanColumnTypes(rows, columnNames) {
       hasBoolean: false,
       hasDate: false,
       calendarDates: true,
+      earliestTime: Infinity,
+      hasMilliseconds: false,
       hasObject: false,
       blanksAreNull: false,
     };
@@ -72,6 +76,13 @@ export async function scanColumnTypes(rows, columnNames) {
         typeInfo.hasDate = true;
         if (!(value instanceof CalendarDate)) {
           typeInfo.calendarDates = false;
+        }
+        const time = value.getTime();
+        if (time < typeInfo.earliestTime) {
+          typeInfo.earliestTime = time;
+        }
+        if (time % 1000 !== 0) {
+          typeInfo.hasMilliseconds = true;
         }
       } else if (typeof value === "object") {
         typeInfo.hasObject = true;

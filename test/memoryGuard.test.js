@@ -117,11 +117,13 @@ suite("Memory Guard Test Suite", () => {
     // A read for dates built a Date of 32 bytes and a map entry of up to 43 per distinct value
     assert.ok(guard.DATE_BYTES_PER_VALUE >= (32 + 43) * 1.25);
     assert.ok(guard.HELD_BYTES_PER_DATE >= 32 * 1.5);
-    // Profiling a date field needed 181 bytes per value, an Excel export 730 per cell and 2.3 per character
+    // Profiling a date field needed 181 bytes per value
     assert.ok(PROFILE_BYTES_PER_VALUE >= 181 * 1.5);
+    // An Excel export needed 0.84 per cell in one chunk, and 10.5 per character of the
+    // chunks it writes
     const excel = DataExporter.memoryCost("excel");
-    assert.ok(excel.bytesPerCell >= 730 * 1.5);
-    assert.ok(excel.bytesPerTextChar >= 2.3 * 2);
+    assert.ok(excel.bytesPerCell >= 0.84 * 1.5);
+    assert.ok(excel.bytesPerTextChar >= 10.5 * 2);
     // A CSV export needed 108 per cell with every row in one chunk, and 1.8 per
     // character of the chunk it writes at a time
     const csv = DataExporter.memoryCost("csv");
@@ -161,14 +163,14 @@ suite("Memory Guard Test Suite", () => {
         assert.ok(Number.isInteger(cost.chunkCells) && cost.chunkCells > 0 && cost.chunkRows > 0, name);
       }
     }
-    assert.deepStrictEqual(DataExporter.leanFormatLabels(), ["Avro", "CSV", "JSON", "Parquet", "PostgreSQL", "Qlik Inline Script", "XML", "YAML"]);
+    assert.deepStrictEqual(DataExporter.leanFormatLabels(), ["Avro", "CSV", "Excel", "JSON", "Parquet", "PostgreSQL", "Qlik Inline Script", "XML", "YAML"]);
   });
 
   test("A name that isn't a format has no cost, not a function", () => {
     for (const name of ["constructor", "toString", "__proto__", "hasOwnProperty", "nope", undefined]) {
       assert.strictEqual(DataExporter.memoryCost(name), null);
     }
-    assert.strictEqual(DataExporter.memoryCost("excel").bytesPerCell, 1100);
+    assert.strictEqual(DataExporter.memoryCost("excel").bytesPerTextChar, 21);
   });
 
   test("Booked heap is held until released, once", () => {
@@ -273,7 +275,7 @@ suite("Memory Guard Test Suite", () => {
       bytes: chunk * 2 * csv.bytesPerCell + chunk * 10 * csv.bytesPerTextChar,
     });
     // A format that builds its whole output at once has no chunks
-    assert.strictEqual(DataExporter.memoryCost("excel").chunkRows, undefined);
+    assert.strictEqual(DataExporter.memoryCost("sqlite").chunkRows, undefined);
   });
 
   test("A chunk of a QVD with many fields has fewer rows, and is priced so", async () => {
@@ -320,6 +322,23 @@ suite("Memory Guard Test Suite", () => {
     assert.strictEqual(types.a.allIntegers, true);
     assert.strictEqual(types.c.hasString, true);
     assert.strictEqual(types.d.hasBoolean, true);
+  });
+
+  test("Scanning column types records each date column's earliest time and whether one has milliseconds", async () => {
+    const { scanColumnTypes } = await import("../src/exporters/columnTypes.mjs");
+    const rows = [
+      { a: new Date(Date.UTC(2016, 2, 1)), b: new Date(Date.UTC(1899, 11, 31)), c: 1 },
+      { a: new Date(Date.UTC(2016, 2, 1, 0, 0, 0, 250)), b: new Date(Date.UTC(2020, 0, 1)), c: 2 },
+    ];
+    const types = await scanColumnTypes(rows, ["a", "b", "c"]);
+    assert.deepStrictEqual(
+      ["a", "b", "c"].map((key) => [types[key].earliestTime, types[key].hasMilliseconds]),
+      [
+        [Date.UTC(2016, 2, 1), true],
+        [Date.UTC(1899, 11, 31), false],
+        [Infinity, false],
+      ]
+    );
   });
 
   test("Writing chunks refuses a chunk size that would never end or would cut rows", async () => {

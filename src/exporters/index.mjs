@@ -329,6 +329,8 @@ class DataExporter {
    * @param {function(import('./zonedTimestamps.mjs').TimeShifts): void} [options.report] -
    *   Called once an export that read its timestamps in a time zone is written, with
    *   what reading them in it did
+   * @param {function(string): void} [options.warn] - Called with a warning for the
+   *   extension's log, such as an Excel export that can't wait for its zip
    * @returns {Promise<string|null>} Path to saved file or null if cancelled
    * @throws {Error} For a time zone in the settings that VS Code doesn't know, naming
    *   the setting in its setting property, when the export would use it
@@ -341,7 +343,7 @@ class DataExporter {
     workspaceFolder,
     maxRows,
     fields,
-    { reserve, report } = {}
+    { reserve, report, warn } = {}
   ) {
     const config = Object.hasOwn(FORMATS, format) ? FORMATS[format] : null;
     if (!config) {
@@ -544,6 +546,9 @@ class DataExporter {
         timeShifts = await config.exporter(data, fileUri.fsPath, maxRows, { ...postgresOptions, timeZone });
       } else if (config.zones) {
         timeShifts = await config.exporter(data, fileUri.fsPath, { timeZone });
+      } else if (format === "excel") {
+        // What it works around goes to the extension's log
+        await config.exporter(data, fileUri.fsPath, { warn });
       } else if (format === "csv") {
         // The header row comes from the QVD's fields, so it has every field, in QVD order,
         // even when there are no rows
