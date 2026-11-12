@@ -271,6 +271,7 @@ export function setupMessageHandler(
               report: (shifts) => {
                 timeShifts = shifts;
               },
+              warn: (message) => logger.warn(message),
             }
           );
           // The rows, and the exporter's copy, are done with: later reads may have the heap
