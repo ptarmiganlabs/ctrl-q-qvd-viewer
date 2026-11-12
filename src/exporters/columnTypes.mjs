@@ -1,4 +1,5 @@
 import { CalendarDate, isBlank } from "../cellValue.mjs";
+import { CELLS_PER_YIELD } from "../memoryGuard.mjs";
 
 /**
  * What a column holds, from which a typed exporter picks the column's type
@@ -20,12 +21,13 @@ import { CalendarDate, isBlank } from "../cellValue.mjs";
  *
  * Next to numbers, booleans or dates, blank text is a missing value: the column keeps
  * their type, becomes nullable, and its blanks are to be written as null. In a column
- * of text, or of nothing but blanks, blank text is text like any other.
+ * of text, or of nothing but blanks, blank text is text like any other. Every value
+ * is looked at, so this yields to the event loop as it goes.
  * @param {Array<Object>} rows - Array of row objects
  * @param {Array<string>} columnNames - Columns to scan
- * @returns {Object<string, ColumnType>} Each column's type information
+ * @returns {Promise<Object<string, ColumnType>>} Each column's type information
  */
-export function scanColumnTypes(rows, columnNames) {
+export async function scanColumnTypes(rows, columnNames) {
   const columnTypes = {};
   for (const key of columnNames) {
     columnTypes[key] = {
@@ -42,7 +44,12 @@ export function scanColumnTypes(rows, columnNames) {
     };
   }
 
-  for (const row of rows) {
+  const rowsPerYield = Math.max(1, Math.floor(CELLS_PER_YIELD / Math.max(1, columnNames.length)));
+  for (let i = 0; i < rows.length; i++) {
+    if (i > 0 && i % rowsPerYield === 0) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    const row = rows[i];
     for (const key of columnNames) {
       const value = row[key];
       const typeInfo = columnTypes[key];
