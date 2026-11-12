@@ -1,6 +1,6 @@
 import xmljs from "xml-js";
 import { rowsPerChunk } from "../memoryGuard.mjs";
-import { writeFileAtomically } from "./atomicWrite.mjs";
+import { writeChunks, writeFileAtomically } from "./atomicWrite.mjs";
 
 // Rows turned into XML text at a time, so a large export never holds the whole
 // file as one string
@@ -97,15 +97,12 @@ export async function exportToXML(data, filePath, { chunkRows: rowsOption } = {}
 
     await writeFileAtomically(filePath, async (file) => {
       await file.writeFile(head.slice(0, -DATA_CLOSE.length));
-      for (let start = 0; start < data.length; start += chunkRows) {
+      await writeChunks(file, data.length, chunkRows, (start, end) => {
         // The chunk's records inside a data element of their own, at the depth the
         // file has them, without that element's tags
-        const xml = xmljs.js2xml(
-          { data: { record: data.slice(start, start + chunkRows).map(toRecord) } },
-          XML_OPTIONS
-        );
-        await file.writeFile(xml.slice(DATA_OPEN.length, -DATA_CLOSE.length));
-      }
+        const xml = xmljs.js2xml({ data: { record: data.slice(start, end).map(toRecord) } }, XML_OPTIONS);
+        return xml.slice(DATA_OPEN.length, -DATA_CLOSE.length);
+      });
       await file.writeFile(DATA_CLOSE);
     });
   } catch (error) {

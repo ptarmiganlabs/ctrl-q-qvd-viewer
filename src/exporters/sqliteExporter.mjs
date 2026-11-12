@@ -81,7 +81,7 @@ export async function exportToSQLite(data, filePath, options = {}) {
     const columnNames = Object.keys(firstRow);
 
     // Determine the most compatible type for each column, from all rows
-    const columnTypes = scanColumnTypes(data, columnNames);
+    const columnTypes = await scanColumnTypes(data, columnNames);
 
     // Determine SQLite type for each column based on collected type information
     const columns = columnNames

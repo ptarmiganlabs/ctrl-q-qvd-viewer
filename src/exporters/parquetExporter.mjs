@@ -44,7 +44,7 @@ export async function exportToParquet(data, filePath, options = {}) {
     const columnNames = Object.keys(firstRow);
 
     // Determine the most compatible type for each column, from all rows
-    const columnTypes = scanColumnTypes(data, columnNames);
+    const columnTypes = await scanColumnTypes(data, columnNames);
 
     // Build schema based on collected type information
     const schemaFields = {};

@@ -1,8 +1,13 @@
-import { writeFileAtomically } from "./atomicWrite.mjs";
+import { CELLS_PER_YIELD, rowsPerChunk } from "../memoryGuard.mjs";
+import { writeChunks, writeFileAtomically } from "./atomicWrite.mjs";
 
 // Rows turned into script text at a time, so a large export never holds the whole
 // script as one string
 export const CHUNK_ROWS = 10000;
+
+// At most as many cells as CHUNK_ROWS rows of chicago_taxi_rides_2016_03.qvd's 20
+// fields, on which a chunk's stall was measured, so a wider QVD has fewer rows a chunk
+export const CHUNK_CELLS = CHUNK_ROWS * 20;
 
 /**
  * Heap a Qlik inline script export builds, a chunk of rows at a time, for the memory
@@ -18,6 +23,7 @@ export const memoryCost = {
   bytesPerCell: 14,
   bytesPerTextChar: 11,
   chunkRows: CHUNK_ROWS,
+  chunkCells: CHUNK_CELLS,
   writesAsItGoes: true,
 };
 
@@ -31,11 +37,39 @@ function delimiterPattern(char) {
 }
 
 /**
- * Auto-detect the best delimiter for the data
- * @param {Array<Object>} data - Array of row objects
- * @returns {Object} Delimiter object with char and escapeChar
+ * Times a character appears in a text
+ * @param {string} text - The text
+ * @param {string} char - The character
+ * @returns {number} How many times
  */
-function autoDetectDelimiter(data) {
+function occurrences(text, char) {
+  let count = 0;
+  for (let at = text.indexOf(char); at !== -1; at = text.indexOf(char, at + 1)) {
+    count++;
+  }
+  return count;
+}
+
+/**
+ * A field of the INLINE table as Qlik reads it back
+ * A "]" would end the table, so it is doubled. Text starting with a double quote, or
+ * holding the delimiter, is put in double quotes, with a double quote in it doubled.
+ * @param {string} text - The field's text
+ * @param {string} char - The delimiter
+ * @returns {string} The field
+ */
+function inlineField(text, char) {
+  const field = text.replace(/\]/g, "]]");
+  return field.startsWith('"') || field.includes(char) ? `"${field.replace(/"/g, '""')}"` : field;
+}
+
+/**
+ * Auto-detect the best delimiter for the data
+ * Every value is looked at, so this yields to the event loop as it goes.
+ * @param {Array<Object>} data - Array of row objects
+ * @returns {Promise<Object>} Delimiter object with char and escapeChar
+ */
+async function autoDetectDelimiter(data) {
   const delimiters = [
     { name: "tab", char: "\t", escapeChar: "\\t", priority: 1 },
     { name: "pipe", char: "|", escapeChar: "|", priority: 2 },
@@ -48,17 +82,20 @@ function autoDetectDelimiter(data) {
     ...d,
     count: 0,
   }));
-  const patterns = counts.map((d) => delimiterPattern(d.char));
+  const rowsPerYield = Math.max(1, Math.floor(CELLS_PER_YIELD / Math.max(1, Object.keys(data[0] ?? {}).length)));
 
-  data.forEach((row) => {
-    Object.values(row).forEach((value) => {
+  for (let i = 0; i < data.length; i++) {
+    if (i > 0 && i % rowsPerYield === 0) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    for (const value of Object.values(data[i])) {
       if (typeof value === "string") {
-        counts.forEach((d, i) => {
-          d.count += (value.match(patterns[i]) || []).length;
-        });
+        for (const d of counts) {
+          d.count += occurrences(value, d.char);
+        }
       }
-    });
-  });
+    }
+  }
 
   // Find delimiter with lowest occurrence (best option)
   // If tied, use priority (tab > pipe > semicolon > comma)
@@ -76,9 +113,9 @@ function autoDetectDelimiter(data) {
  * Get delimiter configuration
  * @param {string} delimiterChoice - User's delimiter choice
  * @param {Array<Object>} data - Array of row objects (for auto-detect)
- * @returns {Object} Delimiter object with char and escapeChar
+ * @returns {Promise<Object>} Delimiter object with char and escapeChar
  */
-function getDelimiterConfig(delimiterChoice, data) {
+async function getDelimiterConfig(delimiterChoice, data) {
   const delimiters = {
     tab: { char: "\t", escapeChar: "\\t", description: "Tab" },
     pipe: { char: "|", escapeChar: "|", description: "Pipe (|)" },
@@ -100,7 +137,8 @@ function getDelimiterConfig(delimiterChoice, data) {
  * @param {number} maxRows - Maximum number of rows to include (0 = all)
  * @param {string} delimiter - Delimiter choice ('tab', 'pipe', 'comma', 'semicolon', 'auto-detect')
  * @param {object} [options]
- * @param {number} [options.chunkRows] - Rows turned into text at a time
+ * @param {number} [options.chunkRows] - Rows turned into text at a time: a whole number
+ *   of 1 or more. By default CHUNK_ROWS, or fewer for a QVD of more than 20 fields
  * @returns {Promise<void>}
  */
 export async function exportToQlikInline(
@@ -108,7 +146,7 @@ export async function exportToQlikInline(
   filePath,
   maxRows = 0,
   delimiter = "tab",
-  { chunkRows = CHUNK_ROWS } = {}
+  { chunkRows: rowsOption } = {}
 ) {
   try {
     if (data.length === 0) {
@@ -120,11 +158,12 @@ export async function exportToQlikInline(
     const exportData = maxRows > 0 ? data.slice(0, maxRows) : data;
 
     // Get delimiter configuration
-    const delimiterConfig = getDelimiterConfig(delimiter, exportData);
-    const delimiterInValue = delimiterPattern(delimiterConfig.char);
-
     // Get column names from first row
     const columns = Object.keys(exportData[0]);
+    const chunkRows = rowsPerChunk(memoryCost, columns.length, rowsOption);
+
+    const delimiterConfig = await getDelimiterConfig(delimiter, exportData);
+    const delimiterInValue = delimiterPattern(delimiterConfig.char);
 
     // Build the inline load script
     const lines = [];
@@ -150,7 +189,7 @@ export async function exportToQlikInline(
     lines.push("LOAD * INLINE [");
 
     // Add column headers (with chosen delimiter)
-    lines.push(columns.join(delimiterConfig.char));
+    lines.push(columns.map((col) => inlineField(col, delimiterConfig.char)).join(delimiterConfig.char));
 
     // A row's line, with the chosen delimiter
     const rowLine = (row) =>
@@ -164,7 +203,10 @@ export async function exportToQlikInline(
           } else if (typeof value === "string") {
             // Escape special characters in strings
             // Replace delimiter with space, and remove newlines/carriage returns
-            return value.replace(delimiterInValue, " ").replace(/\n/g, " ").replace(/\r/g, "");
+            return inlineField(
+              value.replace(delimiterInValue, " ").replace(/\n/g, " ").replace(/\r/g, ""),
+              delimiterConfig.char
+            );
           } else if (value instanceof Date) {
             return value.toISOString();
           } else {
@@ -176,14 +218,13 @@ export async function exportToQlikInline(
     // The script so far, then its rows a chunk at a time, a line apart as they are
     await writeFileAtomically(filePath, async (file) => {
       await file.writeFile(lines.join("\n"));
-      for (let start = 0; start < exportData.length; start += chunkRows) {
-        const end = Math.min(start + chunkRows, exportData.length);
+      await writeChunks(file, exportData.length, chunkRows, (start, end) => {
         const rowLines = [];
         for (let i = start; i < end; i++) {
           rowLines.push(rowLine(exportData[i]));
         }
-        await file.writeFile(`\n${rowLines.join("\n")}`);
-      }
+        return `\n${rowLines.join("\n")}`;
+      });
 
       // Close the inline load with proper delimiter syntax
       await file.writeFile(`\n] (Delimiter is '${delimiterConfig.escapeChar}');`);

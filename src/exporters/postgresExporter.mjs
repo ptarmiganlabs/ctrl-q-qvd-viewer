@@ -1,4 +1,5 @@
-import { writeFileAtomically } from "./atomicWrite.mjs";
+import { rowsPerChunk } from "../memoryGuard.mjs";
+import { writeChunks, writeFileAtomically } from "./atomicWrite.mjs";
 import { isMissing, scanColumnTypes } from "./columnTypes.mjs";
 import { naiveDateText } from "./naiveDates.mjs";
 import { offsetText, zonedTimestampsFor } from "./zonedTimestamps.mjs";
@@ -6,6 +7,10 @@ import { offsetText, zonedTimestampsFor } from "./zonedTimestamps.mjs";
 // Rows turned into SQL at a time, so a large export never holds the whole script as
 // one string
 export const CHUNK_ROWS = 10000;
+
+// At most as many cells as CHUNK_ROWS rows of chicago_taxi_rides_2016_03.qvd's 20
+// fields, on which a chunk's stall was measured, so a wider QVD has fewer rows a chunk
+export const CHUNK_CELLS = CHUNK_ROWS * 20;
 
 // Rows in each INSERT statement
 const INSERT_ROWS = 1000;
@@ -25,8 +30,18 @@ export const memoryCost = {
   bytesPerCell: 31,
   bytesPerTextChar: 7,
   chunkRows: CHUNK_ROWS,
+  chunkCells: CHUNK_CELLS,
   writesAsItGoes: true,
 };
+
+/**
+ * A name as a PostgreSQL identifier: in double quotes, with a double quote in it doubled
+ * @param {string} name - A table or column name
+ * @returns {string} The quoted identifier
+ */
+function quoteIdentifier(name) {
+  return `"${String(name).replace(/"/g, '""')}"`;
+}
 
 /**
  * Export data to PostgreSQL SQL format
@@ -39,7 +54,8 @@ export const memoryCost = {
  * @param {boolean} options.dropTable - Whether to include DROP TABLE IF EXISTS
  * @param {string|null} [options.timeZone] - The time zone the timestamps were read in,
  *   to write each as the instant it was; without one they are wall clocks with no time zone
- * @param {number} [options.chunkRows] - Rows turned into SQL at a time
+ * @param {number} [options.chunkRows] - Rows turned into SQL at a time: a whole number
+ *   of 1 or more. By default CHUNK_ROWS, or fewer for a QVD of more than 20 fields
  * @returns {Promise<import('./zonedTimestamps.mjs').TimeShifts|undefined>} With a time
  *   zone and rows, what reading their timestamps in it did
  */
@@ -51,11 +67,13 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
       createTable = true,
       tableName = "qvd_data",
       dropTable = false,
-      chunkRows = CHUNK_ROWS,
+      chunkRows: rowsOption,
     } = options;
 
     // Limit rows if specified
     const exportData = maxRows > 0 ? data.slice(0, maxRows) : data;
+    const columnCount = exportData.length > 0 ? Object.keys(exportData[0]).length : 0;
+    const chunkRows = rowsPerChunk(memoryCost, columnCount, rowsOption);
 
     if (exportData.length === 0) {
       // Create empty SQL file with comment
@@ -69,7 +87,7 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
     const columnNames = Object.keys(firstRow);
 
     // Determine the most compatible type for each column, from all rows
-    const columnTypes = scanColumnTypes(exportData, columnNames);
+    const columnTypes = await scanColumnTypes(exportData, columnNames);
 
     // Build SQL content
     let sqlContent = [];
@@ -106,7 +124,7 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
     // Drop table if requested
     if (dropTable) {
       sqlContent.push(`-- Drop existing table if it exists`);
-      sqlContent.push(`DROP TABLE IF EXISTS "${tableName}";`);
+      sqlContent.push(`DROP TABLE IF EXISTS ${quoteIdentifier(tableName)};`);
       sqlContent.push(``);
     }
 
@@ -142,10 +160,10 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
         // Add NOT NULL constraint if column has no nulls
         const nullConstraint = typeInfo.hasNull ? "" : " NOT NULL";
 
-        return `  "${key}" ${pgType}${nullConstraint}`;
+        return `  ${quoteIdentifier(key)} ${pgType}${nullConstraint}`;
       });
 
-      sqlContent.push(`CREATE TABLE "${tableName}" (`);
+      sqlContent.push(`CREATE TABLE ${quoteIdentifier(tableName)} (`);
       sqlContent.push(columns.join(",\n"));
       sqlContent.push(`);`);
       sqlContent.push(``);
@@ -176,24 +194,26 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
         } else if (typeof value === "string") {
           // String value - escape quotes
           return `'${value.replace(/'/g, "''")}'`;
+        } else if (typeof value === "number" && !Number.isFinite(value)) {
+          // NUMERIC takes these only as quoted text: 'NaN', 'Infinity' and '-Infinity'
+          return `'${value}'`;
         } else {
           // Number or other type
           return value;
         }
       });
-    const columnList = columnNames.map((c) => `"${c}"`).join(", ");
+    const columnList = columnNames.map(quoteIdentifier).join(", ");
 
     // The script so far, then its rows a chunk at a time, a line apart as they are: a
     // multi-row INSERT for every INSERT_ROWS rows, wherever a chunk starts or ends
     await writeFileAtomically(filePath, async (file) => {
       await file.writeFile(sqlContent.join("\n"));
-      for (let start = 0; start < exportData.length; start += chunkRows) {
-        const end = Math.min(start + chunkRows, exportData.length);
+      await writeChunks(file, exportData.length, chunkRows, (start, end) => {
         const lines = [];
         for (let i = start; i < end; i++) {
           if (i % INSERT_ROWS === 0) {
             lines.push(`-- Rows ${i + 1} to ${Math.min(i + INSERT_ROWS, exportData.length)}`);
-            lines.push(`INSERT INTO "${tableName}" (${columnList})`);
+            lines.push(`INSERT INTO ${quoteIdentifier(tableName)} (${columnList})`);
             lines.push(`VALUES`);
           }
           const isLast = i % INSERT_ROWS === INSERT_ROWS - 1 || i === exportData.length - 1;
@@ -202,8 +222,8 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
             lines.push(``);
           }
         }
-        await file.writeFile(`\n${lines.join("\n")}`);
-      }
+        return `\n${lines.join("\n")}`;
+      });
 
       // Commit transaction
       await file.writeFile(`\n${["COMMIT;", "", "-- End of script"].join("\n")}`);
