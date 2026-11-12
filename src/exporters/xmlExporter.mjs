@@ -1,9 +1,14 @@
 import xmljs from "xml-js";
+import { rowsPerChunk } from "../memoryGuard.mjs";
 import { writeFileAtomically } from "./atomicWrite.mjs";
 
 // Rows turned into XML text at a time, so a large export never holds the whole
 // file as one string
 export const CHUNK_ROWS = 2500;
+
+// At most as many cells as CHUNK_ROWS rows of chicago_taxi_rides_2016_03.qvd's 20
+// fields, on which a chunk's stall was measured, so a wider QVD has fewer rows a chunk
+export const CHUNK_CELLS = CHUNK_ROWS * 20;
 
 /**
  * Heap an XML export builds, a chunk of rows at a time, for the memory guard.
@@ -21,6 +26,7 @@ export const memoryCost = {
   bytesPerCell: 140,
   bytesPerTextChar: 21,
   chunkRows: CHUNK_ROWS,
+  chunkCells: CHUNK_CELLS,
   writesAsItGoes: true,
 };
 
@@ -60,11 +66,13 @@ function toRecord(row) {
  * @param {Array<Object>} data - Array of row objects
  * @param {string} filePath - Destination file path
  * @param {object} [options]
- * @param {number} [options.chunkRows] - Rows turned into text at a time
+ * @param {number} [options.chunkRows] - Rows turned into text at a time: a whole number
+ *   of 1 or more. By default CHUNK_ROWS, or fewer for a QVD of more than 20 fields
  * @returns {Promise<void>}
  */
-export async function exportToXML(data, filePath, { chunkRows = CHUNK_ROWS } = {}) {
+export async function exportToXML(data, filePath, { chunkRows: rowsOption } = {}) {
   try {
+    const chunkRows = rowsPerChunk(memoryCost, data.length > 0 ? Object.keys(data[0]).length : 0, rowsOption);
     // The file with no records, up to the data element's closing tag
     const head = xmljs.js2xml(
       {
