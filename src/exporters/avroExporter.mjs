@@ -83,7 +83,7 @@ export async function exportToAvro(data, filePath, options = {}) {
     const columnNames = Object.keys(firstRow);
 
     // Determine the most compatible type for each column, from all rows
-    const columnTypes = scanColumnTypes(data, columnNames);
+    const columnTypes = await scanColumnTypes(data, columnNames);
 
     // Determine Avro type for each field based on collected type information
     const fields = columnNames.map((key) => {

@@ -120,7 +120,7 @@ export async function exportToExcel(data, filePath, { chunkRows = CHUNK_ROWS, sh
 
       // Get column headers from first row
       const columnNames = Object.keys(data[0]);
-      const columnTypes = scanColumnTypes(data, columnNames);
+      const columnTypes = await scanColumnTypes(data, columnNames);
 
       // A column of dates shows them as dates, and one of timestamps with their time, to
       // the millisecond where one has them. A column with a date Excel can't show is

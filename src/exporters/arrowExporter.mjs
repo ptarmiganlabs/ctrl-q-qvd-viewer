@@ -42,7 +42,7 @@ export async function exportToArrow(data, filePath, options = {}) {
     const columnNames = Object.keys(firstRow);
 
     // Determine the most compatible type for each column, from all rows
-    const columnTypes = scanColumnTypes(data, columnNames);
+    const columnTypes = await scanColumnTypes(data, columnNames);
     const isTextColumn = (typeInfo) =>
       typeInfo.hasString || typeInfo.hasObject || (typeInfo.hasNumber && typeInfo.hasBoolean);
 

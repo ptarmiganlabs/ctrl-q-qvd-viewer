@@ -1,5 +1,6 @@
 import Papa from "papaparse";
-import { writeFileAtomically } from "./atomicWrite.mjs";
+import { rowsPerChunk } from "../memoryGuard.mjs";
+import { writeChunks, writeFileAtomically } from "./atomicWrite.mjs";
 
 // Rows turned into CSV text at a time, so a large export never holds the whole
 // file as one string
@@ -75,7 +76,7 @@ function toCell(value, escapeFormulas) {
  * @param {Array<string>} [options.fields] - Column names in order, such as the QVD's fields. Defaults to every row's keys, in the order they first appear
  * @param {boolean} [options.escapeFormulas=true] - Put an apostrophe before text that a spreadsheet would run as a formula
  * @param {boolean} [options.byteOrderMark=false] - Start with a UTF-8 byte order mark, which Excel needs to read non-ASCII text
- * @param {number} [options.chunkRows] - Rows turned into text at a time
+ * @param {number} [options.chunkRows] - Rows turned into text at a time: a whole number of 1 or more
  * @returns {Promise<void>}
  */
 export async function exportToCSV(data, filePath, options = {}) {
@@ -83,7 +84,7 @@ export async function exportToCSV(data, filePath, options = {}) {
     fields = fieldsOf(data),
     escapeFormulas = true,
     byteOrderMark = false,
-    chunkRows = CHUNK_ROWS,
+    chunkRows: rowsOption,
   } = options;
   // A null in a file with one column would make a blank line, which readers skip,
   // so write it as an empty quoted value instead
@@ -92,6 +93,7 @@ export async function exportToCSV(data, filePath, options = {}) {
   const unparse = (lines) => Papa.unparse(lines, { quotes: true, newline: "\n" });
 
   try {
+    const chunkRows = rowsPerChunk(memoryCost, fields.length, rowsOption);
     await writeFileAtomically(filePath, async (file) => {
       if (byteOrderMark) {
         await file.writeFile("\uFEFF");
@@ -100,12 +102,10 @@ export async function exportToCSV(data, filePath, options = {}) {
         return;
       }
       await file.writeFile(unparse([toLine(fields)]));
-      for (let start = 0; start < data.length; start += chunkRows) {
-        const lines = data
-          .slice(start, start + chunkRows)
-          .map((row) => toLine(fields.map((field) => row[field])));
-        await file.writeFile(`\n${unparse(lines)}`);
-      }
+      await writeChunks(file, data.length, chunkRows, (start, end) => {
+        const lines = data.slice(start, end).map((row) => toLine(fields.map((field) => row[field])));
+        return `\n${unparse(lines)}`;
+      });
     });
   } catch (error) {
     throw new Error(`CSV export failed: ${error.message}`, { cause: error });
