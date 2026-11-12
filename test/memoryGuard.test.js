@@ -138,6 +138,14 @@ suite("Memory Guard Test Suite", () => {
     const xml = DataExporter.memoryCost("xml");
     assert.ok(xml.bytesPerCell >= 92 * 1.5);
     assert.ok(xml.bytesPerTextChar >= 10.5 * 2);
+    // PostgreSQL and Qlik inline needed 20 and 9.2 per cell in one chunk, and at most
+    // 3.1 and 5.2 per character of the chunks they write
+    const postgres = DataExporter.memoryCost("postgres");
+    assert.ok(postgres.bytesPerCell >= 20 * 1.5);
+    assert.ok(postgres.bytesPerTextChar >= 3.1 * 2);
+    const qlik = DataExporter.memoryCost("qlik");
+    assert.ok(qlik.bytesPerCell >= 9.2 * 1.5);
+    assert.ok(qlik.bytesPerTextChar >= 5.2 * 2);
   });
 
   test("Every export format's exporter declares what it costs", () => {
@@ -153,7 +161,7 @@ suite("Memory Guard Test Suite", () => {
         assert.ok(Number.isInteger(cost.chunkCells) && cost.chunkCells > 0 && cost.chunkRows > 0, name);
       }
     }
-    assert.deepStrictEqual(DataExporter.leanFormatLabels(), ["Avro", "CSV", "JSON", "Parquet", "XML", "YAML"]);
+    assert.deepStrictEqual(DataExporter.leanFormatLabels(), ["Avro", "CSV", "JSON", "Parquet", "PostgreSQL", "Qlik Inline Script", "XML", "YAML"]);
   });
 
   test("A name that isn't a format has no cost, not a function", () => {
@@ -296,6 +304,34 @@ suite("Memory Guard Test Suite", () => {
     for (const chunkRows of [0, -1, 2.5, NaN, Infinity, "3", null]) {
       assert.throws(() => guard.rowsPerChunk(json, 20, chunkRows), RangeError, String(chunkRows));
     }
+  });
+
+  test("Scanning column types lets the event loop run as it looks at the rows", async () => {
+    const { scanColumnTypes } = await import("../src/exporters/columnTypes.mjs");
+    const rows = Array.from({ length: 300000 }, (_, i) => ({ a: i, b: "x", c: "", d: i % 2 === 0 }));
+    let ran = false;
+    setImmediate(() => {
+      ran = true;
+    });
+    const scanned = scanColumnTypes(rows, ["a", "b", "c", "d"]);
+    assert.strictEqual(ran, false);
+    const types = await scanned;
+    assert.strictEqual(ran, true);
+    assert.strictEqual(types.a.allIntegers, true);
+    assert.strictEqual(types.c.hasString, true);
+    assert.strictEqual(types.d.hasBoolean, true);
+  });
+
+  test("Writing chunks refuses a chunk size that would never end or would cut rows", async () => {
+    const { writeChunks } = await import("../src/exporters/atomicWrite.mjs");
+    const written = [];
+    const file = { writeFile: async (text) => written.push(text) };
+    await writeChunks(file, 5, 2, (start, end) => `${start}-${end}`);
+    assert.deepStrictEqual(written, ["0-2", "2-4", "4-5"]);
+    for (const chunkRows of [0, -1, 2.5, NaN]) {
+      await assert.rejects(writeChunks(file, 5, chunkRows, () => ""), RangeError, String(chunkRows));
+    }
+    assert.strictEqual(written.length, 3);
   });
 
   test("Pricing an export lets the event loop run as it looks at the rows", async () => {

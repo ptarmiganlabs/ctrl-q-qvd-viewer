@@ -23,6 +23,7 @@ let excelExporter;
 let jsonExporter;
 let parquetExporter;
 let postgresExporter;
+let qlikInlineExporter;
 let sqliteExporter;
 let xmlExporter;
 let yamlExporter;
@@ -445,6 +446,7 @@ suite("Exporter Test Suite", () => {
     jsonExporter = await import("../src/exporters/jsonExporter.mjs");
     parquetExporter = await import("../src/exporters/parquetExporter.mjs");
     postgresExporter = await import("../src/exporters/postgresExporter.mjs");
+    qlikInlineExporter = await import("../src/exporters/qlikInlineExporter.mjs");
     sqliteExporter = await import("../src/exporters/sqliteExporter.mjs");
     xmlExporter = await import("../src/exporters/xmlExporter.mjs");
     yamlExporter = await import("../src/exporters/yamlExporter.mjs");
@@ -947,6 +949,260 @@ suite("Exporter Test Suite", () => {
       "  (1, 9007199254740992),",
       "  (2, 10000000000000000000);",
     ]);
+  });
+
+  test("PostgreSQL export - the script is as it was when written in one piece", async () => {
+    const text = await exportText(
+      (rows, filePath) => postgresExporter.exportToPostgres(rows, filePath, 0, {}),
+      makeAwkwardRows(),
+      "awkward.sql"
+    );
+
+    // Written out by hand: every line, the empty ones and the INSERT's last ";" included
+    assert.strictEqual(
+      withoutTimestamp(text),
+      [
+        "-- PostgreSQL Data Import Script",
+        "-- Created by: Ctrl-Q QVD Viewer for VS Code",
+        "-- VS Code Extension: https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer",
+        "-- GitHub: https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer",
+        "-- Generated: -",
+        "-- Table: qvd_data",
+        "-- Rows: 2",
+        "",
+        "BEGIN;",
+        "",
+        "-- Create table",
+        'CREATE TABLE "qvd_data" (',
+        '  "Order Date" TIMESTAMP NOT NULL,',
+        '  "%CustomerKey" TEXT NOT NULL,',
+        '  "Amount" NUMERIC NOT NULL,',
+        '  "Active" BOOLEAN NOT NULL,',
+        '  "Note" TEXT',
+        ");",
+        "",
+        "-- Insert data",
+        "-- Rows 1 to 2",
+        'INSERT INTO "qvd_data" ("Order Date", "%CustomerKey", "Amount", "Active", "Note")',
+        "VALUES",
+        `  ('2024-01-02 00:00:00', 'Å, "quoted"`,
+        "value', 12.5, TRUE, NULL),",
+        "  ('2024-01-03 00:00:00', 'Ölstuga', -3, FALSE, 'x');",
+        "",
+        "COMMIT;",
+        "",
+        "-- End of script",
+      ].join("\n")
+    );
+  });
+
+  test("PostgreSQL export - writing in chunks gives the same script as in one go", async () => {
+    // Every two minutes from midnight on the day Chicago's clocks went forward, so that
+    // chunks end inside INSERT statements of 1,000 rows, and some times were skipped
+    const rows = Array.from({ length: 2500 }, (_, i) => ({
+      id: i,
+      name: i % 3 === 0 ? "O'Brien" : `Item ${i}`,
+      at: new Date(Date.UTC(2016, 2, 13) + i * 120000),
+      note: i % 5 === 0 ? null : "x",
+    }));
+    for (const options of [{}, { timeZone: "America/Chicago" }]) {
+      const exported = async (name, chunkRows) => {
+        const filePath = path.join(outputDir, name);
+        const shifts = await postgresExporter.exportToPostgres(rows, filePath, 0, { ...options, chunkRows });
+        return { text: withoutTimestamp(fs.readFileSync(filePath, "utf8")), shifts };
+      };
+      const chunks = await exported("chunks.sql", 300);
+
+      assert.deepStrictEqual(chunks, await exported("one-chunk.sql", rows.length));
+      assert.strictEqual(chunks.text.split("\nINSERT INTO").length - 1, 3);
+    }
+    // The times the clocks skipped, from 02:00 to 02:58, are each counted once
+    const shifts = await postgresExporter.exportToPostgres(rows, path.join(outputDir, "zoned.sql"), 0, {
+      timeZone: "America/Chicago",
+      chunkRows: 7,
+    });
+    assert.strictEqual(shifts.moved, 30);
+  });
+
+  test("Qlik inline export - the script is as it was when written in one piece", async () => {
+    const text = await exportText(
+      (rows, filePath) => qlikInlineExporter.exportToQlikInline(rows, filePath, 0, "tab"),
+      makeAwkwardRows(),
+      "awkward.qvs"
+    );
+
+    // Written out by hand: a line break or the delimiter in a value is a space
+    assert.strictEqual(
+      withoutTimestamp(text),
+      [
+        "// Qlik Sense Inline Load Script",
+        "// Created by: Ctrl-Q QVD Viewer for VS Code",
+        "// VS Code Extension: https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer",
+        "// GitHub: https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer",
+        "// Generated: -",
+        "// Rows: 2",
+        "// Delimiter: Tab",
+        "",
+        "DataTable:",
+        "LOAD * INLINE [",
+        "Order Date\t%CustomerKey\tAmount\tActive\tNote",
+        '2024-01-02T00:00:00.000Z\tÅ, "quoted" value\t12.5\ttrue\t',
+        "2024-01-03T00:00:00.000Z\tÖlstuga\t-3\tfalse\tx",
+        "] (Delimiter is '\\t');",
+      ].join("\n")
+    );
+  });
+
+  test("Qlik inline export - writing in chunks gives the same script as in one go", async () => {
+    const rows = [...makeRows(25), ...makeAwkwardRows()];
+    for (const [maxRows, delimiter] of [
+      [0, "tab"],
+      [10, "pipe"],
+      [0, "auto-detect"],
+    ]) {
+      const exported = async (name, chunkRows) =>
+        withoutTimestamp(
+          await exportText(
+            (data, filePath) => qlikInlineExporter.exportToQlikInline(data, filePath, maxRows, delimiter, { chunkRows }),
+            rows,
+            name
+          )
+        );
+
+      assert.strictEqual(await exported("chunks.qvs", 4), await exported("one-chunk.qvs", rows.length), delimiter);
+    }
+  });
+
+  test("PostgreSQL and Qlik inline exports - a failed export leaves the file it would replace as it was", async () => {
+    // A row that can't be read, in the second chunk: the first is written before it fails
+    const failing = Object.defineProperty({}, "a", {
+      enumerable: true,
+      get() {
+        throw new Error("value can't be read");
+      },
+    });
+    for (const [label, name, exporter] of [
+      ["PostgreSQL", "keep.sql", (rows, filePath) => postgresExporter.exportToPostgres(rows, filePath, 0, { chunkRows: 1 })],
+      [
+        "Qlik Sense inline script",
+        "keep.qvs",
+        (rows, filePath) => qlikInlineExporter.exportToQlikInline(rows, filePath, 0, "tab", { chunkRows: 1 }),
+      ],
+    ]) {
+      const filePath = path.join(outputDir, name);
+      fs.writeFileSync(filePath, "previous export");
+
+      await assert.rejects(exporter([{ a: 1 }, failing], filePath), (error) => {
+        assert.strictEqual(error.message, `${label} export failed: value can't be read`);
+        assert.strictEqual(error.cause.message, "value can't be read");
+        return true;
+      });
+
+      assert.strictEqual(fs.readFileSync(filePath, "utf8"), "previous export", label);
+    }
+    assert.deepStrictEqual(
+      fs.readdirSync(outputDir).filter((name) => name.endsWith(".tmp")),
+      [],
+      "The temporary files should be removed"
+    );
+  });
+
+  test("PostgreSQL and Qlik inline exports - a QVD with many fields is written in smaller chunks, the same script", async () => {
+    const fields = Array.from({ length: 300 }, (_, i) => `field${i}`);
+    const rows = Array.from({ length: 1000 }, (_, i) =>
+      Object.fromEntries(fields.map((field, j) => [field, j % 2 ? `${field} ${i}` : i * j]))
+    );
+    for (const [label, exporter, cost] of [
+      ["PostgreSQL", (data, filePath, options) => postgresExporter.exportToPostgres(data, filePath, 0, options ?? {}), postgresExporter.memoryCost],
+      [
+        "Qlik inline",
+        (data, filePath, options) => qlikInlineExporter.exportToQlikInline(data, filePath, 0, "tab", options),
+        qlikInlineExporter.memoryCost,
+      ],
+    ]) {
+      const wide = await exportText(exporter, rows, `wide.${label}`);
+      assert.strictEqual(
+        withoutTimestamp(wide),
+        withoutTimestamp(await exportText(exporter, rows, `wide-one-chunk.${label}`, { chunkRows: rows.length })),
+        label
+      );
+      assert.ok(Math.floor(cost.chunkCells / fields.length) < rows.length, label);
+    }
+  });
+
+  test("CSV, PostgreSQL and Qlik inline exports - a chunk size that isn't a whole number of 1 or more fails before writing", async () => {
+    for (const [label, name, exporter] of [
+      ["CSV", "bad-chunks.csv", (rows, filePath, chunkRows) => csvExporter.exportToCSV(rows, filePath, { chunkRows })],
+      ["PostgreSQL", "bad-chunks.sql", (rows, filePath, chunkRows) => postgresExporter.exportToPostgres(rows, filePath, 0, { chunkRows })],
+      [
+        "Qlik Sense inline script",
+        "bad-chunks.qvs",
+        (rows, filePath, chunkRows) => qlikInlineExporter.exportToQlikInline(rows, filePath, 0, "tab", { chunkRows }),
+      ],
+    ]) {
+      const filePath = path.join(outputDir, name);
+      fs.writeFileSync(filePath, "previous export");
+      for (const chunkRows of [0, -1, 2.5]) {
+        await assert.rejects(
+          exporter(makeRows(5), filePath, chunkRows),
+          new RegExp(`^Error: ${label} export failed: chunkRows must be a whole number of 1 or more`),
+          `${label} ${chunkRows}`
+        );
+      }
+      assert.strictEqual(fs.readFileSync(filePath, "utf8"), "previous export", label);
+    }
+  });
+
+  test("PostgreSQL export - a double quote in a table or column name is doubled", async () => {
+    const filePath = path.join(outputDir, "quoted-names.sql");
+    await postgresExporter.exportToPostgres([{ 'size "XL"': 1 }], filePath, 0, {
+      tableName: 't"; DROP TABLE users; --',
+      dropTable: true,
+    });
+    const text = fs.readFileSync(filePath, "utf8");
+
+    assert.ok(text.includes('DROP TABLE IF EXISTS "t""; DROP TABLE users; --";'));
+    assert.ok(text.includes('CREATE TABLE "t""; DROP TABLE users; --" (\n  "size ""XL""" BIGINT NOT NULL\n);'));
+    assert.ok(text.includes('INSERT INTO "t""; DROP TABLE users; --" ("size ""XL""")'));
+  });
+
+  test("PostgreSQL export - NaN and infinities are written as the quoted text NUMERIC reads", async () => {
+    const filePath = path.join(outputDir, "non-finite.sql");
+    await postgresExporter.exportToPostgres(
+      [{ n: 1.5 }, { n: NaN }, { n: Infinity }, { n: -Infinity }],
+      filePath,
+      0,
+      {}
+    );
+    const text = fs.readFileSync(filePath, "utf8");
+
+    assert.ok(text.includes('  "n" NUMERIC NOT NULL'));
+    assert.ok(text.includes("VALUES\n  (1.5),\n  ('NaN'),\n  ('Infinity'),\n  ('-Infinity');"));
+  });
+
+  test("Qlik inline export - a ] is doubled, and a leading quote or a delimiter in a name is quoted", async () => {
+    const rows = [
+      { 'a\tb': "[draft]", '"q"': '"hi" there', plain: 'say "hi"' },
+      { 'a\tb': "a]b", '"q"': "x", plain: "y" },
+    ];
+    const text = await exportText(
+      (data, filePath) => qlikInlineExporter.exportToQlikInline(data, filePath, 0, "tab"),
+      rows,
+      "brackets.qvs"
+    );
+
+    assert.ok(
+      text.endsWith(
+        [
+          "LOAD * INLINE [",
+          '"a\tb"\t"""q"""\tplain',
+          '[draft]]\t"""hi"" there"\tsay "hi"',
+          "a]]b\tx\ty",
+          "] (Delimiter is '\\t');",
+        ].join("\n")
+      ),
+      text
+    );
   });
 
   test("SQLite export - rows can be read back", async () => {

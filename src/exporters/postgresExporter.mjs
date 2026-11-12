@@ -1,17 +1,47 @@
-import { existsSync, unlinkSync, writeFileSync } from "fs";
+import { rowsPerChunk } from "../memoryGuard.mjs";
+import { writeChunks, writeFileAtomically } from "./atomicWrite.mjs";
 import { isMissing, scanColumnTypes } from "./columnTypes.mjs";
 import { naiveDateText } from "./naiveDates.mjs";
 import { offsetText, zonedTimestampsFor } from "./zonedTimestamps.mjs";
 
+// Rows turned into SQL at a time, so a large export never holds the whole script as
+// one string
+export const CHUNK_ROWS = 10000;
+
+// At most as many cells as CHUNK_ROWS rows of chicago_taxi_rides_2016_03.qvd's 20
+// fields, on which a chunk's stall was measured, so a wider QVD has fewer rows a chunk
+export const CHUNK_CELLS = CHUNK_ROWS * 20;
+
+// Rows in each INSERT statement
+const INSERT_ROWS = 1000;
+
 /**
- * Heap a PostgreSQL export builds from the rows, for the memory guard. It
- * needed 13 bytes per cell and 0.9 per character of text. Measured by the
- * smallest heap that let 200,000 or 1,000,000 rows of
- * chicago_taxi_rides_2016_03.qvd export, against reading them alone, and 50,000
- * rows of four unique 400-character values for the cost per character. See
- * DataExporter.memoryCost() for the margins.
+ * Heap a PostgreSQL export builds, a chunk of rows at a time, for the memory guard.
+ * With every row in one chunk it needed 20 bytes per cell, and in its own chunks up
+ * to 3.1 per character of a chunk's text: three runs needed 2.6 to 3.1. Only its
+ * largest chunk is priced. Measured by the smallest heap that let 1,000,000 rows of
+ * chicago_taxi_rides_2016_03.qvd export in one chunk, against reading them alone,
+ * and 50,000 rows of four unique 400-character values for the cost per character.
+ * All of the million rows, in its own chunks, needed 8 MiB beyond reading them,
+ * with timestamps read in America/Chicago too. See DataExporter.memoryCost() for
+ * the margins.
  */
-export const memoryCost = { bytesPerCell: 24, bytesPerTextChar: 2 };
+export const memoryCost = {
+  bytesPerCell: 31,
+  bytesPerTextChar: 7,
+  chunkRows: CHUNK_ROWS,
+  chunkCells: CHUNK_CELLS,
+  writesAsItGoes: true,
+};
+
+/**
+ * A name as a PostgreSQL identifier: in double quotes, with a double quote in it doubled
+ * @param {string} name - A table or column name
+ * @returns {string} The quoted identifier
+ */
+function quoteIdentifier(name) {
+  return `"${String(name).replace(/"/g, '""')}"`;
+}
 
 /**
  * Export data to PostgreSQL SQL format
@@ -24,6 +54,8 @@ export const memoryCost = { bytesPerCell: 24, bytesPerTextChar: 2 };
  * @param {boolean} options.dropTable - Whether to include DROP TABLE IF EXISTS
  * @param {string|null} [options.timeZone] - The time zone the timestamps were read in,
  *   to write each as the instant it was; without one they are wall clocks with no time zone
+ * @param {number} [options.chunkRows] - Rows turned into SQL at a time: a whole number
+ *   of 1 or more. By default CHUNK_ROWS, or fewer for a QVD of more than 20 fields
  * @returns {Promise<import('./zonedTimestamps.mjs').TimeShifts|undefined>} With a time
  *   zone and rows, what reading their timestamps in it did
  */
@@ -35,15 +67,18 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
       createTable = true,
       tableName = "qvd_data",
       dropTable = false,
+      chunkRows: rowsOption,
     } = options;
 
     // Limit rows if specified
     const exportData = maxRows > 0 ? data.slice(0, maxRows) : data;
+    const columnCount = exportData.length > 0 ? Object.keys(exportData[0]).length : 0;
+    const chunkRows = rowsPerChunk(memoryCost, columnCount, rowsOption);
 
     if (exportData.length === 0) {
       // Create empty SQL file with comment
       const content = `-- Empty dataset\n-- No data to export\n`;
-      writeFileSync(filePath, content, "utf8");
+      await writeFileAtomically(filePath, (file) => file.writeFile(content));
       return;
     }
 
@@ -52,7 +87,7 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
     const columnNames = Object.keys(firstRow);
 
     // Determine the most compatible type for each column, from all rows
-    const columnTypes = scanColumnTypes(exportData, columnNames);
+    const columnTypes = await scanColumnTypes(exportData, columnNames);
 
     // Build SQL content
     let sqlContent = [];
@@ -89,7 +124,7 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
     // Drop table if requested
     if (dropTable) {
       sqlContent.push(`-- Drop existing table if it exists`);
-      sqlContent.push(`DROP TABLE IF EXISTS "${tableName}";`);
+      sqlContent.push(`DROP TABLE IF EXISTS ${quoteIdentifier(tableName)};`);
       sqlContent.push(``);
     }
 
@@ -125,10 +160,10 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
         // Add NOT NULL constraint if column has no nulls
         const nullConstraint = typeInfo.hasNull ? "" : " NOT NULL";
 
-        return `  "${key}" ${pgType}${nullConstraint}`;
+        return `  ${quoteIdentifier(key)} ${pgType}${nullConstraint}`;
       });
 
-      sqlContent.push(`CREATE TABLE "${tableName}" (`);
+      sqlContent.push(`CREATE TABLE ${quoteIdentifier(tableName)} (`);
       sqlContent.push(columns.join(",\n"));
       sqlContent.push(`);`);
       sqlContent.push(``);
@@ -136,79 +171,65 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
 
     // Insert data in batches
     sqlContent.push(`-- Insert data`);
-    const batchSize = 1000;
-    let currentBatch = 0;
 
-    while (currentBatch < exportData.length) {
-      const batch = exportData.slice(currentBatch, currentBatch + batchSize);
-      const batchEnd = Math.min(currentBatch + batchSize, exportData.length);
+    // Each row's values, formatted based on type
+    const valuesOf = (row) =>
+      columnNames.map((col) => {
+        const value = row[col];
+        const typeInfo = columnTypes[col];
 
-      if (batch.length > 0) {
-        sqlContent.push(`-- Rows ${currentBatch + 1} to ${batchEnd}`);
-
-        // Build multi-row INSERT statement
-        const columnList = columnNames.map((c) => `"${c}"`).join(", ");
-        sqlContent.push(`INSERT INTO "${tableName}" (${columnList})`);
-        sqlContent.push(`VALUES`);
-
-        const valueRows = batch.map((row, index) => {
-          const values = columnNames.map((col) => {
-            const value = row[col];
-            const typeInfo = columnTypes[col];
-
-            // Format value based on type
-            if (isMissing(value, typeInfo)) {
-              return "NULL";
-            } else if (value instanceof Date) {
-              if (zoned && !typeInfo.calendarDates) {
-                return `'${offsetText(value, zoned, col)}'`;
-              }
-              return `'${naiveDateText(value, typeInfo.calendarDates)}'`;
-            } else if (typeInfo.hasString) {
-              // Escape single quotes for SQL
-              return `'${String(value).replace(/'/g, "''")}'`;
-            } else if (typeof value === "boolean") {
-              return value ? "TRUE" : "FALSE";
-            } else if (typeof value === "string") {
-              // String value - escape quotes
-              return `'${value.replace(/'/g, "''")}'`;
-            } else {
-              // Number or other type
-              return value;
-            }
-          });
-
-          const isLast = index === batch.length - 1;
-          return `  (${values.join(", ")})${isLast ? ";" : ","}`;
-        });
-
-        for (const valueRow of valueRows) {
-          sqlContent.push(valueRow);
+        // Format value based on type
+        if (isMissing(value, typeInfo)) {
+          return "NULL";
+        } else if (value instanceof Date) {
+          if (zoned && !typeInfo.calendarDates) {
+            return `'${offsetText(value, zoned, col)}'`;
+          }
+          return `'${naiveDateText(value, typeInfo.calendarDates)}'`;
+        } else if (typeInfo.hasString) {
+          // Escape single quotes for SQL
+          return `'${String(value).replace(/'/g, "''")}'`;
+        } else if (typeof value === "boolean") {
+          return value ? "TRUE" : "FALSE";
+        } else if (typeof value === "string") {
+          // String value - escape quotes
+          return `'${value.replace(/'/g, "''")}'`;
+        } else if (typeof value === "number" && !Number.isFinite(value)) {
+          // NUMERIC takes these only as quoted text: 'NaN', 'Infinity' and '-Infinity'
+          return `'${value}'`;
+        } else {
+          // Number or other type
+          return value;
         }
-        sqlContent.push(``);
-      }
+      });
+    const columnList = columnNames.map(quoteIdentifier).join(", ");
 
-      currentBatch += batchSize;
-    }
+    // The script so far, then its rows a chunk at a time, a line apart as they are: a
+    // multi-row INSERT for every INSERT_ROWS rows, wherever a chunk starts or ends
+    await writeFileAtomically(filePath, async (file) => {
+      await file.writeFile(sqlContent.join("\n"));
+      await writeChunks(file, exportData.length, chunkRows, (start, end) => {
+        const lines = [];
+        for (let i = start; i < end; i++) {
+          if (i % INSERT_ROWS === 0) {
+            lines.push(`-- Rows ${i + 1} to ${Math.min(i + INSERT_ROWS, exportData.length)}`);
+            lines.push(`INSERT INTO ${quoteIdentifier(tableName)} (${columnList})`);
+            lines.push(`VALUES`);
+          }
+          const isLast = i % INSERT_ROWS === INSERT_ROWS - 1 || i === exportData.length - 1;
+          lines.push(`  (${valuesOf(exportData[i]).join(", ")})${isLast ? ";" : ","}`);
+          if (isLast) {
+            lines.push(``);
+          }
+        }
+        return `\n${lines.join("\n")}`;
+      });
 
-    // Commit transaction
-    sqlContent.push(`COMMIT;`);
-    sqlContent.push(``);
-    sqlContent.push(`-- End of script`);
-
-    // Write to file
-    writeFileSync(filePath, sqlContent.join("\n"), "utf8");
+      // Commit transaction
+      await file.writeFile(`\n${["COMMIT;", "", "-- End of script"].join("\n")}`);
+    });
     return zoned?.summary();
   } catch (error) {
-    // Clean up the partially created file on error
-    try {
-      if (existsSync(filePath)) {
-        unlinkSync(filePath);
-      }
-    } catch {
-      // Ignore cleanup errors, throw original error
-    }
-
-    throw new Error(`PostgreSQL export failed: ${error.message}`);
+    throw new Error(`PostgreSQL export failed: ${error.message}`, { cause: error });
   }
 }

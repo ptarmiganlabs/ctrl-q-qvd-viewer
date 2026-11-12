@@ -1,6 +1,6 @@
 import * as yaml from "js-yaml";
 import { rowsPerChunk } from "../memoryGuard.mjs";
-import { writeFileAtomically } from "./atomicWrite.mjs";
+import { writeChunks, writeFileAtomically } from "./atomicWrite.mjs";
 
 // Rows turned into YAML text at a time, so a large export never holds the whole
 // file as one string
@@ -96,16 +96,15 @@ export async function exportToYAML(data, filePath, { chunkRows: rowsOption } = {
         await file.writeFile(yaml.dump(data, DUMP_OPTIONS));
         return;
       }
-      for (let start = 0; start < data.length; start += chunkRows) {
-        let text = yaml.dump(data.slice(start, start + chunkRows), DUMP_OPTIONS);
+      await writeChunks(file, data.length, chunkRows, (start, end) => {
+        const text = yaml.dump(data.slice(start, end), DUMP_OPTIONS);
         // Within the file the next chunk's rows follow, so the document doesn't end here.
         // In a list of rows every line starts with "- " or spaces, so only the end marker
         // is "..." alone at a line's start
-        if (start + chunkRows < data.length && text.endsWith(`\n${DOCUMENT_END}`)) {
-          text = text.slice(0, -DOCUMENT_END.length);
-        }
-        await file.writeFile(text);
-      }
+        return end < data.length && text.endsWith(`\n${DOCUMENT_END}`)
+          ? text.slice(0, -DOCUMENT_END.length)
+          : text;
+      });
     });
   } catch (error) {
     throw new Error(`YAML export failed: ${error.message}`, { cause: error });
