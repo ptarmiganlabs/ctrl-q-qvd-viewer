@@ -88,6 +88,8 @@ function viewKey(search, sort) {
  * @param {number} options.totalRows - Rows in the file
  * @param {number} options.pageSize - Rows a page shows to begin with
  * @param {Array<number>} options.pageSizes - The page sizes offered
+ * @param {string|null} [options.headerKey] - The version of the file the page shows,
+ *   sent with each request, so that the extension notices a file rewritten since
  * @param {{postMessage: function(object): void}} options.vscode - The page's VS Code API
  * @param {function} [options.Tabulator] - Tabulator, for tests to replace
  * @param {function(Event, object): void} [options.onCellContext] - Called on a cell's context menu
@@ -107,6 +109,7 @@ function createDataGrid(options) {
     totalRows,
     pageSize,
     pageSizes,
+    headerKey = null,
     vscode,
     onCellContext,
     progressDelayMs = 250,
@@ -307,6 +310,7 @@ function createDataGrid(options) {
         limit: size,
         search: search,
         sort: sort,
+        headerKey: headerKey,
       });
     });
   }

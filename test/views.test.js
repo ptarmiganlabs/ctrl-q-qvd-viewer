@@ -306,7 +306,8 @@ suite("Whole-File Search and Sort Test Suite", () => {
   });
 
   test("A search or sort that doesn't fit in the memory left is refused, and says what it needed", async () => {
-    const QvdReader = (await import("../src/qvdReader.mjs")).default;
+    const QvdReaderModule = await import("../src/qvdReader.mjs");
+    const QvdReader = QvdReaderModule.default;
     // qvdjs's budget is known once a read has asked for it
     (await new QvdReader().read(file, 1)).release();
     const pager = await openPager(inventoryParts);
@@ -317,6 +318,8 @@ suite("Whole-File Search and Sort Test Suite", () => {
         assert.strictEqual(error.context.reason, "memory");
         assert.match(error.message, /^Sorting all 580,251 rows by part_num needs about .+ of memory, and about .+ is left/);
         assert.strictEqual(guard.memoryRefusalOf(error).forCaller, true);
+        // The grid is told what was asked, not what a read of the rows would need
+        assert.strictEqual(QvdReaderModule.failedRead(error).error, error.message);
         return true;
       });
     } finally {

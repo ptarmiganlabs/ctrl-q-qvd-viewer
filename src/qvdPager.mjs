@@ -2,7 +2,7 @@ import { QvdDataFrame } from "qvdjs";
 import { realpath } from "fs/promises";
 import { dirname } from "path";
 import { toCellValue } from "./cellValue.mjs";
-import { budgetFor, fileVersion, headerOf, readLanes } from "./qvdReader.mjs";
+import { budgetFor, fileVersion, headerOf, readLanes, requireCount } from "./qvdReader.mjs";
 import { bookHeap, bookedBytes, describePageRefusal, describeViewRefusal, tryBookHeap } from "./memoryGuard.mjs";
 import { SCAN_PEAK_BYTES } from "./columnScan.mjs";
 import { searchHeapBytes, searchRows } from "./viewSearch.mjs";
@@ -32,6 +32,12 @@ export const MAX_PAGE_ROWS = 1000;
  * Heap the open copy of a file may hold before it is opened afresh
  */
 export const HELD_BYTES = 128 * 1024 * 1024;
+
+// Pages read between two of qvdjs's checks of what the open copy holds. A check
+// reads the page's records and the file's header as the page does, so between
+// checks qvdjs's own check of each page guards the heap, and what the copy holds
+// is booked as the last check found it.
+const PAGES_PER_CHECK = 16;
 
 /**
  * Most rows between two of a page's rows that are read with them, rather than
@@ -119,23 +125,6 @@ function closedError() {
 }
 
 /**
- * Refuse a page that isn't a whole number of rows, or too many, the way qvdjs refuses an option
- * @param {*} value - The value
- * @param {string} name - The option's name
- * @param {number} [most] - The largest value allowed
- * @throws {Error} A QvdValidationError with context.reason "option"
- */
-function requireRows(value, name, most = Infinity) {
-  if (!Number.isSafeInteger(value) || value < 0 || value > most) {
-    const range = most === Infinity ? "of 0 or more" : `from 0 to ${most}`;
-    throw Object.assign(new Error(`${name} must be a whole number ${range}, not ${String(value)}`), {
-      name: "QvdValidationError",
-      context: { reason: "option", option: name },
-    });
-  }
-}
-
-/**
  * The heap qvdjs says a page needs, what the open copy holds included
  * qvdjs counts its memory outside the heap against a container's limit, not the heap's.
  * @param {object} check - qvdjs's check of the page
@@ -207,6 +196,12 @@ export class Pager {
   #view = { key: JSON.stringify(["", null]), rows: null, release: () => {} };
   // The rows the last search found, in file order, for a sort of them by another field to start from
   #searched = { text: "", rows: null, release: () => {} };
+  // Pages read since qvdjs last checked one, and the most rows that check was for
+  #sinceCheck = 0;
+  #checkedRows = 0;
+  // The page running, or the last one: the next waits for it, however the read queue
+  // lets it start, as it does once a page given up has run past its grace
+  #turn = Promise.resolve();
 
   /**
    * @param {object} options - As openPager() finds them
@@ -287,16 +282,39 @@ export class Pager {
    *   throws for a file it can't read
    */
   async page({ offset, limit, search, sort, signal, onProgress } = {}) {
-    requireRows(offset, "offset");
-    requireRows(limit, "limit", MAX_PAGE_ROWS);
+    requireCount(offset, "offset", true);
+    requireCount(limit, "limit", true, MAX_PAGE_ROWS);
     const view = viewOf(search, sort, this.header);
     if (this.#closed) {
       throw closedError();
     }
     if (view.key !== this.#view.key) {
-      await readLanes.large.run(() => this.#makeView(view, signal, onProgress), { signal });
+      await readLanes.large.run(() => this.#inTurn(() => this.#makeView(view, signal, onProgress)), { signal });
     }
-    return await readLanes.small.run(() => this.#pageNow(offset, limit, signal, onProgress), { signal });
+    return await readLanes.small.run(() => this.#inTurn(() => this.#pageNow(offset, limit, signal, onProgress)), {
+      signal,
+    });
+  }
+
+  /**
+   * Run work on the pager once the work before it has stopped: a page, a view, or
+   * letting go of the open copy of the file
+   * @param {function(): Promise<*>} work - The work
+   * @returns {Promise<*>} As the work settles
+   */
+  #inTurn(work) {
+    const running = this.#turn.then(work, work);
+    this.#turn = running.catch(() => {});
+    return running;
+  }
+
+  /**
+   * Let go of the open copy of the file, and the values it holds, until the next
+   * page opens it again: for a tab that isn't shown. The view shown is kept.
+   * @returns {Promise<void>} Resolves once it is closed
+   */
+  async rest() {
+    await this.#inTurn(() => this.#closeFile());
   }
 
   /**
@@ -352,6 +370,7 @@ export class Pager {
         context: { reason: "memory", maxRows: header.rowCount, totalRows: header.rowCount, recommendedMaxRows: 0 },
         // Not the rows the grid shows: what is made from them
         pricing: { forCaller: true, neededBytes, leftBytes: booked.leftBytes },
+        view: { what, neededBytes, leftBytes: booked.leftBytes },
       });
     }
 
@@ -441,6 +460,12 @@ export class Pager {
     }
     for (;;) {
       const file = await this.#openFile();
+      // The copy has walked every column, and was checked lately for a read as large:
+      // qvdjs's own check of the read guards the heap
+      if (this.#used && rows <= this.#checkedRows && this.#sinceCheck < PAGES_PER_CHECK) {
+        this.#sinceCheck++;
+        return file;
+      }
       // qvdjs prices the read from the values its rows use and what the copy holds
       // already, and walks the columns it touches first, which the read then uses
       const check = await file.check({ offset, limit: rows, signal, onProgress: progress });
@@ -454,6 +479,8 @@ export class Pager {
         : Infinity;
       if (check.fits !== false && neededBytes <= leftBytes) {
         this.#book(neededBytes);
+        this.#sinceCheck = 0;
+        this.#checkedRows = rows;
         return file;
       }
       // What the copy holds may be why: opened afresh, it holds nothing
@@ -461,7 +488,10 @@ export class Pager {
         await this.#closeFile();
         continue;
       }
-      throw pageRefusal({ ...page, neededBytes, leftBytes: Math.max(0, leftBytes) });
+      // Refused by qvdjs's own budget, what is left is what it allows
+      const allowedBytes = check.fits === false ? Number(check.budget?.allowedBytes) : NaN;
+      const left = Number.isFinite(allowedBytes) ? Math.min(leftBytes, allowedBytes) : leftBytes;
+      throw pageRefusal({ ...page, neededBytes, leftBytes: Math.max(0, left) });
     }
   }
 
@@ -571,6 +601,8 @@ export class Pager {
     this.#release();
     this.#release = () => {};
     this.#held = 0;
+    this.#sinceCheck = 0;
+    this.#checkedRows = 0;
     await file?.close();
   }
 

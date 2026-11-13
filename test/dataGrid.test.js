@@ -168,14 +168,17 @@ suite("Data Grid Test Suite", () => {
   test("A page is asked for by offset, and its rows answer Tabulator's request", async () => {
     const { grid, table, posted } = makeGrid({ totalRows: 1234 });
     const loading = table.options.ajaxRequestFunc("qvd:rows", {}, { page: 3, size: 50 });
-    assert.deepStrictEqual(posted, [{ command: "page", requestId: 1, offset: 100, limit: 50, search: "", sort: null }]);
+    assert.deepStrictEqual(posted, [
+      { command: "page", requestId: 1, offset: 100, limit: 50, search: "", sort: null, headerKey: null },
+    ]);
+    // The rows the extension says there are, not those the page was made with
     assert.strictEqual(
-      grid.handleMessage({ command: "pageRows", requestId: 1, offset: 100, rows: [[1, "a"], [2, null]], totalRows: 1234 }),
+      grid.handleMessage({ command: "pageRows", requestId: 1, offset: 100, rows: [[1, "a"], [2, null]], totalRows: 1260 }),
       true
     );
     assert.deepStrictEqual(await loading, {
-      last_page: 25,
-      last_row: 1234,
+      last_page: 26,
+      last_row: 1260,
       data: [
         { c0: 1, c1: "a" },
         { c0: 2, c1: null },
@@ -240,7 +243,7 @@ suite("Data Grid Test Suite", () => {
     grid.search("Åsa");
     assert.deepStrictEqual(table.pagesSet, [1]);
     const found = table.options.ajaxRequestFunc("", {}, { page: 1, size: 100 });
-    assert.deepStrictEqual(posted.at(-1), { command: "page", requestId: 1, offset: 0, limit: 100, search: "Åsa", sort: null });
+    assert.deepStrictEqual(posted.at(-1), { command: "page", requestId: 1, offset: 0, limit: 100, search: "Åsa", sort: null, headerKey: null });
     grid.handleMessage({ command: "pageRows", requestId: 1, offset: 0, rows: [[1, "Åsa"]], totalRows: 1, fileRows: 1234 });
     assert.deepStrictEqual(await found, { last_page: 1, last_row: 1, data: [{ c0: 1, c1: "Åsa" }] });
     // The same search again asks for nothing
@@ -260,6 +263,7 @@ suite("Data Grid Test Suite", () => {
       limit: 100,
       search: "Åsa",
       sort: { fieldIndex: 1, descending: true },
+      headerKey: null,
     });
     // Other pages of the same view are asked for as they are
     table.options.ajaxRequestFunc("", {}, { page: 3, size: 100, sort: [{ field: "c1", dir: "desc" }] });
@@ -285,7 +289,7 @@ suite("Data Grid Test Suite", () => {
     assert.strictEqual(searchInput.value, "");
     assert.deepStrictEqual(table.pagesSet, [1, 2]);
     table.options.ajaxRequestFunc("", {}, { page: 2, size: 100 });
-    assert.deepStrictEqual(posted.at(-1), { command: "page", requestId: 3, offset: 100, limit: 100, search: "", sort: null });
+    assert.deepStrictEqual(posted.at(-1), { command: "page", requestId: 3, offset: 100, limit: 100, search: "", sort: null, headerKey: null });
     // Its answer leaves the status saying why
     grid.handleMessage({ command: "pageRows", requestId: 3, rows: [[1, "a"]], totalRows: 1234 });
     assert.match(textOf(status), /Search cancelled/);
