@@ -683,7 +683,8 @@ suite("Page Escaping Test Suite", () => {
     const webview = recordingWebview();
     const context = { extensionPath: root, extensionUri: vscode.Uri.file(root) };
     const markup = [
-      getHtmlForWebview({ metadata, columns: ["Amount"], totalRows: 200000, fileSize: 10 }, webview, context),
+      // Rows enough for the profiling tab's large-file banner
+      getHtmlForWebview({ metadata, columns: ["Amount"], totalRows: 20000000, fileSize: 10 }, webview, context),
       getHtmlForWebview({ metadata: { ...metadata, lineage: [] }, columns: ["Amount"], totalRows: 1, fileSize: 10 }, webview, context),
       // As a page that failed says why, in the Data tab
       String(failureNoticeHtml(failure, { headerShown: true, heading: "h3" })),

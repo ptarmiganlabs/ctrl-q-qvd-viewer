@@ -5,11 +5,13 @@
 
 /**
  * Analyze time series trends
- * @param {Array<Date>} dates - Array of parsed dates
+ * @param {Float64Array} times - Each distinct date's time, as milliseconds since 1970, in ascending order
+ * @param {ArrayLike<number>} counts - How many rows hold each
+ * @param {number} dateCount - Rows with a date, the distinct ones' repeats included
  * @returns {Object} Trend analysis results
  */
-export function analyzeTimeSeries(dates) {
-  if (dates.length < 3) {
+export function analyzeTimeSeries(times, counts, dateCount) {
+  if (dateCount < 3) {
     return {
       hasTrend: false,
       trendType: 'insufficient_data',
@@ -17,10 +19,8 @@ export function analyzeTimeSeries(dates) {
     };
   }
 
-  const sortedDates = dates.slice().sort((a, b) => a - b);
-
   // Group by time periods (daily, weekly, monthly depending on span)
-  const spanDays = Math.floor((sortedDates[sortedDates.length - 1] - sortedDates[0]) / (24 * 60 * 60 * 1000));
+  const spanDays = Math.floor((times[times.length - 1] - times[0]) / (24 * 60 * 60 * 1000));
 
   let groupSize;
   let groupUnit;
@@ -37,12 +37,12 @@ export function analyzeTimeSeries(dates) {
 
   // Count dates per period
   const periodCounts = {};
-  const baseTime = sortedDates[0].getTime();
+  const baseTime = times[0];
 
-  for (const date of sortedDates) {
-    const daysSinceBase = Math.floor((date.getTime() - baseTime) / (24 * 60 * 60 * 1000));
+  for (let i = 0; i < times.length; i++) {
+    const daysSinceBase = Math.floor((times[i] - baseTime) / (24 * 60 * 60 * 1000));
     const period = Math.floor(daysSinceBase / groupSize);
-    periodCounts[period] = (periodCounts[period] || 0) + 1;
+    periodCounts[period] = (periodCounts[period] || 0) + counts[i];
   }
 
   // Calculate simple linear trend
@@ -55,18 +55,18 @@ export function analyzeTimeSeries(dates) {
     };
   }
 
-  const counts = periods.map(p => periodCounts[p]);
+  const periodRows = periods.map(p => periodCounts[p]);
   const n = periods.length;
-  
+
   // Calculate means
   const meanX = periods.reduce((sum, x) => sum + x, 0) / n;
-  const meanY = counts.reduce((sum, y) => sum + y, 0) / n;
+  const meanY = periodRows.reduce((sum, y) => sum + y, 0) / n;
 
   // Calculate slope using least squares method
   let numerator = 0;
   let denominator = 0;
   for (let i = 0; i < n; i++) {
-    numerator += (periods[i] - meanX) * (counts[i] - meanY);
+    numerator += (periods[i] - meanX) * (periodRows[i] - meanY);
     denominator += Math.pow(periods[i] - meanX, 2);
   }
 

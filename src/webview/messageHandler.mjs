@@ -3,7 +3,8 @@ import { basename, dirname, extname, join } from "path";
 import { writeFileSync } from "fs";
 import DataExporter from "../exporters/index.mjs";
 import { describeTimeShifts } from "../exporters/zonedTimestamps.mjs";
-import { PROFILE_BYTES_PER_VALUE, profileFields, generateQvsScript } from "../qvdProfiler.mjs";
+import { profileFile, generateQvsScript } from "../qvdProfiler.mjs";
+import { failedRead, isReadError, readLanes } from "../qvdReader.mjs";
 import { getVisualAnalysisHtml } from "./templates/visualAnalysisTemplate.mjs";
 import { markdownText } from "./templates/escaping.mjs";
 import {
@@ -67,6 +68,23 @@ export function profileReadFailure(result, fieldCount) {
   }
   const why = refusal ? describeReadRefusal(refusal, { offerRows: false }) : result.error;
   return `Failed to read QVD: ${why}`;
+}
+
+/**
+ * Say why profiling failed
+ * @param {Error} error - What profileFile() threw
+ * @param {number} fieldCount - Fields to profile
+ * @returns {string} The message
+ */
+export function profilingFailure(error, fieldCount) {
+  if (error?.profileRefusal) {
+    // Too little memory left for the largest field's distinct values
+    return error.profileRefusal;
+  }
+  if (isReadError(error)) {
+    return profileReadFailure(failedRead(error), fieldCount);
+  }
+  return `Profiling failed: ${error?.message ?? error}`;
 }
 
 /**
@@ -338,45 +356,28 @@ export function setupMessageHandler(
         break;
       }
       case "profileFields": {
-        // Profile selected fields and return distribution data
-        let releaseProfiledRows = () => {};
+        // Profile selected fields and return distribution data. Only those fields
+        // are read, a chunk of rows at a time, one field after another.
+        const fieldNames = Array.isArray(message.fieldNames) ? message.fieldNames : [];
         try {
-          // What profiling builds from each profiled field is priced too
-          const fieldCount = (Array.isArray(message.fieldNames) && message.fieldNames.length) || 1;
-          const result = await qvdReader.read(filePath, 0, {
-            signal,
-            bytesPerRow: PROFILE_BYTES_PER_VALUE * fieldCount,
-          }); // Read all data
-          releaseProfiledRows = result.release;
-          if (result.errorReason === "aborted") {
-            break;
-          }
-          if (result.error) {
-            webviewPanel.webview.postMessage({
-              command: "profilingError",
-              error: profileReadFailure(result, fieldCount),
-            });
-            break;
-          }
-
-          const profilingResults = profileFields(
-            result.data,
-            message.fieldNames,
-            message.maxUniqueValues || 1000
+          const profilingResults = await readLanes.large.run(
+            () => profileFile(filePath, fieldNames, { maxUniqueValues: message.maxUniqueValues || 1000, signal }),
+            { signal }
           );
-          releaseProfiledRows();
-
           webviewPanel.webview.postMessage({
             command: "profilingResults",
             results: profilingResults,
           });
         } catch (error) {
-          webviewPanel.webview.postMessage({
-            command: "profilingError",
-            error: `Profiling failed: ${error.message}`,
-          });
-        } finally {
-          releaseProfiledRows();
+          if (error?.name === "AbortError" && signal?.aborted) {
+            // The editor was closed: there is no page to tell
+            logger.log(`Profiling given up, because its editor was closed: ${filePath}`);
+          } else {
+            webviewPanel.webview.postMessage({
+              command: "profilingError",
+              error: profilingFailure(error, fieldNames.length || 1),
+            });
+          }
         }
         break;
       }
@@ -637,9 +638,11 @@ export function setupMessageHandler(
                 2
               )} |\n`;
               if (stats.descriptive.mode && stats.descriptive.mode.length > 0) {
+                // Only the smallest modes are listed when there are many
+                const unlisted = (stats.descriptive.modeCount ?? 0) - stats.descriptive.mode.length;
                 markdownContent += `| Mode | ${stats.descriptive.mode
                   .map((m) => m.toFixed(2))
-                  .join(", ")} |\n`;
+                  .join(", ")}${unlisted > 0 ? `, and ${unlisted.toLocaleString()} more` : ""} |\n`;
               }
               markdownContent += `| Sum | ${stats.descriptive.sum.toLocaleString()} |\n`;
               markdownContent += `| Count | ${stats.descriptive.count.toLocaleString()} |\n`;

@@ -5,12 +5,14 @@
 
 /**
  * Detect gaps in date sequences
- * @param {Array<Date>} dates - Array of parsed dates (should be sorted)
+ * Rows that share a date are no gap, so only the distinct dates are looked at.
+ * @param {Float64Array} times - Each distinct date's time, as milliseconds since 1970, in ascending order
+ * @param {number} dateCount - Rows with a date, the distinct ones' repeats included
  * @param {number} expectedGapDays - Expected gap between consecutive dates (default: 1)
  * @returns {Object} Gap detection analysis
  */
-export function detectDateGaps(dates, expectedGapDays = 1) {
-  if (dates.length < 2) {
+export function detectDateGaps(times, dateCount, expectedGapDays = 1) {
+  if (dateCount < 2) {
     return {
       hasGaps: false,
       gapCount: 0,
@@ -20,24 +22,28 @@ export function detectDateGaps(dates, expectedGapDays = 1) {
     };
   }
 
-  const sortedDates = dates.slice().sort((a, b) => a - b);
   const gaps = [];
+  let gapCount = 0;
   const expectedGapMs = expectedGapDays * 24 * 60 * 60 * 1000;
   let largestGap = null;
 
-  for (let i = 1; i < sortedDates.length; i++) {
-    const gapMs = sortedDates[i] - sortedDates[i - 1];
+  for (let i = 1; i < times.length; i++) {
+    const gapMs = times[i] - times[i - 1];
     const gapDays = gapMs / (24 * 60 * 60 * 1000);
 
     // Consider it a gap if it's significantly larger than expected
     // Using 1.5x multiplier to allow for minor variations (e.g., weekends in daily data)
     if (gapMs > expectedGapMs * 1.5) {
       const gap = {
-        from: sortedDates[i - 1],
-        to: sortedDates[i],
+        from: new Date(times[i - 1]),
+        to: new Date(times[i]),
         days: Math.floor(gapDays),
       };
-      gaps.push(gap);
+      gapCount++;
+      // The first 10 are listed
+      if (gaps.length < 10) {
+        gaps.push(gap);
+      }
 
       if (largestGap === null || gapDays > largestGap.days) {
         largestGap = gap;
@@ -46,18 +52,16 @@ export function detectDateGaps(dates, expectedGapDays = 1) {
   }
 
   // Calculate coverage (actual unique dates vs. expected dates in range)
-  // Note: Uses unique date count to handle duplicates correctly
-  const uniqueDates = new Set(sortedDates.map(d => d.getTime()));
-  const totalSpanDays = Math.floor((sortedDates[sortedDates.length - 1] - sortedDates[0]) / (24 * 60 * 60 * 1000));
+  const totalSpanDays = Math.floor((times[times.length - 1] - times[0]) / (24 * 60 * 60 * 1000));
   const expectedDates = Math.floor(totalSpanDays / expectedGapDays) + 1;
-  const actualUniqueDates = uniqueDates.size;
+  const actualUniqueDates = times.length;
   const coverage = expectedDates > 0 ? (actualUniqueDates / expectedDates) * 100 : 100;
 
   return {
-    hasGaps: gaps.length > 0,
-    gapCount: gaps.length,
+    hasGaps: gapCount > 0,
+    gapCount,
     largestGap,
-    gaps: gaps.slice(0, 10), // Return top 10 gaps
+    gaps,
     coverage: Math.min(100, coverage),
     expectedDates,
     actualDates: actualUniqueDates,

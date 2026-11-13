@@ -3,6 +3,8 @@
  * Handles detection of date fields and parsing of various date formats
  */
 
+import { sampleOf } from "../profileSample.mjs";
+
 /**
  * Date format patterns for detection
  */
@@ -185,26 +187,16 @@ export function detectDateFormat(values) {
 }
 
 /**
- * Detect if a field contains date/timestamp values
- * @param {Array<Object>} data - Array of data rows
- * @param {string} fieldName - Field name to check
+ * Detect if sampled values are predominantly dates
+ * @param {Array<*>} values - A field's values at the rows sampleOf() looks at
  * @param {number} threshold - Percentage threshold for date values (default: 0.8)
- * @returns {boolean} True if field is predominantly dates
+ * @returns {boolean} True if they are predominantly dates
  */
-export function isDateField(data, fieldName, threshold = 0.8) {
-  if (!data || data.length === 0) {
-    return false;
-  }
-
+export function isDateSample(values, threshold = 0.8) {
   let dateCount = 0;
   let nonNullCount = 0;
 
-  // Sample up to 1000 rows for performance
-  const sampleSize = Math.min(data.length, 1000);
-  const step = Math.max(1, Math.floor(data.length / sampleSize));
-
-  for (let i = 0; i < data.length; i += step) {
-    const value = data[i][fieldName];
+  for (const value of values) {
     if (value !== null && value !== undefined && value !== "") {
       nonNullCount++;
       if (parseDate(value) !== null) {
@@ -218,4 +210,19 @@ export function isDateField(data, fieldName, threshold = 0.8) {
   }
 
   return dateCount / nonNullCount >= threshold;
+}
+
+/**
+ * Detect if a field contains date/timestamp values
+ * About a thousand rows, spread over the field, are looked at: see profileSample.mjs
+ * @param {Array<Object>} data - Array of data rows
+ * @param {string} fieldName - Field name to check
+ * @param {number} threshold - Percentage threshold for date values (default: 0.8)
+ * @returns {boolean} True if field is predominantly dates
+ */
+export function isDateField(data, fieldName, threshold = 0.8) {
+  if (!data || data.length === 0) {
+    return false;
+  }
+  return isDateSample(sampleOf(data, fieldName), threshold);
 }

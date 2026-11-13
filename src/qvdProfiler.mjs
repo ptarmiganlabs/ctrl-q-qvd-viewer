@@ -1,26 +1,109 @@
 /**
  * QVD Data Profiler
  * Computes value distribution statistics for QVD fields
+ *
+ * A field is profiled from its summary (fieldSummary.mjs): its rows read a chunk
+ * at a time, a few numbers kept per distinct value. A QVD is read only for the
+ * fields profiled, one after another, through its columns, so profiling needs
+ * memory for the largest of those fields' distinct values, not for its rows.
  */
 
-import { isNumericField, calculateStatistics } from './qvdStatistics.mjs';
-import { calculateDataQualityMetrics } from './qvdDataQuality.mjs';
-import { isDateField, calculateTemporalAnalysis } from './qvdTemporalAnalysis.mjs';
-import { isStringField, calculateStringAnalysis } from './qvdStringAnalysis.mjs';
+import { realpath } from "fs/promises";
+import { dirname } from "path";
+import { isNumericSample, statisticsFrom } from "./qvdStatistics.mjs";
+import { qualityMetricsFrom } from "./qvdDataQuality.mjs";
+import { isDateSample, temporalFrom } from "./qvdTemporalAnalysis.mjs";
+import { isStringSample } from "./qvdStringAnalysis.mjs";
+import { BYTES_PER_DISTINCT_VALUE, HEAP_BYTES, summarize, summarizeAsync, summarizeRows } from "./fieldSummary.mjs";
+import { chunkRowsFor, openColumnScanner, shownValue } from "./columnScan.mjs";
+import { budgetFor, headerOf } from "./qvdReader.mjs";
+import { describeViewRefusal, memoryLeftOutsideHeap, tryBookHeap } from "./memoryGuard.mjs";
 
 /**
- * Heap profiling builds per value of each profiled field, for the memory guard:
- * about one and a half times the most measured, on 1,000,000 rows of
- * chicago_taxi_rides_2016_03.qvd. A date field needed 181 bytes per value, for
- * its Date objects and their sorted copies, and a number or a text field 38.
+ * Heap profiling built per value of each profiled field, when it read every row of
+ * the file: about one and a half times the most measured, on 1,000,000 rows of
+ * chicago_taxi_rides_2016_03.qvd. Profiling no longer reads the rows, and doesn't use it.
  */
 export const PROFILE_BYTES_PER_VALUE = 288;
+
+/**
+ * What a profiling scan's open file may hold before it is opened afresh, as for a
+ * view's scan. Opening the file again walks the field's symbols again: on a field of
+ * 50 million values, a budget a quarter of this made profiling four times slower.
+ */
+export const PROFILE_HELD_BYTES = 512 * 1024 * 1024;
+
+/**
+ * New values a profiling chunk decodes at most. qvdjs decodes a chunk's values in
+ * one go, which took about a second for 250,000 duals; a fifth of that keeps each
+ * chunk's wait short, for a third more time over the field.
+ */
+export const PROFILE_FRESH_VALUES = 50000;
+
+/**
+ * The kinds of analysis a field gets, from the values at the rows profileSample.mjs looks at
+ * @param {Array<*>} sample - The values
+ * @returns {{numeric: boolean, date: boolean, string: boolean}} The kinds
+ */
+function kindsOf(sample) {
+  const numeric = isNumericSample(sample);
+  const date = isDateSample(sample);
+  // String analysis is for a field that is neither numeric nor dates
+  const string = !numeric && !date && isStringSample(sample);
+  return { numeric, date, string };
+}
+
+/**
+ * A field's profiling results, from its summary
+ * @param {string} fieldName - The field
+ * @param {import('./fieldSummary.mjs').FieldSummary} summary - Its summary
+ * @param {number} maxUniqueValues - Values the distribution shows at most
+ * @returns {Object} The field's results, as profileFields() gives them
+ */
+function fieldResultOf(fieldName, summary, maxUniqueValues) {
+  const { totalRows, uniqueValues, kinds } = summary;
+
+  // The most frequent values first, values as frequent in the order they first occur
+  const sortedValues = summary.top.map(({ value, count }) => ({
+    value,
+    count,
+    percentage: ((count / totalRows) * 100).toFixed(2),
+  }));
+
+  // Add null count if present, empty strings included
+  const nullOrEmptyCount = summary.nullCount + summary.emptyStringCount;
+  if (nullOrEmptyCount > 0) {
+    sortedValues.push({
+      value: "(NULL/Empty)",
+      count: nullOrEmptyCount,
+      percentage: ((nullOrEmptyCount / totalRows) * 100).toFixed(2),
+    });
+  }
+
+  return {
+    fieldName,
+    totalRows,
+    uniqueValues,
+    nullCount: nullOrEmptyCount,
+    distributions: sortedValues,
+    // The distribution shows the most frequent values only
+    truncated: uniqueValues > maxUniqueValues,
+    truncatedAt: maxUniqueValues,
+    isNumeric: kinds.numeric,
+    statistics: kinds.numeric ? statisticsFrom(summary.numbers) : null,
+    isDate: kinds.date,
+    temporalAnalysis: kinds.date ? temporalFrom(summary.dates) : null,
+    isString: kinds.string,
+    stringAnalysis: kinds.string ? summary.strings : null,
+    qualityMetrics: qualityMetricsFrom(summary),
+  };
+}
 
 /**
  * Compute value frequency distribution for specified fields
  * @param {Array<Object>} data - Array of data rows
  * @param {Array<string>} fieldNames - Field names to profile
- * @param {number} maxUniqueValues - Maximum unique values to track (default: 1000)
+ * @param {number} maxUniqueValues - Values the distribution shows at most (default: 1000)
  * @returns {Object} Profiling results with frequency distributions
  */
 export function profileFields(data, fieldNames, maxUniqueValues = 1000) {
@@ -31,120 +114,154 @@ export function profileFields(data, fieldNames, maxUniqueValues = 1000) {
     };
   }
 
-  const totalRows = data.length;
-  const results = [];
-
-  for (const fieldName of fieldNames) {
-    // Count value frequencies
-    const valueCounts = new Map();
-    let nullCount = 0;
-    let emptyStringCount = 0;
-    let uniqueValueCount = 0;
-
-    for (const row of data) {
-      const value = row[fieldName];
-      
-      // Handle null/undefined/empty values
-      if (value === null || value === undefined) {
-        nullCount++;
-        continue;
-      }
-      if (value === "") {
-        emptyStringCount++;
-        continue;
-      }
-
-      // Convert to string for consistent handling
-      const valueStr = String(value);
-      
-      if (valueCounts.has(valueStr)) {
-        valueCounts.set(valueStr, valueCounts.get(valueStr) + 1);
-      } else {
-        uniqueValueCount++;
-        if (uniqueValueCount <= maxUniqueValues) {
-          valueCounts.set(valueStr, 1);
-        }
-      }
-    }
-
-    // Check if we exceeded max unique values
-    const truncated = uniqueValueCount > maxUniqueValues;
-
-    // Sort by frequency (descending) and convert to array
-    const sortedValues = Array.from(valueCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([value, count]) => ({
-        value,
-        count,
-        percentage: ((count / totalRows) * 100).toFixed(2),
-      }));
-
-    // Add null count if present, empty strings included
-    const nullOrEmptyCount = nullCount + emptyStringCount;
-    if (nullOrEmptyCount > 0) {
-      sortedValues.push({
-        value: "(NULL/Empty)",
-        count: nullOrEmptyCount,
-        percentage: ((nullOrEmptyCount / totalRows) * 100).toFixed(2),
-      });
-    }
-
-    // Calculate statistics if field is numeric
-    const isNumeric = isNumericField(data, fieldName);
-    let statistics = null;
-    
-    if (isNumeric) {
-      statistics = calculateStatistics(data, fieldName);
-    }
-
-    // Calculate temporal analysis if field is date/timestamp
-    const isDate = isDateField(data, fieldName);
-    let temporalAnalysis = null;
-    
-    if (isDate) {
-      temporalAnalysis = calculateTemporalAnalysis(data, fieldName);
-    }
-
-    // Calculate string analysis if field is string (non-numeric, non-date)
-    const isString = !isNumeric && !isDate && isStringField(data, fieldName);
-    let stringAnalysis = null;
-    
-    if (isString) {
-      stringAnalysis = calculateStringAnalysis(data, fieldName);
-    }
-
-    // Calculate data quality metrics
-    const qualityMetrics = calculateDataQualityMetrics(
-      data,
-      fieldName,
-      uniqueValueCount,
-      nullCount,
-      valueCounts,
-      emptyStringCount
-    );
-
-    results.push({
-      fieldName,
-      totalRows,
-      uniqueValues: uniqueValueCount,
-      nullCount: nullOrEmptyCount,
-      distributions: sortedValues,
-      truncated,
-      truncatedAt: maxUniqueValues,
-      isNumeric,
-      statistics,
-      isDate,
-      temporalAnalysis,
-      isString,
-      stringAnalysis,
-      qualityMetrics,
-    });
-  }
-
+  const fields = fieldNames.map((fieldName) =>
+    fieldResultOf(fieldName, summarizeRows(data, fieldName, { maxUniqueValues, decideKinds: kindsOf }), maxUniqueValues)
+  );
   return {
     error: null,
-    fields: results,
+    fields,
   };
+}
+
+/**
+ * The largest of the fields to profile, by its distinct values: fields are profiled
+ * one at a time, so it sets what profiling needs
+ * @param {import('./qvdReader.mjs').Header} header - The file's header
+ * @param {Array<string>} fieldNames - The fields to profile
+ * @returns {{name: string, symbols: number}|null} The field, null for none the file has
+ */
+function largestField(header, fieldNames) {
+  let largest = null;
+  for (const field of header.fields) {
+    if (fieldNames.includes(field.name) && (!largest || field.symbols > largest.symbols)) {
+      largest = field;
+    }
+  }
+  return largest;
+}
+
+/**
+ * What profiling fields of a QVD needs at most. In the heap: what a scan's open file
+ * holds, and what profiling holds whatever the field. Outside it, in typed arrays: a
+ * few numbers per distinct value of the largest field, about 3 GB for 50 million.
+ * @param {import('./qvdReader.mjs').Header} header - The file's header
+ * @param {Array<string>} fieldNames - The fields to profile
+ * @returns {{heapBytes: number, outsideBytes: number}} Bytes
+ */
+export function profileMemory(header, fieldNames) {
+  return {
+    heapBytes: HEAP_BYTES,
+    outsideBytes: (largestField(header, fieldNames)?.symbols ?? 0) * BYTES_PER_DISTINCT_VALUE,
+  };
+}
+
+/**
+ * The refusal of a profile that doesn't fit in the memory left
+ * @param {import('./qvdReader.mjs').Header} header - The file's header
+ * @param {Array<string>} fieldNames - The fields to profile
+ * @param {number} neededBytes - Memory it needs
+ * @param {number} leftBytes - Memory left
+ * @param {{onComputer?: boolean}} [options] - onComputer: whether it is the computer's
+ *   memory, outside the heap, that is short
+ * @returns {Error} The error, with the message to show as profileRefusal
+ */
+function profileRefusal(header, fieldNames, neededBytes, leftBytes, { onComputer = false } = {}) {
+  const largest = largestField(header, fieldNames);
+  const what = `Profiling ${largest.name}, a field of ${largest.symbols.toLocaleString()} distinct values,`;
+  const message = describeViewRefusal({ what, neededBytes, leftBytes }, { onComputer });
+  return Object.assign(new Error(message), {
+    name: "QvdValidationError",
+    context: { reason: "memory" },
+    pricing: { forCaller: true, neededBytes, leftBytes },
+    profileRefusal: message,
+  });
+}
+
+/**
+ * Profile fields of a QVD, reading only those fields, a chunk of rows at a time
+ * @param {string} filePath - The QVD file
+ * @param {Array<string>} fieldNames - Field names to profile
+ * @param {object} [options]
+ * @param {number} [options.maxUniqueValues] - Values the distribution shows at most (default: 1000)
+ * @param {AbortSignal} [options.signal] - Gives profiling up between chunks
+ * @param {function({field: string, fieldIndex: number, fields: number, pass: number, rows: number, totalRows: number}): void} [options.onProgress] -
+ *   Told how far it has got: the field, the pass over its rows, and the rows read in it
+ * @param {number} [options.heldBytes] - What a scan's open file may hold, for tests
+ * @param {number} [options.chunkRows] - Rows a chunk holds, for tests
+ * @returns {Promise<Object>} Profiling results, as profileFields() gives them
+ * @throws {Error} What reading the file throws; an AbortError when given up; and,
+ *   when the memory left is too little, an error whose profileRefusal says so
+ */
+export async function profileFile(filePath, fieldNames, { maxUniqueValues = 1000, signal, onProgress, heldBytes, chunkRows } = {}) {
+  // As QvdReader.read() does: qvdjs resolves links before it checks the file is in
+  // the directory it may read, so that directory is the real path's
+  const realFilePath = await realpath(filePath).catch(() => filePath);
+  const allowedDir = dirname(realFilePath);
+  const header = await headerOf(filePath, realFilePath, allowedDir, signal);
+  const totalRows = header.rowCount;
+  if (totalRows === 0) {
+    return {
+      error: "No data available for profiling",
+      fields: [],
+    };
+  }
+
+  const budget = await budgetFor(filePath, allowedDir, header, signal);
+  const { heapBytes, outsideBytes } = profileMemory(header, fieldNames);
+  const outsideLeft = memoryLeftOutsideHeap();
+  if (outsideBytes > outsideLeft) {
+    throw profileRefusal(header, fieldNames, outsideBytes, outsideLeft, { onComputer: true });
+  }
+  const booked = tryBookHeap(heapBytes, budget ?? undefined);
+  if (!("release" in booked)) {
+    throw profileRefusal(header, fieldNames, heapBytes, booked.leftBytes);
+  }
+
+  const scanner = openColumnScanner({ filePath, allowedDir, heldBytes: heldBytes ?? PROFILE_HELD_BYTES });
+  try {
+    const fields = [];
+    for (const [fieldIndex, fieldName] of fieldNames.entries()) {
+      const field = header.fields.find((candidate) => candidate.name === fieldName);
+      const options = { maxUniqueValues, decideKinds: kindsOf, totalRows };
+      const progress = (pass, rows) =>
+        onProgress?.({ field: fieldName, fieldIndex, fields: fieldNames.length, pass, rows, totalRows });
+      let summary;
+      if (field) {
+        summary = await summarizeAsync(
+          { ...options, symbolCount: field.symbols, toValue: shownValue },
+          async (summarizer, pass) => {
+            progress(pass, 0);
+            await scanner.scan({
+              field: fieldName,
+              symbols: field.symbols,
+              totalRows,
+              signal,
+              chunkRows: chunkRows ?? chunkRowsFor(field.symbols, totalRows, PROFILE_FRESH_VALUES),
+              onChunk: ({ codes, symbols, offset }) => summarizer.takeAsync(codes, symbols, offset, signal),
+              onRows: (rows) => progress(pass, rows),
+            });
+          },
+          signal
+        );
+      } else {
+        // A field the file doesn't have: no value in any row, as a row object without it
+        summary = summarize({ ...options, symbolCount: 0 }, (summarizer) => {
+          const nulls = new Int32Array(Math.min(totalRows, 1 << 20)).fill(-1);
+          for (let offset = 0; offset < totalRows; offset += nulls.length) {
+            summarizer.take(nulls.subarray(0, Math.min(nulls.length, totalRows - offset)), [], offset);
+          }
+        });
+      }
+      fields.push(fieldResultOf(fieldName, summary, maxUniqueValues));
+    }
+    return {
+      error: null,
+      fields,
+    };
+  } finally {
+    await scanner.close();
+    booked.release();
+  }
 }
 
 /**
