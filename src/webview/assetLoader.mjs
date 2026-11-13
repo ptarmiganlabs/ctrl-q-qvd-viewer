@@ -84,3 +84,14 @@ export function getHtmlJs(extensionPath) {
   const scriptPath = join(extensionPath, "dist", "webview", "html.js");
   return readFileSync(scriptPath, "utf8");
 }
+
+/**
+ * Get the Data tab's grid, which asks the extension for a page of rows at a
+ * time, inlined as string: see src/webview/client/dataGrid.js
+ * @param {string} extensionPath - The extension path
+ * @returns {string} Script content
+ */
+export function getDataGridJs(extensionPath) {
+  const scriptPath = join(extensionPath, "dist", "webview", "dataGrid.js");
+  return readFileSync(scriptPath, "utf8");
+}

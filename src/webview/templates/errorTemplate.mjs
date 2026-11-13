@@ -94,9 +94,6 @@ export const FAILURE_BUTTONS_JS = `
             buttons.forEach(function (button) {
                 button.addEventListener('click', function () {
                     const message = { command: button.dataset.command };
-                    if (button.dataset.rows) {
-                        message.rows = Number(button.dataset.rows);
-                    }
                     if (button.dataset.setting) {
                         message.setting = button.dataset.setting;
                     }
@@ -131,7 +128,7 @@ export function failureNoticeHtml(failure, { headerShown = false, heading = "h2"
     (action, index) => html`
                 <button type="button" class="read-failure-button${index === 0 ? " primary" : ""}" data-command="${
                   action.command
-                }"${action.rows ? html` data-rows="${action.rows}"` : ""}${
+                }"${
                   action.setting ? html` data-setting="${action.setting}"` : ""
                 }>${action.label}</button>`
   );

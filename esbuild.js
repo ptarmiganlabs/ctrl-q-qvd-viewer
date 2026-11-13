@@ -89,6 +89,7 @@ const copyWebviewLibsPlugin = {
           "histogramView.js"
         ),
         "html.js": path.join(__dirname, "src", "webview", "client", "html.js"),
+        "dataGrid.js": path.join(__dirname, "src", "webview", "client", "dataGrid.js"),
       };
       for (const [name, source] of Object.entries(libs)) {
         fs.copyFileSync(source, path.join(targetDir, name));

@@ -467,6 +467,23 @@ export function describeReadRefusal(refusal, { offerRows = true } = {}) {
 }
 
 /**
+ * Say why a page of the viewer's grid was refused for memory
+ * @param {{offset: number, rows: number, neededBytes: number, leftBytes: number}} page -
+ *   offset: the page's first row, counted from 0; rows: its rows; neededBytes: what
+ *   showing it needs, the columns the file's open copy holds included; leftBytes: what
+ *   is left for that
+ * @returns {string} The message
+ */
+export function describePageRefusal({ offset, rows, neededBytes, leftBytes }) {
+  const first = (offset + 1).toLocaleString();
+  const last = (offset + rows).toLocaleString();
+  return (
+    `Showing rows ${first} to ${last} needs about ${size(neededBytes)} of memory, and about ` +
+    `${size(leftBytes)} is left in what VS Code gives its extensions.`
+  );
+}
+
+/**
  * Say why a read was refused when its rows fit, and what is built from them doesn't
  * @param {Refusal} refusal - The refusal
  * @returns {string} The message

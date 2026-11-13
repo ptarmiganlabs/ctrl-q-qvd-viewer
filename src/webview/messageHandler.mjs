@@ -6,7 +6,6 @@ import { describeTimeShifts } from "../exporters/zonedTimestamps.mjs";
 import { PROFILE_BYTES_PER_VALUE, profileFields, generateQvsScript } from "../qvdProfiler.mjs";
 import { getVisualAnalysisHtml } from "./templates/visualAnalysisTemplate.mjs";
 import { markdownText } from "./templates/escaping.mjs";
-import { getLoadMoreRowCount, LOAD_MORE_MAX_ROWS, previewRows } from "./loadMore.mjs";
 import {
   describeExportRefusal,
   describeProfileRefusal,
@@ -73,7 +72,8 @@ export function profileReadFailure(result, fieldCount) {
  * @param {object} qvdReader - The QVD reader instance
  * @param {object} context - The extension context
  * @param {Function} updateWebviewFn - Function to update the webview
- * @param {number} maxRows - Maximum rows to display
+ * @param {{servePage: Function, cancel: Function}|null} pages - Answers the Data tab's
+ *   requests for pages, as createPageServer() makes it; null where nothing asks for them
  * @param {AbortSignal} [signal] - Aborted once the editor is closed, giving its reads up
  */
 export function setupMessageHandler(
@@ -82,7 +82,7 @@ export function setupMessageHandler(
   qvdReader,
   context,
   updateWebviewFn,
-  maxRows,
+  pages,
   signal
 ) {
   webviewPanel.webview.onDidReceiveMessage(async (message) => {
@@ -119,26 +119,17 @@ export function setupMessageHandler(
       case "showLogs":
         logger.show();
         break;
-      case "retry": {
-        // Read the file again, as opening it would: with the rows the setting asks for
-        // now, so that a setting put right takes effect, or the rows the page offered.
-        // A retry that fails too replaces the page with why.
-        const offered = Number.isInteger(message.rows) && message.rows > 0;
-        const rows = offered ? Math.min(message.rows, LOAD_MORE_MAX_ROWS) : previewRows(vscode);
-        await updateWebviewFn(filePath, webviewPanel.webview, rows, { signal });
+      case "retry":
+        // Show the file again, as opening it would. A retry that fails too
+        // replaces the page with why.
+        await updateWebviewFn(filePath, webviewPanel.webview, { signal });
         break;
-      }
-      case "loadMore":
-        // Load more rows - double the current amount or load all if requested
-        const currentRows = message.currentRows || maxRows;
-        const newMaxRows = message.loadAll
-          ? 0
-          : getLoadMoreRowCount(currentRows);
-        // A read that fails keeps the rows shown, and says why
-        await updateWebviewFn(filePath, webviewPanel.webview, newMaxRows, {
-          keepPageOnFailure: true,
-          signal,
-        });
+      case "page":
+        // A page of the Data tab's grid; pageRows, pageFailed or pageCancelled answers it
+        await pages?.servePage(message);
+        break;
+      case "cancelPage":
+        pages?.cancel(message.requestId);
         break;
       case "copyToClipboard":
         // Copy text to clipboard using VS Code API

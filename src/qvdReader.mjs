@@ -117,7 +117,7 @@ export async function toRowObjects(rows, columns, signal, dates = null) {
  * @param {string} realFilePath - The file's real path
  * @returns {Promise<string|null>} The version, or null when the file can't be looked at
  */
-async function fileVersion(realFilePath) {
+export async function fileVersion(realFilePath) {
   const stats = await stat(realFilePath).catch(() => null);
   return stats ? `${stats.ino}:${stats.size}:${stats.mtimeMs}` : null;
 }
@@ -143,7 +143,7 @@ function tagsOf(field) {
  * @param {AbortSignal} [signal] - Gives the read up
  * @returns {Promise<Header>} The header
  */
-async function headerOf(filePath, realFilePath, allowedDir, signal) {
+export async function headerOf(filePath, realFilePath, allowedDir, signal) {
   const key = await fileVersion(realFilePath);
   const kept = headers.get(realFilePath);
   if (key && kept?.key === key) {
@@ -187,7 +187,7 @@ async function headerOf(filePath, realFilePath, allowedDir, signal) {
  * @returns {Promise<import('./memoryGuard.mjs').Budget|null>} The budget, or null
  *   for a file with no fields, whose read needs none
  */
-async function budgetFor(filePath, allowedDir, header, signal) {
+export async function budgetFor(filePath, allowedDir, header, signal) {
   const known = knownBudget();
   if (known || header.fields.length === 0) {
     return known;
@@ -641,39 +641,6 @@ class QvdReader {
       signal?.removeEventListener("abort", abandon);
       releaseAbandoned();
     }
-  }
-
-  /**
-   * Read a specific page of data from the QVD file
-   * @param {string} _filePath - Path to the QVD file
-   * @param {number} _page - Page number (0-indexed)
-   * @param {number} _pageSize - Rows per page
-   * @returns {Promise<{metadata: object, data: Array, columns: Array, totalRows: number, page: number, pageSize: number, error: string|null}>}
-   * @throws {Error} Not yet implemented - waiting for qvdjs streaming support
-   */
-  async readPage(_filePath, _page, _pageSize) {
-    // TODO: Implement when qvdjs supports streaming
-    // For now, this would still load the full file and slice the data
-    // const metadata = await this.extractMetadata(filePath);
-    // const startRow = page * pageSize;
-    // const endRow = Math.min(startRow + pageSize, metadata.noOfRecords);
-    //
-    // const df = await QvdDataFrame.fromQvd(filePath, { maxRows: endRow });
-    // const pageData = df.rows(...Array.from({length: pageSize}, (_, i) => startRow + i));
-    //
-    // return {
-    //     metadata,
-    //     data: pageData.data,
-    //     columns: pageData.columns,
-    //     totalRows: metadata.noOfRecords,
-    //     page,
-    //     pageSize,
-    //     error: null
-    // };
-
-    throw new Error(
-      "Page-based loading not yet supported. Waiting for qvdjs streaming support."
-    );
   }
 }
 
