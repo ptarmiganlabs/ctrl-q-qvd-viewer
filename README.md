@@ -354,7 +354,7 @@ To change these settings:
 
 - **This guide**: the viewer's ❓ **Help** button opens it, as does **QVD: Open Documentation** in the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P` on Mac)
 - **Questions**: ask in [GitHub Discussions](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/discussions), or run **QVD: Ask a Question**
-- **Bugs**: run **QVD: Report Issue**. It opens VS Code's issue reporter with this extension picked, which adds the VS Code, OS and extension versions itself. You can also open an issue in [GitHub Issues](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues). A page that says why a file couldn't be shown has a **Report Issue** button too, when the cause may be a bug
+- **Bugs**: run **QVD: Report Issue**. It opens VS Code's issue reporter with this extension picked, which adds the VS Code, OS and extension versions itself. You can also [open an issue on GitHub](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/new/choose), with the bug report form. A page that says why a file couldn't be shown has a **Report Issue** button too, when the cause may be a bug
 - **Logs**: **QVD: Show Extension Logs** shows what the extension did. Lines from it around the problem help a bug report. Issues and discussions are public, so leave out data, file names and paths you can't share
 - **About**: the viewer's ℹ️ **About** button, or **QVD: About**, has the same links and the extension's version
 

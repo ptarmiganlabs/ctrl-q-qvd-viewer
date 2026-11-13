@@ -1,0 +1,89 @@
+name: Bug report
+description: Something in Ctrl-Q QVD Viewer doesn't work as it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. In VS Code, **QVD: Report Issue** in the Command Palette fills in the versions for you.
+
+        Questions go to [Discussions](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/discussions/categories/q-a) instead.
+
+        This issue is public: leave out data, file names and paths you can't share.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, and what the viewer did. A message it showed, word for word, helps most.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected to happen
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen
+      description: The steps, from opening the QVD file. Say which tab, button, export format or setting is involved.
+      placeholder: |
+        1. Open a QVD file of about 2 million rows
+        2. On the Data tab, sort by a text field
+        3. ...
+  - type: input
+    id: extension-version
+    attributes:
+      label: Extension version
+      description: In the Extensions view, or in the viewer's ℹ️ About panel.
+      placeholder: "1.5.0"
+    validations:
+      required: true
+  - type: input
+    id: vscode-version
+    attributes:
+      label: VS Code version
+      description: Help → About (Code → About Visual Studio Code on a Mac). Name the editor too if it isn't VS Code, such as Cursor or VSCodium.
+      placeholder: "1.106.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: qvd-source
+    attributes:
+      label: Where the QVD file came from
+      options:
+        - Qlik Sense Enterprise on Windows (client-managed)
+        - Qlik Cloud
+        - QlikView
+        - Another tool
+        - Don't know
+  - type: input
+    id: qvd-size
+    attributes:
+      label: How big the QVD file is
+      description: Roughly how many rows and fields it has, and its size on disk.
+      placeholder: "2 million rows, 40 fields, 300 MB"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log lines
+      description: "Run **QVD: Show Extension Logs** and paste the lines around the problem. Remove file paths and data you can't share."
+      render: text
+  - type: checkboxes
+    id: public
+    attributes:
+      label: Before you send it
+      options:
+        - label: I've left out data, file names and paths I can't share, because this issue is public
+          required: true
