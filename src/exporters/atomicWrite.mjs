@@ -5,6 +5,33 @@ import { Writable } from "stream";
 import { requireChunkRows } from "../memoryGuard.mjs";
 
 /**
+ * The file a write replaces, and the temporary file next to it that it writes first
+ * A target reached through a symlink is its real path, so that the link stays. The
+ * temporary file isn't named after the target, so a long file name can't make it too long.
+ * @param {string} filePath - Destination file path
+ * @returns {Promise<{target: string, temp: string}>} The paths
+ */
+async function pathsFor(filePath) {
+  const target = await fs.realpath(filePath).catch(() => filePath);
+  return { target, temp: join(dirname(target), `.qvd-export-${randomUUID()}.tmp`) };
+}
+
+/**
+ * Make a written temporary file ready to replace its target: an existing target's
+ * permissions, and its contents on disk before the rename
+ * @param {import("fs").promises.FileHandle} file - The temporary file, open
+ * @param {string} target - The file it replaces
+ * @returns {Promise<void>}
+ */
+async function readyToReplace(file, target) {
+  const existing = await fs.stat(target).catch(() => null);
+  if (existing) {
+    await file.chmod(existing.mode & 0o7777);
+  }
+  await file.sync();
+}
+
+/**
  * Write a file so that a failed export leaves an existing file as it was
  *
  * The contents go to a temporary file next to the target, which then replaces the
@@ -15,18 +42,12 @@ import { requireChunkRows } from "../memoryGuard.mjs";
  * @returns {Promise<void>}
  */
 export async function writeFileAtomically(filePath, write) {
-  const target = await fs.realpath(filePath).catch(() => filePath);
-  // Not named after the target, so a long file name can't make it too long
-  const temp = join(dirname(target), `.qvd-export-${randomUUID()}.tmp`);
+  const { target, temp } = await pathsFor(filePath);
   const file = await fs.open(temp, "wx");
   try {
     try {
       await write(file);
-      const existing = await fs.stat(target).catch(() => null);
-      if (existing) {
-        await file.chmod(existing.mode & 0o7777);
-      }
-      await file.sync();
+      await readyToReplace(file, target);
     } finally {
       await file.close();
     }
@@ -34,6 +55,47 @@ export async function writeFileAtomically(filePath, write) {
   } catch (error) {
     await fs.rm(temp, { force: true });
     throw error;
+  }
+}
+
+/**
+ * Write a file by its path so that a failed export leaves an existing file as it was
+ *
+ * As writeFileAtomically() does, for a writer that opens the file itself, as SQLite
+ * does: it is handed the temporary file's path, the file created empty, and has closed
+ * everything it opened on it by the time it settles. Only then is the file opened
+ * again, to take an existing target's permissions and be synced before the rename, so
+ * that it is never open twice at once: closing one of two descriptors would drop the
+ * other's POSIX locks. Files the writer keeps next to it as it writes, such as SQLite's
+ * journal, are removed whether the write succeeds or fails.
+ * @param {string} filePath - Destination file path
+ * @param {(tempPath: string) => Promise<void>} write - Writes the contents to the
+ *   temporary file at this path, and closes it
+ * @param {object} [options]
+ * @param {Array<string>} [options.sidecarSuffixes] - What those files' names add to the
+ *   temporary file's, such as "-journal"
+ * @returns {Promise<void>}
+ */
+export async function writeFileAtomicallyByPath(filePath, write, { sidecarSuffixes = [] } = {}) {
+  const { target, temp } = await pathsFor(filePath);
+  // Created here, as writeFileAtomically() creates its file, so that the name is this write's
+  await (await fs.open(temp, "wx")).close();
+  try {
+    await write(temp);
+    const file = await fs.open(temp, "r+");
+    try {
+      await readyToReplace(file, target);
+    } finally {
+      await file.close();
+    }
+    await fs.rename(temp, target);
+  } catch (error) {
+    await fs.rm(temp, { force: true });
+    throw error;
+  } finally {
+    for (const suffix of sidecarSuffixes) {
+      await fs.rm(`${temp}${suffix}`, { force: true });
+    }
   }
 }
 

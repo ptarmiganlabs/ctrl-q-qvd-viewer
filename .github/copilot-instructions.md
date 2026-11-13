@@ -17,7 +17,7 @@ This is a Visual Studio Code extension for viewing Qlik Sense and QlikView QVD f
   - `qvdjs` - QVD file parsing
   - `apache-arrow`, `avsc`, `papaparse`, `parquetjs` - Data export formats
   - `exceljs` - Excel export
-  - `sql.js` - SQLite export
+  - `node:sqlite` (built into Node.js) - SQLite export
 - **Testing**: VS Code Test framework with Mocha
 - **Linting**: ESLint
 - **Build Tool**: vsce (VS Code Extension Packager)
