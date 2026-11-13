@@ -148,12 +148,12 @@ suite("Memory Guard Test Suite", () => {
     const qlik = DataExporter.memoryCost("qlik");
     assert.ok(qlik.bytesPerCell >= 9.2 * 1.5);
     assert.ok(qlik.bytesPerTextChar >= 5.2 * 2);
-    // An Arrow export needed 0.42 per cell and 0.31 per character, and is priced
-    // whole: its dictionaries hold every distinct text to the end
+    // An Arrow export needed nothing measurable per cell or character of a batch, and
+    // up to 55 per distinct value of a text column, which its dictionaries hold to the end
     const arrowCost = DataExporter.memoryCost("arrow");
-    assert.ok(arrowCost.bytesPerCell >= 0.42 * 1.5);
-    assert.ok(arrowCost.bytesPerTextChar >= 0.31 * 2);
-    assert.strictEqual(arrowCost.chunkRows, undefined);
+    assert.ok(arrowCost.bytesPerCell >= 0.4 * 1.5);
+    assert.ok(arrowCost.bytesPerDistinctText >= 55 * 1.5);
+    assert.ok(arrowCost.chunkRows > 0 && arrowCost.chunkCells > 0);
     // A SQLite export needed 0.42 per cell on the heap: its database is outside it
     assert.ok(DataExporter.memoryCost("sqlite").bytesPerCell >= 0.42 * 1.5);
   });
@@ -305,6 +305,34 @@ suite("Memory Guard Test Suite", () => {
     assert.deepStrictEqual(await guard.exportHeapBytes(yamlCost, rows, 300), {
       rows: rows.length,
       bytes: chunk * 300 * yamlCost.bytesPerCell + chunk * yamlCost.bytesPerTextChar,
+    });
+  });
+
+  test("An export that holds each text column's distinct values is priced for them, as many as the QVD has", async () => {
+    const arrowCost = DataExporter.memoryCost("arrow");
+    // Five rows, one chunk: code has two distinct texts, note five; id and at hold no text
+    const rows = Array.from({ length: 5 }, (_, i) => ({ id: i, code: `c${i % 2}`, note: `n${i}`, at: new Date(i) }));
+    const chunk = 5 * 4 * arrowCost.bytesPerCell + 20 * arrowCost.bytesPerTextChar;
+    const symbols = new Map([["id", 5], ["code", 2], ["note", 5], ["at", 5]]);
+    assert.deepStrictEqual(await guard.exportHeapBytes(arrowCost, rows, 4, 0, { symbols }), {
+      rows: 5,
+      bytes: chunk + (2 + 5) * arrowCost.bytesPerDistinctText,
+    });
+    // A field without its symbols counts one a row
+    assert.deepStrictEqual(await guard.exportHeapBytes(arrowCost, rows, 4), {
+      rows: 5,
+      bytes: chunk + (5 + 5) * arrowCost.bytesPerDistinctText,
+    });
+    // A row limit counts at most one a row exported
+    assert.deepStrictEqual(await guard.exportHeapBytes(arrowCost, rows, 4, 3, { symbols }), {
+      rows: 3,
+      bytes: 3 * 4 * arrowCost.bytesPerCell + 12 * arrowCost.bytesPerTextChar + (2 + 3) * arrowCost.bytesPerDistinctText,
+    });
+    // A format that holds no dictionary isn't priced for one
+    const csv = DataExporter.memoryCost("csv");
+    assert.deepStrictEqual(await guard.exportHeapBytes(csv, rows, 4, 0, { symbols }), {
+      rows: 5,
+      bytes: 5 * 4 * csv.bytesPerCell + 20 * csv.bytesPerTextChar,
     });
   });
 
