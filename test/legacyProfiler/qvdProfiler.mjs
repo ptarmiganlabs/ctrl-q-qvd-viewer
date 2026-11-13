@@ -1,0 +1,234 @@
+/**
+ * QVD Data Profiler, frozen as the reference for profiling results: see README.md here.
+ * Do not edit.
+ */
+
+import { isNumericField, calculateStatistics } from './qvdStatistics.mjs';
+import { calculateDataQualityMetrics } from './qvdDataQuality.mjs';
+import { isDateField, calculateTemporalAnalysis } from './qvdTemporalAnalysis.mjs';
+import { isStringField, calculateStringAnalysis } from './qvdStringAnalysis.mjs';
+
+/**
+ * Heap profiling builds per value of each profiled field, for the memory guard:
+ * about one and a half times the most measured, on 1,000,000 rows of
+ * chicago_taxi_rides_2016_03.qvd. A date field needed 181 bytes per value, for
+ * its Date objects and their sorted copies, and a number or a text field 38.
+ */
+export const PROFILE_BYTES_PER_VALUE = 288;
+
+/**
+ * Compute value frequency distribution for specified fields
+ * @param {Array<Object>} data - Array of data rows
+ * @param {Array<string>} fieldNames - Field names to profile
+ * @param {number} maxUniqueValues - Maximum unique values to track (default: 1000)
+ * @returns {Object} Profiling results with frequency distributions
+ */
+export function profileFields(data, fieldNames, maxUniqueValues = 1000) {
+  if (!data || data.length === 0) {
+    return {
+      error: "No data available for profiling",
+      fields: [],
+    };
+  }
+
+  const totalRows = data.length;
+  const results = [];
+
+  for (const fieldName of fieldNames) {
+    // Every distinct value's count, in the order the values first occur
+    const valueCounts = new Map();
+    let nullCount = 0;
+    let emptyStringCount = 0;
+
+    for (const row of data) {
+      const value = row[fieldName];
+
+      // Handle null/undefined/empty values
+      if (value === null || value === undefined) {
+        nullCount++;
+        continue;
+      }
+      if (value === "") {
+        emptyStringCount++;
+        continue;
+      }
+
+      // Convert to string for consistent handling
+      const valueStr = String(value);
+      valueCounts.set(valueStr, (valueCounts.get(valueStr) ?? 0) + 1);
+    }
+
+    const uniqueValueCount = valueCounts.size;
+    // The distribution shows the most frequent values only
+    const truncated = uniqueValueCount > maxUniqueValues;
+
+    // The most frequent values first, values as frequent in the order they first occur
+    const sortedValues = Array.from(valueCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, maxUniqueValues)
+      .map(([value, count]) => ({
+        value,
+        count,
+        percentage: ((count / totalRows) * 100).toFixed(2),
+      }));
+
+    // Add null count if present, empty strings included
+    const nullOrEmptyCount = nullCount + emptyStringCount;
+    if (nullOrEmptyCount > 0) {
+      sortedValues.push({
+        value: "(NULL/Empty)",
+        count: nullOrEmptyCount,
+        percentage: ((nullOrEmptyCount / totalRows) * 100).toFixed(2),
+      });
+    }
+
+    // Calculate statistics if field is numeric
+    const isNumeric = isNumericField(data, fieldName);
+    let statistics = null;
+    
+    if (isNumeric) {
+      statistics = calculateStatistics(data, fieldName);
+    }
+
+    // Calculate temporal analysis if field is date/timestamp
+    const isDate = isDateField(data, fieldName);
+    let temporalAnalysis = null;
+    
+    if (isDate) {
+      temporalAnalysis = calculateTemporalAnalysis(data, fieldName);
+    }
+
+    // Calculate string analysis if field is string (non-numeric, non-date)
+    const isString = !isNumeric && !isDate && isStringField(data, fieldName);
+    let stringAnalysis = null;
+    
+    if (isString) {
+      stringAnalysis = calculateStringAnalysis(data, fieldName);
+    }
+
+    // Calculate data quality metrics
+    const qualityMetrics = calculateDataQualityMetrics(
+      data,
+      fieldName,
+      uniqueValueCount,
+      nullCount,
+      valueCounts,
+      emptyStringCount
+    );
+
+    results.push({
+      fieldName,
+      totalRows,
+      uniqueValues: uniqueValueCount,
+      nullCount: nullOrEmptyCount,
+      distributions: sortedValues,
+      truncated,
+      truncatedAt: maxUniqueValues,
+      isNumeric,
+      statistics,
+      isDate,
+      temporalAnalysis,
+      isString,
+      stringAnalysis,
+      qualityMetrics,
+    });
+  }
+
+  return {
+    error: null,
+    fields: results,
+  };
+}
+
+/**
+ * Escape special characters in values for QVS inline format
+ * @param {string} value - Value to escape
+ * @param {string} delimiter - Delimiter character to replace
+ * @returns {string} Escaped value
+ */
+function escapeQvsValue(value, delimiter = "\t") {
+  return String(value)
+    .replace(new RegExp(delimiter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), " ")
+    .replace(/\n/g, " ")
+    .replace(/\r/g, "");
+}
+
+/**
+ * Get delimiter configuration for QVS export
+ * @param {string} delimiterChoice - User's delimiter choice
+ * @returns {Object} Delimiter object with char and escapeChar
+ */
+function getDelimiterConfig(delimiterChoice) {
+  const delimiters = {
+    tab: { char: "\t", escapeChar: "\\t", description: "Tab" },
+    pipe: { char: "|", escapeChar: "|", description: "Pipe (|)" },
+    comma: { char: ",", escapeChar: ",", description: "Comma (,)" },
+    semicolon: { char: ";", escapeChar: ";", description: "Semicolon (;)" },
+  };
+
+  return delimiters[delimiterChoice] || delimiters.tab;
+}
+
+/**
+ * Generate Qlik .qvs script for loading profiling data
+ * @param {Array<Object>} profilingResults - Results from profileFields
+ * @param {string} qvdFileName - Original QVD file name
+ * @param {Object} options - Export options
+ * @param {string} options.delimiter - Delimiter choice ('tab', 'pipe', 'comma', 'semicolon')
+ * @param {number} options.maxRows - Maximum rows per field (0 = all, 20, 100, 1000, 10000)
+ * @returns {string} QVS script content
+ */
+export function generateQvsScript(profilingResults, qvdFileName, options = {}) {
+  const { delimiter = 'tab', maxRows = 0 } = options;
+  const delimiterConfig = getDelimiterConfig(delimiter);
+  
+  let script = `// QVD Profiling Data Export
+// Generated: ${new Date().toISOString()}
+// Source QVD: ${qvdFileName}
+// Delimiter: ${delimiterConfig.description}
+${maxRows > 0 ? `// Max rows per field: ${maxRows}\n` : ''}// 
+// This script loads value distribution data for analyzed fields
+//\n\n`;
+
+  for (const fieldResult of profilingResults) {
+    const { fieldName, totalRows, uniqueValues, distributions, truncated } = fieldResult;
+
+    script += `// Field: ${fieldName}
+// Total Rows: ${totalRows.toLocaleString()}
+// Unique Values: ${uniqueValues.toLocaleString()}`;
+
+    if (truncated) {
+      script += `\n// WARNING: Distribution truncated to top ${distributions.length} values`;
+    }
+    
+    // Limit distributions if maxRows is specified
+    const exportDistributions = maxRows > 0 ? distributions.slice(0, maxRows) : distributions;
+    
+    if (maxRows > 0 && maxRows < distributions.length) {
+      script += `\n// NOTE: Exporting top ${maxRows} values out of ${distributions.length} total`;
+    }
+
+    script += `\n\n`;
+    script += `[${fieldName}_Distribution]:\nLOAD * INLINE [\n`;
+    script += `Value${delimiterConfig.char}Count${delimiterConfig.char}Percentage\n`;
+
+    for (const dist of exportDistributions) {
+      const escapedValue = escapeQvsValue(dist.value, delimiterConfig.char);
+      script += `${escapedValue}${delimiterConfig.char}${dist.count}${delimiterConfig.char}${dist.percentage}\n`;
+    }
+
+    script += `] (Delimiter is '${delimiterConfig.escapeChar}');\n\n`;
+  }
+
+  return script;
+}
+
+/**
+ * Check if file size warrants a warning before profiling
+ * @param {number} rowCount - Number of rows in the QVD
+ * @param {number} warningThreshold - Row count threshold for warning (default: 100000)
+ * @returns {boolean} True if warning should be shown
+ */
+export function shouldWarnLargeFile(rowCount, warningThreshold = 100000) {
+  return rowCount > warningThreshold;
+}
