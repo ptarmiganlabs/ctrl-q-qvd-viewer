@@ -74,27 +74,60 @@ function whatTextShows(text, date) {
 }
 
 /**
- * A column's dates, as the time of each value it holds, and what kind they are
+ * What a column's values say so far about whether it holds dates, and of which kind
  * @typedef {object} DateColumn
  * @property {boolean} tagged - Whether the field is tagged $date or $timestamp
  * @property {boolean} timestamps - Whether they are timestamps rather than dates
- * @property {Map<*, number>} times - Each value's Date, as milliseconds since 1970, by
- *   the dual or number it is
  * @property {boolean} holdsDates - Whether every value so far is a date
  */
 
 /**
- * Take one more value of a column: a date of its kind, or the end of its dates
- * @param {DateColumn} column - The column, changed in place
- * @param {*} value - A cell's value as qvdjs reads it with duals: "both"
- * @returns {void}
+ * A column of a field with these tags, before any of its values is taken
+ * @param {Array<string>} fieldTags - The field's tags
+ * @returns {DateColumn} The column
  */
-function takeValue(column, value) {
+export function dateColumnOf(fieldTags) {
+  return {
+    tagged: fieldTags.includes("$date") || fieldTags.includes("$timestamp"),
+    // A $timestamp tag makes timestamps from the start, the text or a value later
+    timestamps: fieldTags.includes("$timestamp"),
+    holdsDates: true,
+  };
+}
+
+/**
+ * Whether a value counts either way: a blank cell doesn't
+ * @param {*} value - A cell's value as qvdjs reads it with duals: "both"
+ * @returns {boolean} True for a value that is a date or ends a column's dates
+ */
+export function countsAsDate(value) {
+  return value !== null && value !== undefined && !isBlank(value);
+}
+
+/**
+ * The time of the date a value of a column of dates is
+ * @param {*} value - A value that counts, as qvdjs reads it with duals: "both"
+ * @returns {number} Its wall clock in milliseconds since 1970, as a Date's UTC fields hold it
+ */
+export function dateTimeOf(value) {
+  return qlikSerialToDate(value instanceof QvdDual ? value.number : value).getTime();
+}
+
+/**
+ * Take one more value of a column: a date of its kind, or the end of its dates
+ * The outcome for a column doesn't depend on the order its values come in, nor on a
+ * value taken twice.
+ * @param {DateColumn} column - The column, changed in place
+ * @param {*} value - A value that counts, as qvdjs reads it with duals: "both"
+ * @returns {number|null} The date's time, as dateTimeOf() gives it; null once the
+ *   column holds no dates
+ */
+export function takeDateValue(column, value) {
   // A field tagged as dates may hold a serial without text
   const serial = value instanceof QvdDual ? value.number : column.tagged ? value : null;
   if (!(typeof serial === "number" && serial >= FIRST_SERIAL && serial <= LAST_SERIAL)) {
     column.holdsDates = false;
-    return;
+    return null;
   }
   const date = qlikSerialToDate(serial);
   // Untagged, a dual's text must show its date. Tagged or not, text that shows a time
@@ -103,7 +136,7 @@ function takeValue(column, value) {
     const shows = whatTextShows(value.text, date);
     if (shows === null && !column.tagged) {
       column.holdsDates = false;
-      return;
+      return null;
     }
     if (shows === "timestamp") {
       column.timestamps = true;
@@ -113,7 +146,7 @@ function takeValue(column, value) {
   if (date.getTime() % DAY_MS !== 0) {
     column.timestamps = true;
   }
-  column.times.set(value, date.getTime());
+  return date.getTime();
 }
 
 /**
@@ -127,13 +160,7 @@ function takeValue(column, value) {
  *   a column that doesn't hold dates
  */
 export async function findDateColumns(rows, tags, signal) {
-  const columns = tags.map((fieldTags) => ({
-    tagged: fieldTags.includes("$date") || fieldTags.includes("$timestamp"),
-    // A $timestamp tag makes timestamps from the start, the text or a value later
-    timestamps: fieldTags.includes("$timestamp"),
-    times: new Map(),
-    holdsDates: true,
-  }));
+  const columns = tags.map((fieldTags) => ({ ...dateColumnOf(fieldTags), times: new Map() }));
   let open = columns.length;
   const rowsPerChunk = Math.max(1, Math.floor(CELLS_PER_CHUNK / Math.max(1, columns.length)));
 
@@ -142,12 +169,12 @@ export async function findDateColumns(rows, tags, signal) {
     for (let index = 0; index < columns.length; index++) {
       const column = columns[index];
       const value = row[index];
-      if (column.holdsDates && value !== null && value !== undefined && !isBlank(value)) {
-        if (!column.times.has(value)) {
-          takeValue(column, value);
-          if (!column.holdsDates) {
-            open--;
-          }
+      if (column.holdsDates && countsAsDate(value) && !column.times.has(value)) {
+        const time = takeDateValue(column, value);
+        if (time === null) {
+          open--;
+        } else {
+          column.times.set(value, time);
         }
       }
     }
