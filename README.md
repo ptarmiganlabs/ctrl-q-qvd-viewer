@@ -1,20 +1,21 @@
 <h1 align="center">Ctrl-Q QVD Viewer</h1>
 
 <h2 align="center">A Visual Studio Code extension for viewing and exporting Qlik Sense and QlikView QVD files.<br><br>
-View data, metadata, schema, and lineage information directly within VS Code.</h2>
+View data, metadata, schema, lineage and data profiles directly within VS Code.</h2>
 
 <h4 align="center">Designed for Qlik developers, admins and data engineers.<br>
-Open source with a permissive MIT license.<br>
-</h2>
+Open source with a permissive MIT license.</h4>
 
 <p align="center">
-<a href="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer"><img src="https://img.shields.io/badge/Source---" alt="Source"></a>
+<a href="https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer"><img src="https://img.shields.io/badge/VS%20Code%20Marketplace-Ctrl--Q%20QVD%20Viewer-blue" alt="VS Code Marketplace"></a>
+<a href="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer"><img src="https://img.shields.io/badge/Source-GitHub-lightgrey" alt="Source"></a>
 <a href="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer"><img src="https://img.shields.io/badge/Project%20Status-Active-brightgreen" alt="Project Status: Active"></a>
+<a href="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT"></a>
 </p>
 
 ---
 
-**Sponsored by [Ptarmigan Labs](https://ptarmiganlabs.com)**
+**Sponsored by [Ptarmigan Labs](https://ptarmiganlabs.com)**, which also sponsors the open source Butler and Ctrl-Q tools and the .qs library of Qlik Sense extensions. See [Part of the Ptarmigan Labs tools](#part-of-the-ptarmigan-labs-tools).
 
 ## Features
 
@@ -47,6 +48,7 @@ Open source with a permissive MIT license.<br>
     - Character composition analysis (letters, digits, special characters)
     - Whitespace and formatting detection (leading/trailing, multiple spaces)
     - Empty string and null value analysis
+  - **Data Quality Assessment**: A 0-100 quality score per field, with color-coded indicators and recommendations
   - See detailed value counts and percentages in sortable tables
   - Export profiling results as Qlik .qvs scripts for further analysis
   - Automatic warning for large files before loading all data
@@ -65,23 +67,39 @@ Open source with a permissive MIT license.<br>
   - **XML** - Extensible markup language for enterprise systems
   - **YAML** - Human-readable structured data format
 - **Configurable Page Size**: Choose how many rows a page shows (default: 100, range: 10-1,000), in Settings or below the table
-- **About Panel**: Access information about the Butler family of tools
+- **About Panel**: Version information, a feature overview and links to the other Ptarmigan Labs tools
+- **Extension Logs**: An output channel that shows what the extension did, for troubleshooting
 - **Read-Only Access**: Safe viewing without modifying original QVD files
 
-## About Ctrl-Q
+## Part of the Ptarmigan Labs tools
 
-Ctrl-Q is a set of sibling tools to the **Butler family** of tools for Qlik Sense and QlikView developers and admins.
-The Butler suite provides a best-in-class set of utilities for managing, monitoring, and enhancing Qlik environments, while Ctrl-Q focuses on command-line and developer-centric tools.
+Ctrl-Q QVD Viewer is one of a set of free, open source tools for Qlik Sense and QlikView developers and admins, all MIT licensed and all sponsored by [Ptarmigan Labs](https://ptarmiganlabs.com). See them all at [ptarmiganlabs.com/products](https://ptarmiganlabs.com/products/).
 
-### The Butler Family
+### The Butler family
 
-- **[Butler](https://butler.ptarmiganlabs.com)**: Core monitoring and automation tool for Qlik Sense Enterprise
-- **[Butler SOS](https://butler-sos.ptarmiganlabs.com)**: Real-time monitoring and metrics for Qlik Sense
-- **[Butler CW](https://butler-cw.ptarmiganlabs.com)**: Cache warming utility for Qlik Sense apps
-- **[Ctrl-Q](https://ctrl-q.ptarmiganlabs.com)**: Command-line tool for Qlik Sense administration and DevOps
-- **Ctrl-Q QVD Viewer** (this extension): View QVD files directly in VS Code
+- **[Butler](https://butler.ptarmiganlabs.com)**: Reload failure alerts, task scheduling, a key-value store and more for Qlik Sense Enterprise on Windows
+- **[Butler SOS](https://butler-sos.ptarmiganlabs.com)**: Real-time operational metrics for client-managed Qlik Sense, for dashboards in Grafana and elsewhere
+- **[Butler Sheet Icons](https://butler-sheet-icons.ptarmiganlabs.com)**: Automatic sheet icons (thumbnails) for client-managed Qlik Sense and Qlik Cloud
 
-Learn more about the Butler family at [https://ptarmiganlabs.com/the-butler-family/](https://ptarmiganlabs.com/the-butler-family/)
+### Ctrl-Q
+
+- **[Ctrl-Q](https://ctrl-q.ptarmiganlabs.com)**: Automate Qlik Sense Enterprise on Windows admin tasks from the command line
+- **[Ctrl-Q QVD Viewer](https://ptarmiganlabs.com/products/ctrl-q-qvd-viewer/)** (this extension): View and export QVD files in VS Code
+
+### The .qs library: Qlik Sense extensions
+
+Extensions for both client-managed Qlik Sense and Qlik Cloud:
+
+- **[Onboard.qs](https://ptarmiganlabs.com/products/onboard-qs/)**: Interactive onboarding tours for Qlik Sense apps, no coding required
+- **[HelpButton.qs](https://ptarmiganlabs.com/products/helpbutton-qs/)**: A configurable, context-aware help button in the Qlik Sense app toolbar
+- **[Chatbox.qs](https://ptarmiganlabs.com/products/chatbox-qs/)** (pre-release): Chat-style conversations from the Qlik Sense data model
+- **[QvsView.qs](https://ptarmiganlabs.com/products/qvsview-qs/)** (pre-release): A read-only Qlik load script viewer with syntax highlighting
+
+### More tools
+
+- **[qvdjs](https://ptarmiganlabs.com/products/qvdjs/)**: Read and write QVD files from Node.js. This extension reads QVD files with it
+- **[qs-jwt](https://qs-jwt.ptarmiganlabs.com)**: Create JWTs for Qlik Sense Enterprise on Windows and Qlik Cloud
+- **[qs-log-scanner](https://ptarmiganlabs.com/products/qs-log-scanner/)**: A terminal UI for exploring Qlik Sense log events sent over UDP
 
 ## Getting Started
 
@@ -161,12 +179,16 @@ By default, a page of the Data tab shows 100 rows. Pick another page size below 
 
 ## Installation
 
+### From the VS Code Marketplace
+
+Install [Ctrl-Q QVD Viewer](https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer) from the Marketplace, or search for "Ctrl-Q QVD Viewer" in VS Code's Extensions view, as in [Quick Start](#quick-start-3-steps).
+
 ### From VSIX (Local Installation)
 
 1. Clone this repository
 2. Install dependencies: `npm install`
-3. Package the extension: `npm run package` (or use `vsce package`)
-4. Install in VS Code: Extensions → Install from VSIX
+3. Build and package the extension: `npx vsce package`. This runs the production build (`npm run package`) and writes a `.vsix` file to the project root
+4. Install in VS Code: in the Extensions view, open the `...` menu, choose **Install from VSIX...** and pick the `.vsix` file
 
 ### From Source (Development)
 
@@ -184,9 +206,19 @@ There are two ways to open a QVD file:
    - Type "Open QVD File" and select the command
    - Choose a QVD file from the file picker
 
+### Commands
+
+The extension adds these commands to the Command Palette:
+
+- **QVD: Open QVD File**: Pick a QVD file and open it in the viewer
+- **QVD: About**: Show the About panel, also opened by the **ℹ️ About** button in the viewer
+- **QVD: Show Extension Logs**: Show the extension's output channel, which helps when something goes wrong
+
+The viewer's **⚙️ Settings** button opens the extension's settings.
+
 ### What You'll See
 
-The extension displays QVD files in five tabs:
+The extension displays QVD files in five tabs. The Data, Schema, File Metadata and Lineage tabs each have a search box that filters what the tab shows.
 
 #### 1. Data
 
@@ -194,15 +226,18 @@ A table of the file's rows, with all its columns in file order, a page at a time
 
 The first page of a large file takes a few seconds, because the viewer reads each field's values once. A bar below the tabs shows how far it has got, with a Cancel button. Later pages take milliseconds.
 
+Its search box searches the page shown, not the whole file. Right-click a cell to copy its value.
+
 #### 2. Field Information / Schema
 
 Each field shows:
 
 - Field name
-- Data type (INTEGER, TEXT, etc.)
-- Number of unique symbols
-- Tags
-- ...and other technical details
+- Number of unique values (symbols)
+- Tags, such as `$numeric`, `$integer`, `$text`, `$date` or `$timestamp`, which say what kind of values the field holds
+- Number format, the only type a QVD stores for a field: `INTEGER`, `REAL`, `MONEY`, `DATE`, `TIME`, `TIMESTAMP` or, most often, `UNKNOWN`, and its format string, if any
+- Comment (if any)
+- Where its values are stored in the file: offset, length, bit offset, bit width and bias
 
 #### 3. File Metadata
 
@@ -216,10 +251,7 @@ Each field shows:
 
 #### 4. Lineage Information
 
-The lineage is an array of objects, each with `Discriminator` and `Statement` properties.
-
-- Discriminator
-- Statement
+Where the data in the QVD came from, as Qlik recorded it: a list of entries, each with a `Discriminator` (the source, such as a file path, a database connection, `INLINE`, or a `STORE` into another file) and a `Statement` (the SQL statement that read a database source, often empty for other sources).
 
 #### 5. Data Profiling
 
@@ -227,8 +259,8 @@ Analyze value distributions for selected fields to understand data patterns and 
 
 **How to Use Profiling:**
 
-1. Navigate to the **📊 Profiling** tab
-2. Select 1-3 fields from the field selector (use Ctrl/Cmd+Click for multiple selections)
+1. Navigate to the **📊 Profiling** tab. At its top, a **📦 QVD File Structure** chart shows how much of the file its header, symbol tables and index table take
+2. Tick the checkboxes of 1-3 fields in the field selector
 3. Click **"▶️ Run Profiling"** to analyze the data
 4. View results for each field including:
    - **Basic Statistics**: Total rows, unique values, NULL/empty count, frequency distribution
@@ -236,6 +268,7 @@ Analyze value distributions for selected fields to understand data patterns and 
    - **Temporal Analysis** (for date/time fields, Beta): Time range analysis, temporal patterns, distribution across time granularities, and gap detection
    - **String Analysis** (for text fields, Beta): Length analysis, pattern detection (email, phone, URL), character composition, and whitespace/formatting detection
    - **Interactive Chart**: Bar chart showing top 20 most frequent values
+   - **Data Quality Assessment**: A quality score with color-coded indicators and recommendations
    - **Detailed Table**: Complete distribution with values, counts, and percentages
 
 **Features:**
@@ -243,7 +276,7 @@ Analyze value distributions for selected fields to understand data patterns and 
 - **Field Comparison**: Compare value distributions across up to 3 fields simultaneously
 - **Automatic Analysis Type Detection**: The extension automatically applies the appropriate analysis based on field content (numeric, temporal, or string)
 - **Visual Analysis**: Interactive charts powered by Chart.js for clear data visualization
-- **Export to QVS**: Generate Qlik .qvs scripts containing frequency data tables that can be loaded into Qlik Sense for further analysis
+- **Export to QVS**: The **💾 Export to QVS Script** button generates a Qlik .qvs script with the frequency tables, to load into Qlik Sense for further analysis. You choose the delimiter and how many values per field to include (top 20, 100, 1,000, 10,000 or all)
 - **Large File Warning**: Automatic warning when profiling files with more than 100,000 rows, as all data must be loaded into memory
 
 **Note:**
@@ -271,9 +304,11 @@ The Ctrl-Q QVD Viewer allows you to export QVD data to various formats for furth
    - **Export to SQLite** - Self-contained database file with SQL support (Beta)
    - **Export to XML** - Structured markup for enterprise integration
    - **Export to YAML** - Human-readable format for configuration and data exchange
-4. For **Qlik Inline Script** and **PostgreSQL** exports, you'll be prompted to select the number of rows:
-   - Choose from predefined options: 10, 100, 1,000, 10,000, or All rows
-   - Or enter a custom value (validated as a positive integer)
+4. For **Qlik Inline Script** and **PostgreSQL** exports, you'll be prompted to select the number of rows, counted from the first:
+   - Choose from predefined options: 100, 500, 1,000, 5,000, 10,000, or All rows (the prompt shows how many there are)
+   - Or choose **Custom...** and enter a number, from 1 up to the number of rows in the file
+   - **Qlik Inline Script** then asks for the delimiter: tab, pipe, comma, semicolon, or auto-detect. The `qlikInlineDelimiter` setting picks the default
+   - **PostgreSQL** then asks whether to include a `CREATE TABLE` statement. If so, it asks for the table name (default `qvd_data`) and whether to drop an existing table of that name first
 5. For **Parquet**, **Avro**, **Arrow**, **SQLite** and **PostgreSQL** exports of a QVD with timestamps, you'll be asked which time zone they were read in. Keep **No time zone** to export them as the wall clocks the QVD holds (see Export Details)
 6. Choose the destination folder and file name in the save dialog
 7. Click "Save" to complete the export
@@ -298,6 +333,7 @@ This extension contributes the following settings:
 
 - `ctrl-q-qvd-viewer.pageSize`: Rows a page of the Data tab shows when a QVD opens (default: 100, min: 10, max: 1000). The page size can also be changed below the table
 - `ctrl-q-qvd-viewer.maxPreviewRows`: No longer used, since the Data tab reads one page at a time. Use `pageSize` instead
+- `ctrl-q-qvd-viewer.qlikInlineDelimiter`: The delimiter offered first when exporting a Qlik inline load script: `tab`, `pipe`, `comma`, `semicolon` or `auto-detect` (default: `tab`). Each export can pick another
 - `ctrl-q-qvd-viewer.csvEscapeFormulas`: Put an apostrophe before CSV text that a spreadsheet would run as a formula (default: true). Turn it off if the files are only read by programs
 - `ctrl-q-qvd-viewer.csvByteOrderMark`: Start CSV files with a UTF-8 byte order mark, which Excel on Windows needs to show å, ä, ö and other non-ASCII text (default: false). Python's `csv` module then reads the mark as part of the first column name, unless the file is opened with `encoding="utf-8-sig"`
 - `ctrl-q-qvd-viewer.exportTimeZone`: The time zone a QVD's timestamps were read in, offered first when an export asks for one: an IANA zone such as `America/Chicago`, `UTC`, an alias such as `US/Central`, or an offset such as `-06:00` (default: empty, for no time zone). An export that would use a zone VS Code doesn't know is refused
@@ -312,10 +348,16 @@ To change these settings:
 
 This section provides a quick overview for developers. For detailed information, see the following documentation:
 
-- **[BUILD.md](docs/BUILD.md)** - Comprehensive build and development guide including prerequisites, setup, testing, and debugging
+- **[BUILD.md](docs/BUILD.md)** - Comprehensive build and development guide including prerequisites (Node.js 22 or later), setup, testing, and debugging
 - **[BUNDLING.md](docs/BUNDLING.md)** - Extension bundling with esbuild, build scripts, and optimization details
+- **[TESTING.md](docs/TESTING.md)** - The test strategy and how to run the tests
 - **[CI_CD.md](docs/CI_CD.md)** - CI/CD setup with GitHub Actions, automated testing, and release workflows
 - **[PUBLISHING.md](docs/PUBLISHING.md)** - Publishing to VS Code Marketplace, including account setup and deployment
+- **[SECURITY_SCANNING.md](docs/SECURITY_SCANNING.md)** - Security scanning before the extension is published
+- **[VSCODE_SUPPORT.md](docs/VSCODE_SUPPORT.md)** - Which VS Code versions the extension supports, and how the minimum moves
+- **[PAGINATION.md](docs/PAGINATION.md)** - How the Data tab reads a QVD one page at a time
+- **[PROFILING.md](docs/PROFILING.md)** - The profiling and data quality features in detail
+- **[QVD_FORMAT.md](docs/QVD_FORMAT.md)** - The QVD file format
 
 ### Test Data
 
@@ -330,17 +372,17 @@ For more details on building, testing, and packaging, see **[BUILD.md](docs/BUIL
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit issues or pull requests.
+Contributions are welcome! Please feel free to [open an issue](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues) or submit a pull request.
 
 ## Sponsorship
 
-This extension is sponsored by [Ptarmigan Labs](https://ptarmiganlabs.com), creators of the Butler suite of tools for Qlik Sense and QlikView.
+This extension is sponsored by [Ptarmigan Labs](https://ptarmiganlabs.com), which also sponsors the open source Butler and Ctrl-Q tools and the .qs library of Qlik Sense extensions. See [Part of the Ptarmigan Labs tools](#part-of-the-ptarmigan-labs-tools).
 
 ## License
 
-MIT. See LICENSE file for details.
+MIT. See the [LICENSE](LICENSE) file for details.
 
 ---
 
-**Part of the Butler and Ctrl-Q family of tools for Qlik Sense and QlikView**  
-Learn more at [butler.ptarmiganlabs.com](https://butler.ptarmiganlabs.com) | [ptarmiganlabs.com](https://ptarmiganlabs.com)
+**Part of the Butler, Ctrl-Q and .qs family of open source tools for Qlik Sense and QlikView, sponsored by [Ptarmigan Labs](https://ptarmiganlabs.com)**  
+Learn more at [ptarmiganlabs.com/products](https://ptarmiganlabs.com/products/)
