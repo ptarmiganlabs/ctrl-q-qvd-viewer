@@ -40,11 +40,12 @@ export const HELD_BYTES = 128 * 1024 * 1024;
 const PAGES_PER_CHECK = 16;
 
 /**
- * Most rows between two of a page's rows that are read with them, rather than
- * apart: a sorted or searched page's rows are spread through the file, and each
- * read of a few rows costs more than the rows between near ones
+ * Rows between a page's rows that may be read with them, for each row the page
+ * shows. A sorted or searched page's rows are spread through the file, and each
+ * read of a few rows reopens the file and parses its header, which costs more than
+ * the rows between near ones.
  */
-const GAP_ROWS = 8;
+const EXTRA_ROWS_PER_ROW = 16;
 
 /**
  * What the grid shows: the file's rows in file order, or those of a search, in
@@ -87,18 +88,38 @@ function viewOf(search, sort, header) {
 
 /**
  * The rows of a page of a view, as windows of the file to read: near rows together
+ * The gaps between them are closed smallest first, while the rows read between
+ * fit in EXTRA_ROWS_PER_ROW for each row shown, so that rows near each other in the
+ * file are read in one go, and rows far apart aren't.
  * @param {Uint32Array} rows - The page's rows, in view order
  * @returns {Array<{start: number, end: number}>} Windows, in file order, end exclusive
  */
 function windowsOf(rows) {
   const sorted = Uint32Array.from(rows).sort();
-  const windows = [];
-  for (const row of sorted) {
-    const last = windows.at(-1);
-    if (last && row < last.end + GAP_ROWS) {
-      last.end = Math.max(last.end, row + 1);
+  if (sorted.length === 0) {
+    return [];
+  }
+  // The rows between each row and the next, in order of size
+  const gaps = [];
+  for (let i = 1; i < sorted.length; i++) {
+    gaps.push(Math.max(0, sorted[i] - sorted[i - 1] - 1));
+  }
+  const smallestFirst = gaps.map((_, i) => i).sort((a, b) => gaps[a] - gaps[b]);
+  const closed = new Uint8Array(gaps.length);
+  let budget = EXTRA_ROWS_PER_ROW * sorted.length;
+  for (const i of smallestFirst) {
+    if (gaps[i] > budget) {
+      break;
+    }
+    budget -= gaps[i];
+    closed[i] = 1;
+  }
+  const windows = [{ start: sorted[0], end: sorted[0] + 1 }];
+  for (let i = 1; i < sorted.length; i++) {
+    if (closed[i - 1]) {
+      windows.at(-1).end = sorted[i] + 1;
     } else {
-      windows.push({ start: row, end: row + 1 });
+      windows.push({ start: sorted[i], end: sorted[i] + 1 });
     }
   }
   return windows;
@@ -194,7 +215,8 @@ export class Pager {
   #collator;
   // The view shown: its key, its rows in order, null for every row in file order, and what releases them
   #view = { key: JSON.stringify(["", null]), rows: null, release: () => {} };
-  // The rows the last search found, in file order, for a sort of them by another field to start from
+  // The rows the search shown found, in file order, booked once: the view shows them,
+  // or a sort of them, and another sort of them starts from them
   #searched = { text: "", rows: null, release: () => {} };
   // Pages read since qvdjs last checked one, and the most rows that check was for
   #sinceCheck = 0;
@@ -344,19 +366,19 @@ export class Pager {
       return;
     }
     if (!view.search && !view.sort) {
-      this.#showView(view.key, null);
+      this.#showView(view.key, null, "", null);
       return;
     }
     await this.#checkFile();
 
     const header = this.header;
     const field = view.sort ? header.fields[view.sort.fieldIndex] : null;
-    // A search already made for this text is sorted again, not made again
-    const searchedBefore = view.search && view.search === this.#searched.text ? this.#searched.rows : null;
+    // The search shown, sorted again rather than made again
+    const kept = view.search && view.search === this.#searched.text ? this.#searched.rows : null;
     // A field is scanned at a time, each with a file of its own, closed once it is scanned
     const neededBytes =
       SCAN_PEAK_BYTES +
-      (view.search && !searchedBefore ? searchHeapBytes(header) : 0) +
+      (view.search && !kept ? searchHeapBytes(header) : 0) +
       (view.sort ? sortHeapBytes(header, view.sort.fieldIndex, header.rowCount) : 0);
     const booked = tryBookHeap(neededBytes, this.#budget ?? undefined);
     if (!("release" in booked)) {
@@ -378,12 +400,12 @@ export class Pager {
     // A search and a sort share the progress bar: the search its first half. A sort
     // reads its field in its first half, and sorts its values in the second.
     const searchShare = view.search ? (view.sort ? 0.5 : 1) : 0;
+    // The search's rows, in file order, and the view's: those, or a sort of them or of every row
+    let found = kept;
     let rows = null;
     try {
-      if (searchedBefore) {
-        rows = searchedBefore;
-      } else if (view.search) {
-        rows = await searchRows({
+      if (view.search && !found) {
+        found = await searchRows({
           ...scanned,
           text: view.search,
           onProgress: ({ field: name, fieldIndex, fields, fraction }) =>
@@ -392,14 +414,14 @@ export class Pager {
               fraction: fraction * searchShare,
             }),
         });
-        this.#keepSearch(view.search, rows);
       }
-      if (view.sort && (!rows || rows.length > 0)) {
+      rows = found;
+      if (view.sort && (!found || found.length > 0)) {
         rows = await sortRows({
           ...scanned,
           fieldIndex: view.sort.fieldIndex,
           descending: view.sort.descending,
-          rows,
+          rows: found,
           collator: this.#collator,
           onProgress: ({ stage, fraction }) =>
             onProgress?.({
@@ -417,29 +439,30 @@ export class Pager {
     }
     // A file rewritten while it was scanned may have given rows of both
     await this.#checkFile();
-    this.#showView(view.key, rows);
+    this.#showView(view.key, rows, view.search, found);
   }
 
   /**
-   * Keep the rows a search found, for sorts of them, in place of the last search's
-   * @param {string} text - The search text
-   * @param {Uint32Array} rows - The rows it found, in file order
-   */
-  #keepSearch(text, rows) {
-    const kept = this.#searched;
-    this.#searched = { text, rows, release: bookHeap(rows.byteLength) };
-    kept.release();
-  }
-
-  /**
-   * Show a view: book its rows, and let the view shown before go
+   * Show a view, and let the view and search shown before go
+   * The search's rows are booked once, whether the view shows them or a sort of
+   * them; a sort's own rows are booked with the view.
    * @param {string} key - The view's key
    * @param {Uint32Array|null} rows - Its rows in order, null for every row in file order
+   * @param {string} search - Its search text, none for none
+   * @param {Uint32Array|null} found - The rows the search found, in file order; null for none
    */
-  #showView(key, rows) {
+  #showView(key, rows, search, found) {
     const shown = this.#view;
-    this.#view = { key, rows, release: rows ? bookHeap(rows.byteLength) : () => {} };
+    const searched = this.#searched;
+    if (found !== searched.rows) {
+      this.#searched = { text: search, rows: found, release: found ? bookHeap(found.byteLength) : () => {} };
+    }
+    const own = rows !== null && rows !== found;
+    this.#view = { key, rows, release: own ? bookHeap(rows.byteLength) : () => {} };
     shown.release();
+    if (found !== searched.rows) {
+      searched.release();
+    }
   }
 
   /**

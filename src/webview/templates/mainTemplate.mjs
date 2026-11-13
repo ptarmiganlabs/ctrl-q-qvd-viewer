@@ -15,6 +15,13 @@ import { helpIconsHtml } from "../qualityMetricHelp.mjs";
 import { pageSizesOffered } from "../pageSize.mjs";
 
 /**
+ * Most rows a file has for the Data tab to search it as the user types. A larger
+ * one is searched at Enter only: its search takes long enough that a pause in
+ * typing shouldn't start one, for a word not yet typed whole.
+ */
+export const SEARCH_AS_YOU_TYPE_ROWS = 1_000_000;
+
+/**
  * Generate HTML for webview with tabbed interface and Tabulator
  * The page is made from the file's header alone. Its Data tab's grid then asks the
  * extension for its rows, a page at a time: see src/webview/client/dataGrid.js.
@@ -34,6 +41,7 @@ import { pageSizesOffered } from "../pageSize.mjs";
 export function getHtmlForWebview(header, webview, context) {
   const { metadata, columns, totalRows, fileSize, pageSize = 100, key = null } = header;
   const nonce = getNonce();
+  const searchAsYouType = totalRows <= SEARCH_AS_YOU_TYPE_ROWS;
 
   // Inline Tabulator for easier CSP compliance
   const tabulatorJs = getTabulatorJs(context.extensionPath);
@@ -1250,7 +1258,9 @@ export function getHtmlForWebview(header, webview, context) {
                 <!-- What the grid waits for, with a Cancel button, or why a page failed: see dataGrid.js -->
                 <div class="data-grid-status" id="data-grid-status" role="status" aria-live="polite" hidden></div>
                 <div class="search-container">
-                    <input type="text" class="search-input" id="data-search" placeholder="🔍 Search all rows..." />
+                    <input type="text" class="search-input" id="data-search" placeholder="${
+                      searchAsYouType ? "🔍 Search all rows..." : "🔍 Search all rows, then press Enter..."
+                    }" />
                     <button class="clear-search-btn" id="clear-data-search">✕ Clear</button>
                 </div>
                 <div class="table-wrapper">
@@ -1405,6 +1415,8 @@ export function getHtmlForWebview(header, webview, context) {
     <script nonce="${nonce}">
         const vscode = acquireVsCodeApi();
         const totalRowsInFile = ${totalRows};
+        // Whether the Data tab searches as the user types, or at Enter only, for a large file
+        const searchAsYouType = ${searchAsYouType};
         // Rows a page of the grid shows to begin with, and the sizes it offers
         const pageSize = ${pageSize};
         // The version of the file this page shows, which each page of the grid is checked against
@@ -1476,12 +1488,15 @@ export function getHtmlForWebview(header, webview, context) {
             // Search inputs
             const dataSearch = document.getElementById('data-search');
             if (dataSearch) {
-                // Every row of the file is searched: once typing pauses, or at Enter, not at every key
+                // Every row of the file is searched: once typing pauses, or at Enter, not at
+                // every key. A large file's only at Enter.
                 let searchTimer = null;
                 dataSearch.addEventListener('input', function() {
                     const text = this.value;
                     clearTimeout(searchTimer);
-                    searchTimer = setTimeout(() => filterDataTable(text), 400);
+                    if (searchAsYouType) {
+                        searchTimer = setTimeout(() => filterDataTable(text), 400);
+                    }
                 });
                 dataSearch.addEventListener('keydown', function(event) {
                     if (event.key === 'Enter') {

@@ -279,6 +279,28 @@ suite("Whole-File Search and Sort Test Suite", () => {
     assert.strictEqual(chunkRowsFor(0, 0), 1000000);
   });
 
+  test("A search's rows are booked once, whether shown or sorted, and let go once the search is cleared", async () => {
+    const before = guard.bookedBytes();
+    const pager = await openPager(inventoryParts);
+    try {
+      await pager.page({ offset: 0, limit: 10 });
+      const held = () => guard.bookedBytes() - before - pager.heldBytes;
+      // Every part number holding a 3: many rows, so that a second booking would show
+      const found = await pager.page({ offset: 0, limit: 10, search: "3" });
+      const rowBytes = 4 * found.totalRows;
+      assert.ok(Math.abs(held() - rowBytes) < 1, `the search's ${rowBytes} bytes, once, not ${held()}`);
+      // Sorted, the search is kept and the sort's own rows are booked beside it
+      await pager.page({ offset: 0, limit: 10, search: "3", sort: { fieldIndex: 3 } });
+      assert.ok(Math.abs(held() - 2 * rowBytes) < 1);
+      // Every row in file order again: nothing of the search is kept
+      await pager.page({ offset: 0, limit: 10 });
+      assert.ok(Math.abs(held()) < 1, `nothing of the search is booked, not ${held()}`);
+    } finally {
+      await pager.close();
+    }
+    assert.ok(guard.bookedBytes() <= before + 1);
+  });
+
   test("A search or sort given up stops, holds nothing, and leaves the view shown", async () => {
     const before = guard.bookedBytes();
     const pager = await openPager(inventoryParts);
@@ -382,6 +404,19 @@ suite("Whole-File Search and Sort Test Suite", () => {
         return true;
       }
     );
+
+    // A field whose header says it holds too many values, none of them numbers, is refused before a scan
+    let scanned = 0;
+    const many = { rowCount: 10, fields: [{ name: "Code", symbols: MAX_SORTED_TEXTS + 1, bytes: 0, tags: ["$text"] }] };
+    await assert.rejects(
+      sortRows({ filePath: "x.qvd", allowedDir: "/", header: many, fieldIndex: 0, scan: async () => scanned++ }),
+      { name: "ViewRefusedError" }
+    );
+    assert.strictEqual(scanned, 0);
+    // One Qlik calls numeric is scanned: its values sort as numbers
+    const numeric = { rowCount: 0, fields: [{ ...many.fields[0], tags: ["$numeric", "$integer"] }] };
+    await sortRows({ filePath: "x.qvd", allowedDir: "/", header: numeric, fieldIndex: 0, scan: async () => scanned++ });
+    assert.strictEqual(scanned, 1);
 
     const keys = [3, 1, 2, 1, 3, 0, 1];
     const order = await mergeSort(Uint32Array.from(keys.keys()), (a, b) => keys[a] - keys[b]);

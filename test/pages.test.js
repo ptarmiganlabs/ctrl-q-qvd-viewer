@@ -438,6 +438,16 @@ suite("Page Test Suite", () => {
     assert.ok(webview.html.includes('data-kind="missing"'));
   });
 
+  test("A file of more than a million rows is searched at Enter, a smaller one as the user types", async () => {
+    const provider = new QvdEditorProvider({ extensionPath: root, extensionUri: vscode.Uri.file(root) });
+    const webview = recordingWebview();
+    await provider.updateWebview(path.join(testData, "chicago_taxi_rides", "chicago_taxi_rides_2016_01.qvd"), webview);
+    assert.ok(webview.html.includes("const searchAsYouType = false;"));
+    assert.ok(webview.html.includes("Search all rows, then press Enter"));
+    await provider.updateWebview(inventoryParts, webview);
+    assert.ok(webview.html.includes("const searchAsYouType = true;"));
+  });
+
   test("Closing the editor while it opens leaves the closed panel alone", async () => {
     const provider = new QvdEditorProvider({ extensionPath: root, extensionUri: vscode.Uri.file(root) });
     // A header that waits until the editor's signal gives it up

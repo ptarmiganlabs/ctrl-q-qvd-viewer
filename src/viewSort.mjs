@@ -42,7 +42,7 @@ export function sortHeapBytes(header, fieldIndex, rows) {
   const symbols = field.symbols;
   // A string of its text, held for each text value: its characters, and the string itself
   const texts = 2 * field.bytes + 40 * symbols;
-  return 4 * header.rowCount + 4 * rows + symbols * (1 + 8 + 4 + 4 + 4 + 4) + texts;
+  return 4 * header.rowCount + 4 * rows + symbols * (1 + 8 + 4 + 4 + 4 + 4 + 4) + texts;
 }
 
 /**
@@ -55,6 +55,18 @@ export class ViewRefusedError extends Error {
     this.name = "ViewRefusedError";
     this.context = { reason: "view" };
   }
+}
+
+/**
+ * The refusal of a sort by a field with more text values than a sort compares
+ * @param {string} name - The field's name
+ * @returns {ViewRefusedError} The refusal
+ */
+function tooManyTexts(name) {
+  return new ViewRefusedError(
+    `${name} has more than ${MAX_SORTED_TEXTS.toLocaleString()} different text values, ` +
+      "too many to sort here. Sort by another field, or search for the rows you want."
+  );
 }
 
 /**
@@ -135,11 +147,19 @@ export async function sortRows({
 }) {
   const field = header.fields[fieldIndex];
   const totalRows = header.rowCount;
+  // A field Qlik doesn't call numeric, with more values than a sort compares as text,
+  // is refused now, rather than once its scan has found them
+  if (field.symbols > MAX_SORTED_TEXTS && !field.tags?.includes("$numeric")) {
+    throw tooManyTexts(field.name);
+  }
   // The code of each row's value; -1 for null
   const rowCodes = new Int32Array(totalRows);
-  // Each distinct value's kind (0 unseen, 1 a number, 2 text, 3 blank), number and text, by code
+  // Each distinct value's kind (0 unseen, 1 a number, 2 text, 3 blank) and number, by code
   let kinds = new Uint8Array(Math.max(0, field.symbols));
   let numbers = new Float64Array(kinds.length);
+  // Each text value's place in texts, by code: texts is filled in the order they are
+  // found, so that it stays a dense array, whatever the codes
+  let textAt = new Uint32Array(kinds.length);
   const texts = [];
   let textCount = 0;
 
@@ -153,8 +173,11 @@ export async function sortRows({
     moreKinds.set(kinds);
     const moreNumbers = new Float64Array(size);
     moreNumbers.set(numbers);
+    const moreTextAt = new Uint32Array(size);
+    moreTextAt.set(textAt);
     kinds = moreKinds;
     numbers = moreNumbers;
+    textAt = moreTextAt;
   };
 
   onProgress?.({ stage: "reading", fraction: 0 });
@@ -191,13 +214,11 @@ export async function sortRows({
           numbers[code] = shown;
         } else {
           kinds[code] = 2;
-          texts[code] = String(shown);
+          textAt[code] = texts.length;
+          texts.push(String(shown));
           textCount++;
           if (textCount > MAX_SORTED_TEXTS) {
-            throw new ViewRefusedError(
-              `${field.name} has more than ${MAX_SORTED_TEXTS.toLocaleString()} different text values, ` +
-                "too many to sort here. Sort by another field, or search for the rows you want."
-            );
+            throw tooManyTexts(field.name);
           }
         }
       }
@@ -238,7 +259,7 @@ export async function sortRows({
   const compareText = collator.compare;
   const sortedTexts = await mergeSort(
     textCodes,
-    (a, b) => compareText(texts[a], texts[b]),
+    (a, b) => compareText(texts[textAt[a]], texts[textAt[b]]),
     signal,
     (fraction) => onProgress?.({ stage: "sorting", fraction: share + fraction * (1 - share) })
   );
@@ -255,7 +276,7 @@ export async function sortRows({
   }
   for (let i = 0; i < sortedTexts.length; i++) {
     const code = sortedTexts[i];
-    if (i === 0 || compareText(texts[code], texts[sortedTexts[i - 1]]) !== 0) {
+    if (i === 0 || compareText(texts[textAt[code]], texts[textAt[sortedTexts[i - 1]]]) !== 0) {
       ranks++;
     }
     rank[code] = ranks - 1;
