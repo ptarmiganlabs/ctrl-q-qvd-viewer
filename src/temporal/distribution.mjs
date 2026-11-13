@@ -5,11 +5,12 @@
 
 /**
  * Calculate temporal distribution
- * @param {Array<Date>} dates - Array of parsed dates
+ * @param {Float64Array} times - Each distinct date's time, as milliseconds since 1970
+ * @param {ArrayLike<number>} counts - How many rows hold each
  * @returns {Object} Temporal distribution analysis
  */
-export function calculateTemporalDistribution(dates) {
-  if (dates.length === 0) {
+export function calculateTemporalDistribution(times, counts) {
+  if (times.length === 0) {
     return {
       byYear: {},
       byMonth: {},
@@ -27,22 +28,25 @@ export function calculateTemporalDistribution(dates) {
     'July', 'August', 'September', 'October', 'November', 'December'];
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-  for (const date of dates) {
+  for (let i = 0; i < times.length; i++) {
+    const date = new Date(times[i]);
+    const count = counts[i];
+
     // By year
     const year = date.getFullYear();
-    byYear[year] = (byYear[year] || 0) + 1;
+    byYear[year] = (byYear[year] || 0) + count;
 
     // By month
     const month = monthNames[date.getMonth()];
-    byMonth[month] = (byMonth[month] || 0) + 1;
+    byMonth[month] = (byMonth[month] || 0) + count;
 
     // By day of week
     const dayOfWeek = dayNames[date.getDay()];
-    byDayOfWeek[dayOfWeek] = (byDayOfWeek[dayOfWeek] || 0) + 1;
+    byDayOfWeek[dayOfWeek] = (byDayOfWeek[dayOfWeek] || 0) + count;
 
     // By quarter
     const quarter = `Q${Math.floor(date.getMonth() / 3) + 1} ${year}`;
-    byQuarter[quarter] = (byQuarter[quarter] || 0) + 1;
+    byQuarter[quarter] = (byQuarter[quarter] || 0) + count;
   }
 
   // Sort and format results

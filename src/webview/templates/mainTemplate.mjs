@@ -2082,7 +2082,7 @@ export function getHtmlForWebview(header, webview, context) {
                 return;
             }
             
-            showProfilingStatus('⏳ Loading all data and computing value distributions...', 'info');
+            showProfilingStatus('⏳ Reading the selected fields and computing value distributions...', 'info');
             
             // Send message to extension to compute profiling
             vscode.postMessage({

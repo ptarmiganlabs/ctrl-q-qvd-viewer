@@ -7,12 +7,12 @@ import { detectDateFormat } from './dateDetection.mjs';
 
 /**
  * Calculate date range analysis
- * @param {Array<Date>} dates - Array of parsed dates
- * @param {Array<*>} rawValues - Array of raw date values
+ * @param {Float64Array} times - Each distinct date's time, as milliseconds since 1970, in ascending order
+ * @param {Array<*>} rawValues - The first raw date values, in row order: the format is told from up to 100
  * @returns {Object} Date range analysis results
  */
-export function calculateDateRange(dates, rawValues) {
-  if (dates.length === 0) {
+export function calculateDateRange(times, rawValues) {
+  if (times.length === 0) {
     return {
       earliest: null,
       latest: null,
@@ -21,10 +21,8 @@ export function calculateDateRange(dates, rawValues) {
     };
   }
 
-  // Sort dates
-  const sortedDates = dates.slice().sort((a, b) => a - b);
-  const earliest = sortedDates[0];
-  const latest = sortedDates[sortedDates.length - 1];
+  const earliest = new Date(times[0]);
+  const latest = new Date(times[times.length - 1]);
 
   // Calculate span
   const spanMs = latest - earliest;

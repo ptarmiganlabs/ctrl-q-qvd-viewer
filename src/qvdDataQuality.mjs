@@ -89,6 +89,39 @@ function classifyCardinality(cardinalityRatio, uniqueValues) {
 }
 
 /**
+ * Uniqueness metrics, from the field's duplicates
+ * @param {number} totalRows - Number of rows
+ * @param {number} uniqueValues - Distinct values
+ * @param {number} duplicateCount - Rows holding a value other rows hold too
+ * @param {number} duplicatedDistinctValues - Distinct values more than one row holds
+ * @param {Array<{value: string, count: number}>} topDuplicates - The most frequent of
+ *   those, up to 10, most frequent first
+ * @returns {Object} Uniqueness metrics
+ */
+function uniquenessFrom(totalRows, uniqueValues, duplicateCount, duplicatedDistinctValues, topDuplicates) {
+  if (totalRows === 0) {
+    return {
+      uniquePercentage: 0,
+      duplicateCount: 0,
+      duplicatePercentage: 0,
+      topDuplicates: [],
+    };
+  }
+
+  return {
+    uniquePercentage: (uniqueValues / totalRows) * 100,
+    duplicateCount,
+    duplicatePercentage: (duplicateCount / totalRows) * 100,
+    duplicatedDistinctValues,
+    topDuplicates: topDuplicates.map(({ value, count }) => ({
+      value,
+      count,
+      percentage: ((count / totalRows) * 100).toFixed(2),
+    })),
+  };
+}
+
+/**
  * Calculate uniqueness score and duplicate information
  * @param {Array<Object>} data - Array of data rows
  * @param {string} fieldName - Field name to analyze
@@ -105,12 +138,7 @@ function calculateUniquenessMetrics(
   const totalRows = data.length;
 
   if (totalRows === 0) {
-    return {
-      uniquePercentage: 0,
-      duplicateCount: 0,
-      duplicatePercentage: 0,
-      topDuplicates: [],
-    };
+    return uniquenessFrom(0, 0, 0, 0, []);
   }
 
   // Build value counts if not provided
@@ -129,7 +157,7 @@ function calculateUniquenessMetrics(
   let duplicateValueCount = 0; // Number of duplicate occurrences
   let duplicatedDistinctValues = 0; // Number of distinct values that have duplicates
 
-  for (const [value, count] of valueCounts.entries()) {
+  for (const count of valueCounts.values()) {
     if (count > 1) {
       duplicateValueCount += count; // All occurrences of duplicated values
       duplicatedDistinctValues++;
@@ -141,30 +169,21 @@ function calculateUniquenessMetrics(
     .filter(([, count]) => count > 1)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10)
-    .map(([value, count]) => ({
-      value,
-      count,
-      percentage: ((count / totalRows) * 100).toFixed(2),
-    }));
+    .map(([value, count]) => ({ value, count }));
 
-  return {
-    uniquePercentage: (uniqueValues / totalRows) * 100,
-    duplicateCount: duplicateValueCount,
-    duplicatePercentage: (duplicateValueCount / totalRows) * 100,
-    duplicatedDistinctValues,
-    topDuplicates,
-  };
+  return uniquenessFrom(totalRows, uniqueValues, duplicateValueCount, duplicatedDistinctValues, topDuplicates);
 }
 
 /**
- * Calculate distribution evenness score using Pielou's evenness index
- * Based on Shannon entropy normalized by maximum entropy
- * @param {Map} valueCounts - Map of value frequencies
+ * Distribution evenness, from the Shannon entropy of the field's values
+ * Pielou's evenness index: the entropy normalized by its maximum
+ * @param {number} shannonEntropy - H = -Σ(p_i * log2(p_i)) over the distinct values
+ * @param {number} distinctCount - Distinct values
  * @param {number} totalNonNull - Total non-null values
  * @returns {Object} Distribution quality metrics
  */
-function calculateDistributionQuality(valueCounts, totalNonNull) {
-  if (totalNonNull === 0 || valueCounts.size === 0) {
+function distributionFrom(shannonEntropy, distinctCount, totalNonNull) {
+  if (totalNonNull === 0 || distinctCount === 0) {
     return {
       evennessScore: 0,
       shannonEntropy: 0,
@@ -174,17 +193,8 @@ function calculateDistributionQuality(valueCounts, totalNonNull) {
     };
   }
 
-  // Calculate Shannon entropy: H = -Σ(p_i * log2(p_i))
-  let shannonEntropy = 0;
-  for (const count of valueCounts.values()) {
-    const probability = count / totalNonNull;
-    if (probability > 0) {
-      shannonEntropy -= probability * Math.log2(probability);
-    }
-  }
-
   // Maximum entropy occurs when all values are equally distributed
-  const maxEntropy = Math.log2(valueCounts.size);
+  const maxEntropy = Math.log2(distinctCount);
 
   // Pielou's evenness index: J = H / H_max
   const evennessScore = maxEntropy > 0 ? shannonEntropy / maxEntropy : 0;
@@ -214,6 +224,30 @@ function calculateDistributionQuality(valueCounts, totalNonNull) {
     isSkewed,
     skewness,
   };
+}
+
+/**
+ * Calculate distribution evenness score using Pielou's evenness index
+ * Based on Shannon entropy normalized by maximum entropy
+ * @param {Map} valueCounts - Map of value frequencies
+ * @param {number} totalNonNull - Total non-null values
+ * @returns {Object} Distribution quality metrics
+ */
+function calculateDistributionQuality(valueCounts, totalNonNull) {
+  if (totalNonNull === 0 || valueCounts.size === 0) {
+    return distributionFrom(0, 0, totalNonNull);
+  }
+
+  // Calculate Shannon entropy: H = -Σ(p_i * log2(p_i))
+  let shannonEntropy = 0;
+  for (const count of valueCounts.values()) {
+    const probability = count / totalNonNull;
+    if (probability > 0) {
+      shannonEntropy -= probability * Math.log2(probability);
+    }
+  }
+
+  return distributionFrom(shannonEntropy, valueCounts.size, totalNonNull);
 }
 
 /**
@@ -302,6 +336,51 @@ function generateQualityAssessment(metrics) {
 }
 
 /**
+ * Put the quality metrics together
+ * @param {number} totalRows - Number of rows
+ * @param {number} uniqueValues - Distinct values
+ * @param {number} nullCount - Rows null or missing, without empty strings
+ * @param {number} emptyStringCount - Rows ""
+ * @param {Object} uniqueness - Uniqueness metrics
+ * @param {Object} distribution - Distribution quality metrics
+ * @returns {Object} Comprehensive quality metrics
+ */
+function metricsOf(totalRows, uniqueValues, nullCount, emptyStringCount, uniqueness, distribution) {
+  // Calculate cardinality ratio
+  const cardinalityRatio = totalRows > 0 ? uniqueValues / totalRows : 0;
+  const cardinalityInfo = classifyCardinality(cardinalityRatio, uniqueValues);
+
+  // Calculate completeness metrics
+  const completeness = calculateCompletenessMetrics(
+    totalRows,
+    nullCount,
+    emptyStringCount
+  );
+
+  // Cardinality analysis
+  const cardinality = {
+    ratio: cardinalityRatio,
+    ...cardinalityInfo,
+  };
+
+  // Compile all metrics
+  const metrics = {
+    completeness,
+    cardinality,
+    uniqueness,
+    distribution,
+  };
+
+  // Generate overall assessment
+  const assessment = generateQualityAssessment(metrics);
+
+  return {
+    ...metrics,
+    assessment,
+  };
+}
+
+/**
  * Calculate comprehensive data quality metrics for a field
  * @param {Array<Object>} data - Array of data rows
  * @param {string} fieldName - Field name to analyze
@@ -339,17 +418,6 @@ export function calculateDataQualityMetrics(
   // The values the distribution counts: neither null nor empty
   const totalNonNull = totalRows - nullCount - emptyStringCount;
 
-  // Calculate cardinality ratio
-  const cardinalityRatio = totalRows > 0 ? uniqueValues / totalRows : 0;
-  const cardinalityInfo = classifyCardinality(cardinalityRatio, uniqueValues);
-
-  // Calculate completeness metrics
-  const completeness = calculateCompletenessMetrics(
-    totalRows,
-    nullCount,
-    emptyStringCount
-  );
-
   // Calculate uniqueness metrics
   const uniqueness = calculateUniquenessMetrics(
     data,
@@ -373,27 +441,26 @@ export function calculateDataQualityMetrics(
   }
   const distribution = calculateDistributionQuality(counts, totalNonNull);
 
-  // Cardinality analysis
-  const cardinality = {
-    ratio: cardinalityRatio,
-    ...cardinalityInfo,
-  };
+  return metricsOf(totalRows, uniqueValues, nullCount, emptyStringCount, uniqueness, distribution);
+}
 
-  // Compile all metrics
-  const metrics = {
-    completeness,
-    cardinality,
-    uniqueness,
-    distribution,
-  };
-
-  // Generate overall assessment
-  const assessment = generateQualityAssessment(metrics);
-
-  return {
-    ...metrics,
-    assessment,
-  };
+/**
+ * The data quality metrics of a field, from its summary
+ * @param {object} summary - The field's rows, nulls, empty strings and distinct
+ *   values, and its duplicates and entropy: see FieldSummarizer.summary()
+ * @returns {Object} Comprehensive quality metrics
+ */
+export function qualityMetricsFrom({ totalRows, nullCount, emptyStringCount, quality }) {
+  if (totalRows === 0) {
+    return {
+      error: "No data available for quality analysis",
+    };
+  }
+  const { uniqueValues, duplicateCount, duplicatedDistinctValues, topDuplicates, shannonEntropy } = quality;
+  const totalNonNull = totalRows - nullCount - emptyStringCount;
+  const uniqueness = uniquenessFrom(totalRows, uniqueValues, duplicateCount, duplicatedDistinctValues, topDuplicates);
+  const distribution = distributionFrom(shannonEntropy, uniqueValues, totalNonNull);
+  return metricsOf(totalRows, uniqueValues, nullCount, emptyStringCount, uniqueness, distribution);
 }
 
 /**

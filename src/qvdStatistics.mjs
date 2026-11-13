@@ -1,9 +1,15 @@
 /**
  * QVD Statistical Analysis
  * Computes statistical metrics for numeric fields
+ *
+ * The statistics come from a field's summary (fieldSummary.mjs): its distinct
+ * numbers and their rows, and the sum, variance and higher moments taken over its
+ * rows in row order, so that they are the numbers a profile of every row gives.
  */
 
 import { isBlank, toCellValue } from "./cellValue.mjs";
+import { summarizeRows } from "./fieldSummary.mjs";
+import { sampleOf } from "./profileSample.mjs";
 
 /**
  * Most modes a field's statistics list. Where every value occurs twice, each is a
@@ -22,26 +28,16 @@ function isNumeric(value) {
 }
 
 /**
- * Detect if a field is numeric by examining its values
- * @param {Array<Object>} data - Array of data rows
- * @param {string} fieldName - Field name to check
+ * Detect if sampled values are predominantly numeric
+ * @param {Array<*>} values - A field's values at the rows sampleOf() looks at
  * @param {number} threshold - Percentage threshold for numeric values (default: 0.9)
- * @returns {boolean} True if field is predominantly numeric
+ * @returns {boolean} True if they are predominantly numeric
  */
-export function isNumericField(data, fieldName, threshold = 0.9) {
-  if (!data || data.length === 0) {
-    return false;
-  }
-
+export function isNumericSample(values, threshold = 0.9) {
   let numericCount = 0;
   let nonNullCount = 0;
 
-  // Sample up to 1000 rows for performance
-  const sampleSize = Math.min(data.length, 1000);
-  const step = Math.max(1, Math.floor(data.length / sampleSize));
-
-  for (let i = 0; i < data.length; i += step) {
-    const value = data[i][fieldName];
+  for (const value of values) {
     // Blank text, like a null, is no value
     if (value !== null && value !== undefined && !isBlank(value)) {
       nonNullCount++;
@@ -59,193 +55,78 @@ export function isNumericField(data, fieldName, threshold = 0.9) {
 }
 
 /**
- * Sort numeric array for percentile calculations
- * @param {Array<number>} arr - Array to sort
- * @returns {Array<number>} Sorted array
+ * Detect if a field is numeric by examining its values
+ * About a thousand rows, spread over the field, are looked at: see profileSample.mjs
+ * @param {Array<Object>} data - Array of data rows
+ * @param {string} fieldName - Field name to check
+ * @param {number} threshold - Percentage threshold for numeric values (default: 0.9)
+ * @returns {boolean} True if field is predominantly numeric
  */
-function sortNumeric(arr) {
-  return arr.slice().sort((a, b) => a - b);
+export function isNumericField(data, fieldName, threshold = 0.9) {
+  if (!data || data.length === 0) {
+    return false;
+  }
+  return isNumericSample(sampleOf(data, fieldName), threshold);
 }
 
 /**
- * Calculate percentile value using linear interpolation (R-7 method / pandas default)
- * @param {Array<number>} sortedData - Sorted numeric array
- * @param {number} percentile - Percentile to calculate (0-1)
- * @returns {number} Percentile value
+ * Sort a field's numeric values into up to 20 bins of equal width, for the
+ * profiling histogram
+ * @param {ArrayLike<number>} values - The field's distinct numbers, in ascending order
+ * @param {ArrayLike<number>} rows - The rows holding each
+ * @param {number} count - Rows holding a number
+ * @param {number} totalCount - Rows with a value, numeric or not: the percentages are shares of these
+ * @returns {{labels: string[], counts: number[], rows: Array<{from: string, to: string, count: number, percentage: string}>}|null}
+ *   The chart's labels and bar heights and the histogram table's rows, or null when there are no values
  */
-function calculatePercentile(sortedData, percentile) {
-  if (sortedData.length === 0) {
-    return null;
-  }
-  if (sortedData.length === 1) {
-    return sortedData[0];
-  }
-
-  const n = sortedData.length;
-
-  // R-7 method (default in R and pandas): h = 1 + (n-1)*p
-  // Convert to 0-indexed: position = (n-1)*p
-  const position = (n - 1) * percentile;
-
-  const lower = Math.floor(position);
-  const upper = Math.ceil(position);
-  const weight = position - lower;
-
-  if (lower === upper) {
-    return sortedData[lower];
-  }
-
-  return sortedData[lower] * (1 - weight) + sortedData[upper] * weight;
-}
-
-/**
- * Calculate median directly from sorted values
- * @param {Array<number>} sortedValues - Sorted numeric array
- * @returns {number} Median value
- */
-function calculateMedianDirect(sortedValues) {
-  const n = sortedValues.length;
-  if (n === 0) {
-    return null;
-  }
-  if (n === 1) {
-    return sortedValues[0];
-  }
-
-  const mid = Math.floor(n / 2);
-  if (n % 2 === 0) {
-    return (sortedValues[mid - 1] + sortedValues[mid]) / 2;
-  }
-  return sortedValues[mid];
-}
-
-/**
- * Calculate mean (average)
- * @param {Array<number>} values - Array of numeric values
- * @returns {number} Mean value
- */
-function calculateMean(values) {
-  if (values.length === 0) {
-    return null;
-  }
-  const sum = values.reduce((acc, val) => acc + val, 0);
-  return sum / values.length;
-}
-
-/**
- * Calculate median
- * @param {Array<number>} sortedValues - Sorted array of numeric values
- * @returns {number} Median value
- */
-function calculateMedian(sortedValues) {
-  return calculatePercentile(sortedValues, 0.5);
-}
-
-/**
- * Calculate mode (most frequent value)
- * @param {Array<number>} values - Array of numeric values
- * @returns {Array<number>} Array of mode values (can be multiple)
- */
-function calculateMode(values) {
-  if (values.length === 0) {
-    return [];
-  }
-
-  const frequency = new Map();
-  let maxFreq = 0;
-
-  for (const value of values) {
-    const count = (frequency.get(value) || 0) + 1;
-    frequency.set(value, count);
-    maxFreq = Math.max(maxFreq, count);
-  }
-
-  // Return all values with maximum frequency
-  const modes = [];
-  for (const [value, count] of frequency.entries()) {
-    if (count === maxFreq) {
-      modes.push(value);
-    }
-  }
-
-  // If all values appear once, there's no meaningful mode
-  if (maxFreq === 1) {
-    return [];
-  }
-
-  return modes.sort((a, b) => a - b);
-}
-
-/**
- * Calculate variance (sample variance)
- * @param {Array<number>} values - Array of numeric values
- * @param {number} mean - Pre-calculated mean
- * @returns {number} Sample variance
- */
-function calculateVariance(values, mean) {
-  if (values.length === 0) {
-    return null;
-  }
-  if (values.length === 1) {
-    return 0;
-  }
-  const squaredDiffs = values.map((val) => Math.pow(val - mean, 2));
-  // Use sample variance (n-1) for better statistical inference
-  return squaredDiffs.reduce((acc, val) => acc + val, 0) / (values.length - 1);
-}
-
-/**
- * Calculate standard deviation
- * @param {number} variance - Pre-calculated variance
- * @returns {number} Standard deviation
- */
-function calculateStdDev(variance) {
-  return variance !== null ? Math.sqrt(variance) : null;
-}
-
-/**
- * Calculate skewness (distribution asymmetry)
- * @param {Array<number>} values - Array of numeric values
- * @param {number} mean - Pre-calculated mean
- * @param {number} stdDev - Pre-calculated standard deviation
- * @returns {number} Skewness
- */
-function calculateSkewness(values, mean, stdDev) {
-  if (values.length < 3 || stdDev === 0 || stdDev === null) {
+function histogramOf(values, rows, count, totalCount) {
+  if (count === 0) {
     return null;
   }
 
-  const n = values.length;
-  const cubedDiffs = values.map((val) => Math.pow((val - mean) / stdDev, 3));
-  const sum = cubedDiffs.reduce((acc, val) => acc + val, 0);
+  const percentage = (binCount) =>
+    Number.isFinite(totalCount) && totalCount > 0
+      ? ((binCount / totalCount) * 100).toFixed(2)
+      : "0.00";
+  const min = values[0];
+  const max = values[values.length - 1];
 
-  return (n / ((n - 1) * (n - 2))) * sum;
-}
-
-/**
- * Calculate kurtosis (tail heaviness)
- * @param {Array<number>} values - Array of numeric values
- * @param {number} mean - Pre-calculated mean
- * @param {number} stdDev - Pre-calculated standard deviation
- * @returns {number} Excess kurtosis
- */
-function calculateKurtosis(values, mean, stdDev) {
-  if (values.length < 4 || stdDev === 0 || stdDev === null) {
-    return null;
+  // A single distinct value gets a single bin, labelled with the value itself
+  if (min === max) {
+    const value = String(min);
+    return {
+      labels: [value],
+      counts: [count],
+      rows: [{ from: value, to: value, count, percentage: percentage(count) }],
+    };
   }
 
-  const n = values.length;
-  const fourthPowerDiffs = values.map((val) =>
-    Math.pow((val - mean) / stdDev, 4)
+  const binCount = Math.min(20, Math.ceil(Math.sqrt(count)));
+  const binWidth = (max - min) / binCount;
+  // Enough decimals to tell neighbouring bin edges apart: one past binWidth's first significant digit
+  const decimals = Math.min(
+    20,
+    Math.max(1, 1 - Math.floor(Math.log10(binWidth)))
   );
-  const sum = fourthPowerDiffs.reduce((acc, val) => acc + val, 0);
 
-  // Excess kurtosis (subtract 3 for normal distribution baseline)
-  const kurtosis =
-    ((n * (n + 1)) / ((n - 1) * (n - 2) * (n - 3))) * sum -
-    (3 * Math.pow(n - 1, 2)) / ((n - 2) * (n - 3));
+  const counts = Array(binCount).fill(0);
+  for (let i = 0; i < values.length; i++) {
+    // The maximum falls on the last bin's upper edge
+    counts[Math.min(binCount - 1, Math.floor((values[i] - min) / binWidth))] += rows[i];
+  }
 
-  return kurtosis;
+  const binRows = counts.map((binRowCount, i) => ({
+    from: (min + i * binWidth).toFixed(decimals),
+    to: (min + (i + 1) * binWidth).toFixed(decimals),
+    count: binRowCount,
+    percentage: percentage(binRowCount),
+  }));
+
+  return {
+    labels: binRows.map((row) => `${row.from} – ${row.to}`),
+    counts,
+    rows: binRows,
+  };
 }
 
 /**
@@ -260,50 +141,159 @@ export function calculateHistogram(sortedValues, totalCount) {
   if (!sortedValues || sortedValues.length === 0) {
     return null;
   }
+  const values = [];
+  const rows = [];
+  for (const value of sortedValues) {
+    if (values.length > 0 && value === values[values.length - 1]) {
+      rows[rows.length - 1]++;
+    } else {
+      values.push(value);
+      rows.push(1);
+    }
+  }
+  return histogramOf(values, rows, sortedValues.length, totalCount);
+}
 
-  const percentage = (count) =>
-    Number.isFinite(totalCount) && totalCount > 0
-      ? ((count / totalCount) * 100).toFixed(2)
-      : "0.00";
-  const min = sortedValues[0];
-  const max = sortedValues[sortedValues.length - 1];
-
-  // A single distinct value gets a single bin, labelled with the value itself
-  if (min === max) {
-    const value = String(min);
-    const count = sortedValues.length;
+/**
+ * The statistics of a numeric field, from its summary
+ * @param {object} numbers - The summary's numbers: see FieldSummarizer.summary()
+ * @returns {Object} Statistical analysis results
+ */
+export function statisticsFrom(numbers) {
+  const { numericCount: count, nonNumericCount, nullCount, totalRows } = numbers;
+  if (!numbers.isNumeric) {
     return {
-      labels: [value],
-      counts: [count],
-      rows: [{ from: value, to: value, count, percentage: percentage(count) }],
+      isNumeric: false,
+      numericCount: count,
+      nonNumericCount,
+      nullCount,
     };
   }
 
-  const binCount = Math.min(20, Math.ceil(Math.sqrt(sortedValues.length)));
-  const binWidth = (max - min) / binCount;
-  // Enough decimals to tell neighbouring bin edges apart: one past binWidth's first significant digit
-  const decimals = Math.min(
-    20,
-    Math.max(1, 1 - Math.floor(Math.log10(binWidth)))
-  );
+  const { values, rows, zeroSigns } = numbers;
+  // The row each distinct number's rows end at, in sorted order
+  const ends = new Float64Array(values.length);
+  let end = 0;
+  for (let i = 0; i < values.length; i++) {
+    end += rows[i];
+    ends[i] = end;
+  }
+  // The number at a position of the sorted numbers, rows that hold the same in row order
+  const at = (position) => {
+    let low = 0;
+    let high = ends.length - 1;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (ends[middle] > position) {
+        high = middle;
+      } else {
+        low = middle + 1;
+      }
+    }
+    const value = values[low];
+    if (value === 0 && zeroSigns) {
+      const negative = zeroSigns.get(position - (ends[low] - rows[low]));
+      if (negative !== undefined) {
+        return negative ? -0 : 0;
+      }
+    }
+    return value;
+  };
+  // Percentile by linear interpolation (R-7 method / pandas default)
+  const percentile = (p) => {
+    if (count === 1) {
+      return at(0);
+    }
+    const position = (count - 1) * p;
+    const lower = Math.floor(position);
+    const upper = Math.ceil(position);
+    const weight = position - lower;
+    if (lower === upper) {
+      return at(lower);
+    }
+    return at(lower) * (1 - weight) + at(upper) * weight;
+  };
 
-  const counts = Array(binCount).fill(0);
-  for (const value of sortedValues) {
-    // The maximum falls on the last bin's upper edge
-    counts[Math.min(binCount - 1, Math.floor((value - min) / binWidth))]++;
+  // Descriptive statistics
+  const min = at(0);
+  const max = at(count - 1);
+  const median = percentile(0.5);
+
+  // Modes: the most frequent numbers, unless every number is as frequent as one row
+  let maxFreq = 0;
+  for (let i = 0; i < rows.length; i++) {
+    maxFreq = Math.max(maxFreq, rows[i]);
+  }
+  const modes = [];
+  if (maxFreq > 1) {
+    for (let i = 0; i < values.length; i++) {
+      if (rows[i] === maxFreq) {
+        // A Map of the numbers, as the rows count them, holds -0 as 0
+        modes.push(values[i] === 0 ? 0 : values[i]);
+      }
+    }
   }
 
-  const rows = counts.map((count, i) => ({
-    from: (min + i * binWidth).toFixed(decimals),
-    to: (min + (i + 1) * binWidth).toFixed(decimals),
-    count,
-    percentage: percentage(count),
-  }));
+  // Spread measures
+  const range = max - min;
+  const { mean, variance, stdDev } = numbers;
+
+  // Distribution metrics: skewness and excess kurtosis, from the third and fourth
+  // powers of the standardized values
+  const skewness =
+    count < 3 || stdDev === 0 || stdDev === null
+      ? null
+      : (count / ((count - 1) * (count - 2))) * numbers.skewSum;
+  const kurtosis =
+    count < 4 || stdDev === 0 || stdDev === null
+      ? null
+      : ((count * (count + 1)) / ((count - 1) * (count - 2) * (count - 3))) * numbers.kurtSum -
+        (3 * Math.pow(count - 1, 2)) / ((count - 2) * (count - 3));
 
   return {
-    labels: rows.map((row) => `${row.from} – ${row.to}`),
-    counts,
-    rows,
+    isNumeric: true,
+
+    // Descriptive statistics
+    descriptive: {
+      min,
+      max,
+      mean,
+      median,
+      // The smallest modes, if there are more than can be listed
+      mode: modes.slice(0, MAX_MODES),
+      // How many modes there are, listed or not
+      modeCount: modes.length,
+      sum: numbers.sum,
+      count,
+    },
+
+    // Spread measures
+    spread: {
+      range,
+      variance,
+      stdDev,
+    },
+
+    // Distribution metrics
+    distribution: {
+      percentiles: {
+        p10: percentile(0.1),
+        p50: median,
+        p90: percentile(0.9),
+      },
+      skewness,
+      kurtosis,
+    },
+
+    // Histogram bins over every numeric value, for the profiling chart and table
+    histogram: histogramOf(values, rows, count, count + nonNumericCount),
+
+    // Data quality
+    quality: {
+      nullCount,
+      nonNumericCount,
+      totalRows,
+    },
   };
 }
 
@@ -320,108 +310,8 @@ export function calculateStatistics(data, fieldName) {
       error: "No data available",
     };
   }
-
-  // Extract and filter numeric values
-  const numericValues = [];
-  let nullCount = 0;
-  let nonNumericCount = 0;
-
-  for (const row of data) {
-    const value = row[fieldName];
-
-    if (value === null || value === undefined || isBlank(value)) {
-      nullCount++;
-      continue;
-    }
-
-    const number = toCellValue(value);
-    if (typeof number === "number") {
-      numericValues.push(number);
-    } else {
-      nonNumericCount++;
-    }
-  }
-
-  // Check if field is predominantly numeric
-  const totalNonNull = numericValues.length + nonNumericCount;
-  if (totalNonNull === 0 || numericValues.length / totalNonNull < 0.9) {
-    return {
-      isNumeric: false,
-      numericCount: numericValues.length,
-      nonNumericCount,
-      nullCount,
-    };
-  }
-
-  // Sort values for percentile calculations
-  const sortedValues = sortNumeric(numericValues);
-
-  // Descriptive statistics
-  const min = sortedValues[0];
-  const max = sortedValues[sortedValues.length - 1];
-  const sum = numericValues.reduce((acc, val) => acc + val, 0);
-  const count = numericValues.length;
-  const mean = calculateMean(numericValues);
-  const median = calculateMedian(sortedValues);
-  // The smallest modes, if there are more than can be listed
-  const modes = calculateMode(numericValues);
-  const mode = modes.slice(0, MAX_MODES);
-
-  // Spread measures
-  const range = max - min;
-  const variance = calculateVariance(numericValues, mean);
-  const stdDev = calculateStdDev(variance);
-
-  // Distribution metrics
-  const percentiles = {
-    p10: calculatePercentile(sortedValues, 0.1),
-    p50: median,
-    p90: calculatePercentile(sortedValues, 0.9),
-  };
-
-  const skewness = calculateSkewness(numericValues, mean, stdDev);
-  const kurtosis = calculateKurtosis(numericValues, mean, stdDev);
-
-  return {
-    isNumeric: true,
-
-    // Descriptive statistics
-    descriptive: {
-      min,
-      max,
-      mean,
-      median,
-      mode,
-      // How many modes there are, listed or not
-      modeCount: modes.length,
-      sum,
-      count,
-    },
-
-    // Spread measures
-    spread: {
-      range,
-      variance,
-      stdDev,
-    },
-
-    // Distribution metrics
-    distribution: {
-      percentiles,
-      skewness,
-      kurtosis,
-    },
-
-    // Histogram bins over every numeric value, for the profiling chart and table
-    histogram: calculateHistogram(sortedValues, totalNonNull),
-
-    // Data quality
-    quality: {
-      nullCount,
-      nonNumericCount,
-      totalRows: data.length,
-    },
-  };
+  const { numbers } = summarizeRows(data, fieldName, { kinds: { numeric: true, date: false, string: false } });
+  return statisticsFrom(numbers);
 }
 
 /**
