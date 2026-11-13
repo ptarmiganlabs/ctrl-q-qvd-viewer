@@ -156,6 +156,12 @@ suite("Memory Guard Test Suite", () => {
     // Its dictionaries' text took at most 97% of its fields' symbols' bytes
     assert.ok(arrowCost.bytesPerSymbolByte >= 0.97);
     assert.ok(arrowCost.chunkRows > 0 && arrowCost.chunkCells > 0);
+    // A SQLite export needed 0.42 per cell on the heap: its database is outside it, where
+    // the process's footprint grew by 53 per cell and 14 per character
+    const sqliteCost = DataExporter.memoryCost("sqlite");
+    assert.ok(sqliteCost.bytesPerCell >= 0.42 * 1.5);
+    assert.ok(sqliteCost.outsideHeapBytesPerCell >= 53 * 1.5);
+    assert.ok(sqliteCost.outsideHeapBytesPerTextChar >= 14 * 2);
   });
 
   test("Every export format's exporter declares what it costs", () => {
@@ -374,6 +380,25 @@ suite("Memory Guard Test Suite", () => {
     const read = await new QvdReader().read(sets, 0, { bytesPerDistinctText: 84, bytesPerSymbolByte: 1 });
     assert.strictEqual(read.error, null);
     read.release();
+  });
+
+  test("An export that builds outside the heap is priced for that too, for every row", async () => {
+    const sqliteCost = DataExporter.memoryCost("sqlite");
+    const rows = [
+      { id: 1, note: "x".repeat(1000) },
+      { id: 2, note: "y".repeat(3000) },
+      { id: 3, note: null },
+    ];
+    assert.deepStrictEqual(await guard.exportHeapBytes(sqliteCost, rows, 2), {
+      rows: 3,
+      bytes: 3 * 2 * sqliteCost.bytesPerCell,
+      outsideBytes: 3 * 2 * sqliteCost.outsideHeapBytesPerCell + 4000 * sqliteCost.outsideHeapBytesPerTextChar,
+    });
+    // What is left for it is the computer's memory, less what the extension host uses
+    const left = guard.memoryLeftOutsideHeap();
+    assert.ok(left > 0 && left < os.totalmem());
+    const message = guard.describeExportRefusal("SQLite", 10, 2 ** 30, 2 ** 20, [], { onComputer: true });
+    assert.ok(message.endsWith("needs about 1.0 GiB of memory, and about 1 MiB is left on this computer."));
   });
 
   test("A chunk size that isn't a whole number of 1 or more is refused", () => {
