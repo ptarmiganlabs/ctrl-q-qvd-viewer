@@ -1,5 +1,5 @@
 import { basename } from "path";
-import { PREVIEW_ROWS_SETTING } from "./loadMore.mjs";
+import { PAGE_SIZE_SETTING } from "./pageSize.mjs";
 
 /**
  * Says why a QVD couldn't be read, in terms a VS Code user can act on: one kind
@@ -14,10 +14,10 @@ const ISSUES_URL = "https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues";
 
 const RETRY = { command: "retry", label: "Retry" };
 const SHOW_LOGS = { command: "showLogs", label: "Show Logs" };
-const PREVIEW_ROWS_SETTINGS = {
+const PAGE_SIZE_SETTINGS = {
   command: "openSettings",
   label: "Open Settings",
-  setting: PREVIEW_ROWS_SETTING,
+  setting: PAGE_SIZE_SETTING,
 };
 
 /**
@@ -25,7 +25,6 @@ const PREVIEW_ROWS_SETTINGS = {
  * @typedef {object} FailureAction
  * @property {string} command - The message the page posts: retry, showLogs or openSettings
  * @property {string} label - The button's text
- * @property {number} [rows] - For retry: the rows to read, instead of the setting's
  * @property {string} [setting] - For openSettings: the setting to open
  */
 
@@ -158,32 +157,18 @@ function failure(kind, { title, summary, advice, detail, dataOnly = false, actio
  */
 function memoryFailure(result) {
   const refusal = result.refusal ?? null;
-  // qvdjs's row count is for the budget this read had: one that fits now
-  const fitRows = refusal && refusal.fitRows > 0 && refusal.fitRows < refusal.rows ? refusal.fitRows : 0;
-  const advice = [
-    "Other QVD tabs hold their rows in the same memory. Close the ones you don't need, then Retry.",
-  ];
-  const actions = [RETRY];
-  if (fitRows > 0) {
-    const rows = fitRows.toLocaleString();
-    advice.push(`Or open fewer rows: the first ${rows} fit in the memory left.`);
-    actions.push({ command: "retry", label: `Open the first ${rows} rows`, rows: fitRows });
-  }
-  advice.push(`To open every file with fewer rows, lower the setting ${PREVIEW_ROWS_SETTING}.`);
-  actions.push(PREVIEW_ROWS_SETTINGS, SHOW_LOGS);
   return failure("memory", {
-    title:
-      refusal?.forCaller
-        ? "Not enough memory for this"
-        : fitRows > 0
-          ? "Not enough memory to show this many rows"
-          : "Not enough memory to read this file",
+    title: refusal?.forCaller ? "Not enough memory for this" : "Not enough memory to show these rows",
     summary: String(result.error ?? "The read needs more memory than VS Code gives its extensions."),
-    advice,
+    advice: [
+      "Other QVD tabs, and exports and profiling running now, use the same memory. Close the tabs " +
+        "you don't need, or wait for the export to finish, then Retry.",
+      `Or show fewer rows at a time: pick a smaller page size below the grid, or lower the setting ${PAGE_SIZE_SETTING}.`,
+    ],
     // The summary is the refusal's message
     detail: null,
     dataOnly: true,
-    actions,
+    actions: [RETRY, PAGE_SIZE_SETTINGS, SHOW_LOGS],
   });
 }
 
@@ -195,18 +180,18 @@ function memoryFailure(result) {
  */
 function optionFailure(option, detail) {
   const report = `Show Logs, and report it at ${ISSUES_URL}.`;
-  // The rows a file opens with come from a setting; the reader's other options are the viewer's own
-  if (option === "maxRows") {
+  // A page's rows come from a setting; the reader's other options are the viewer's own
+  if (option === "limit") {
     return failure("option", {
       title: "A setting or option isn't valid",
-      summary: "The QVD reader can't use the number of rows it was asked to read.",
+      summary: "The QVD reader can't use the number of rows a page was asked to show.",
       advice: [
-        `The rows a file opens with come from the setting ${PREVIEW_ROWS_SETTING}, a whole number ` +
-          "from 100 to 100,000. Check it, in Settings or in settings.json, then Retry.",
+        `A page's rows come from the setting ${PAGE_SIZE_SETTING}, a whole number ` +
+          "from 10 to 1,000. Check it, in Settings or in settings.json, then Retry.",
         `If it is set right, this is a bug in the viewer. ${report}`,
       ],
       detail,
-      actions: [RETRY, PREVIEW_ROWS_SETTINGS, SHOW_LOGS],
+      actions: [RETRY, PAGE_SIZE_SETTINGS, SHOW_LOGS],
     });
   }
   // No setting gives these, so a retry would fail the same way

@@ -119,7 +119,7 @@ export async function toRowObjects(rows, columns, signal, dates = null) {
  * @param {string} realFilePath - The file's real path
  * @returns {Promise<string|null>} The version, or null when the file can't be looked at
  */
-async function fileVersion(realFilePath) {
+export async function fileVersion(realFilePath) {
   const stats = await stat(realFilePath).catch(() => null);
   return stats ? `${stats.ino}:${stats.size}:${stats.mtimeMs}` : null;
 }
@@ -145,7 +145,7 @@ function tagsOf(field) {
  * @param {AbortSignal} [signal] - Gives the read up
  * @returns {Promise<Header>} The header
  */
-async function headerOf(filePath, realFilePath, allowedDir, signal) {
+export async function headerOf(filePath, realFilePath, allowedDir, signal) {
   const key = await fileVersion(realFilePath);
   const kept = headers.get(realFilePath);
   if (key && kept?.key === key) {
@@ -189,7 +189,7 @@ async function headerOf(filePath, realFilePath, allowedDir, signal) {
  * @returns {Promise<import('./memoryGuard.mjs').Budget|null>} The budget, or null
  *   for a file with no fields, whose read needs none
  */
-async function budgetFor(filePath, allowedDir, header, signal) {
+export async function budgetFor(filePath, allowedDir, header, signal) {
   const known = knownBudget();
   if (known || header.fields.length === 0) {
     return known;
@@ -211,14 +211,20 @@ async function budgetFor(filePath, allowedDir, header, signal) {
  * @param {*} value - The option's value
  * @param {string} name - Its name
  * @param {boolean} [whole=false] - Whether it must be a whole number
+ * @param {number} [most=Infinity] - The largest value allowed
  * @throws {Error} A QvdValidationError with context.reason "option"
  */
-function requireCount(value, name, whole = false) {
+export function requireCount(value, name, whole = false, most = Infinity) {
   const count =
-    typeof value === "number" && Number.isFinite(value) && value >= 0 && (!whole || Number.isInteger(value));
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= most &&
+    (!whole || Number.isInteger(value));
   if (!count) {
+    const range = most === Infinity ? "of 0 or more" : `from 0 to ${most}`;
     throw Object.assign(
-      new Error(`${name} must be ${whole ? "a whole number" : "a number"} of 0 or more, not ${String(value)}`),
+      new Error(`${name} must be ${whole ? "a whole number" : "a number"} ${range}, not ${String(value)}`),
       { name: "QvdValidationError", context: { reason: "option", option: name } }
     );
   }
@@ -282,17 +288,32 @@ export function errorFacts(error) {
 }
 
 /**
- * The result of a read that failed
+ * Whether an error is the reader's account of the file, rather than the viewer's own failure
+ * qvdjs's errors, the system's, and the viewer's own refusals of a read or a page are
+ * about the file; anything else thrown while it is read, such as a TypeError, is the viewer's.
+ * @param {Error} error - What was thrown
+ * @returns {boolean} Whether it is
+ */
+export function isReadError(error) {
+  const { errorName, errorCode } = errorFacts(error);
+  return Boolean(errorCode) || (typeof errorName === "string" && errorName.startsWith("Qvd"));
+}
+
+/**
+ * The result of a read that failed: what describeReadFailure() takes
  * @param {Error} error - Why
  * @returns {object} As QvdReader.read() describes
  */
-function failedRead(error) {
+export function failedRead(error) {
   const facts = errorFacts(error);
   const aborted = facts.errorReason === "aborted";
   const refusal = aborted ? null : memoryRefusalOf(error);
   let message;
   if (aborted) {
     message = "The read was given up, because its editor was closed.";
+  } else if (refusal && error.page) {
+    // A page of the viewer's grid, whose refusal says which rows, and what is left
+    message = error.message;
   } else if (refusal) {
     message = refusal.forCaller ? describeCallerRefusal(refusal) : describeReadRefusal(refusal);
   } else {
@@ -508,7 +529,8 @@ class QvdReader {
    * hasn't changed since. It isn't queued, as reads are.
    * @param {string} filePath - Path to the QVD file
    * @param {{signal?: AbortSignal}} [options] - signal: gives it up
-   * @returns {Promise<{metadata: object, columns: Array<string>, totalRows: number}>} As read() gives them
+   * @returns {Promise<{metadata: object, columns: Array<string>, totalRows: number, key: string|null}>} As
+   *   read() gives them, and key: which version of the file it is, null when the file can't be looked at
    * @throws {Error} What reading the header throws
    */
   async readHeader(filePath, { signal } = {}) {
@@ -517,7 +539,7 @@ class QvdReader {
     const header = await headerOf(filePath, realFilePath, dirname(realFilePath), signal);
     // A copy, so that a caller can't change the one kept
     const { metadata, columns } = structuredClone(header.view);
-    return { metadata, columns, totalRows: metadata.noOfRecords };
+    return { metadata, columns, totalRows: metadata.noOfRecords, key: header.key };
   }
 
   /**
@@ -656,39 +678,6 @@ class QvdReader {
       signal?.removeEventListener("abort", abandon);
       releaseAbandoned();
     }
-  }
-
-  /**
-   * Read a specific page of data from the QVD file
-   * @param {string} _filePath - Path to the QVD file
-   * @param {number} _page - Page number (0-indexed)
-   * @param {number} _pageSize - Rows per page
-   * @returns {Promise<{metadata: object, data: Array, columns: Array, totalRows: number, page: number, pageSize: number, error: string|null}>}
-   * @throws {Error} Not yet implemented - waiting for qvdjs streaming support
-   */
-  async readPage(_filePath, _page, _pageSize) {
-    // TODO: Implement when qvdjs supports streaming
-    // For now, this would still load the full file and slice the data
-    // const metadata = await this.extractMetadata(filePath);
-    // const startRow = page * pageSize;
-    // const endRow = Math.min(startRow + pageSize, metadata.noOfRecords);
-    //
-    // const df = await QvdDataFrame.fromQvd(filePath, { maxRows: endRow });
-    // const pageData = df.rows(...Array.from({length: pageSize}, (_, i) => startRow + i));
-    //
-    // return {
-    //     metadata,
-    //     data: pageData.data,
-    //     columns: pageData.columns,
-    //     totalRows: metadata.noOfRecords,
-    //     page,
-    //     pageSize,
-    //     error: null
-    // };
-
-    throw new Error(
-      "Page-based loading not yet supported. Waiting for qvdjs streaming support."
-    );
   }
 }
 

@@ -56,7 +56,7 @@ async function exportThroughHandler(rows, { pick, timeZone = "", format = "parqu
     vscode.workspace.getConfiguration = () => ({
       get: (key, fallback) => (key === "exportTimeZone" ? timeZone : fallback),
     });
-    setupMessageHandler(panel, "zoned.qvd", reader, {}, async () => {}, 25);
+    setupMessageHandler(panel, "zoned.qvd", reader, {}, async () => {}, null);
     await onMessage({ command: "exportData", format });
     return { filePath: saveUri.fsPath, messages, errors };
   } finally {
@@ -92,7 +92,7 @@ suite("Export Read Test Suite", () => {
         return { errorReason: "aborted", release: () => {} };
       },
     };
-    setupMessageHandler(panel, "dates.qvd", reader, {}, async () => {}, 25);
+    setupMessageHandler(panel, "dates.qvd", reader, {}, async () => {}, null);
 
     // PostgreSQL and Qlik inline ask for a row count before they read
     const formats = DataExporter.getExportFormats()

@@ -15,6 +15,8 @@ let QvdEditorProvider;
 let getVisualAnalysisHtml;
 let getHtmlForWebview;
 let getErrorHtml;
+let failureNoticeHtml;
+let createPageServer;
 let profileFields;
 let escapeHtml;
 let html;
@@ -116,9 +118,30 @@ async function openPage(filePath) {
   const messages = [];
   const webview = recordingWebview(messages);
   const provider = new QvdEditorProvider({ extensionPath: root, extensionUri: vscode.Uri.file(root) });
-  const shown = await provider.updateWebview(filePath, webview, 5000);
-  await shown?.rowsSent;
+  await provider.updateWebview(filePath, webview);
   return { html: webview.html, messages };
+}
+
+/**
+ * Answer the page's requests for pages of a file, as the editor does
+ * @param {object} page - The page, as fakePage() makes it
+ * @param {string} filePath - The file
+ * @returns {Promise<Array<object>>} What the extension posted back, once each request is answered
+ */
+async function answerPages(page, filePath) {
+  const messages = [];
+  const pages = createPageServer({ filePath, webview: recordingWebview(messages) });
+  try {
+    for (const request of page.posted.filter((message) => message.command === "page")) {
+      await pages.servePage(request);
+    }
+  } finally {
+    await pages.close();
+  }
+  for (const message of messages) {
+    page.dispatch("message", { data: message });
+  }
+  return messages;
 }
 
 /**
@@ -239,6 +262,12 @@ function fakePage() {
         this.children.push(child);
         return child;
       },
+      append(...children) {
+        this.children.push(...children);
+      },
+      replaceChildren(...children) {
+        this.children = children;
+      },
       addEventListener() {},
       querySelector: () => element(),
       querySelectorAll: () => [],
@@ -284,6 +313,10 @@ function fakePage() {
       redraw() {}
       setFilter() {}
       clearFilter() {}
+      setPage() {}
+      getPage() {
+        return 1;
+      }
     },
     Chart: class {
       destroy() {}
@@ -291,6 +324,7 @@ function fakePage() {
     acquireVsCodeApi: () => ({ postMessage: (message) => page.posted.push(message) }),
     getComputedStyle: () => ({ backgroundColor: "rgb(30, 30, 30)", getPropertyValue: () => "#cccccc" }),
     setTimeout: () => 0,
+    clearTimeout: () => {},
     innerWidth: 1200,
     console: { log() {}, warn() {}, error() {} },
     addEventListener: (type, listener) => (page.listeners[type] ??= []).push(listener),
@@ -319,7 +353,8 @@ suite("Page Escaping Test Suite", () => {
     ({ default: QvdEditorProvider } = await import("../src/qvdEditorProvider.mjs"));
     ({ getVisualAnalysisHtml } = await import("../src/webview/templates/visualAnalysisTemplate.mjs"));
     ({ getHtmlForWebview } = await import("../src/webview/templates/mainTemplate.mjs"));
-    ({ getErrorHtml } = await import("../src/webview/templates/errorTemplate.mjs"));
+    ({ getErrorHtml, failureNoticeHtml } = await import("../src/webview/templates/errorTemplate.mjs"));
+    ({ createPageServer } = await import("../src/webview/pageServer.mjs"));
     ({ profileFields } = await import("../src/qvdProfiler.mjs"));
     ({ escapeHtml, html, trustedHtml, scriptJson, markdownText } = await import("../src/webview/templates/escaping.mjs"));
     ({ setupMessageHandler } = await import("../src/webview/messageHandler.mjs"));
@@ -454,8 +489,8 @@ suite("Page Escaping Test Suite", () => {
   test("A QVD's header can't end the editor page's scripts, or add to its markup", async () => {
     const { html } = await openPage(crafted);
     assert.ok(html.includes("Ctrl-Q QVD File Viewer"), "the file opens in the viewer");
-    // Tabulator, Chart.js, the histogram view and the page's own
-    assertScriptsWhole(html, 4);
+    // Tabulator, Chart.js, the histogram view, the Data tab's grid and the page's own
+    assertScriptsWhole(html, 5);
     assertNoMarkupFrom(html);
     assertStrictCsp(html);
     // The field list to profile names the field, as text
@@ -482,13 +517,31 @@ suite("Page Escaping Test Suite", () => {
     const page = fakePage();
     page.load(html);
     page.dispatch("DOMContentLoaded");
-    const initial = messages.find((message) => message.command === "loadInitialData");
-    assert.ok(initial, "the rows are sent");
-    page.dispatch("message", { data: initial });
+    assert.deepStrictEqual(messages, [], "nothing is sent until the grid asks");
+
+    // The grid asks for its first page, as Tabulator's remote pagination does, and
+    // takes the rows as the extension sends them
+    const table = page.tables.find((built) => built.options.paginationMode === "remote");
+    assert.ok(table, "the Data tab's grid pages remotely");
+    const loaded = table.options.ajaxRequestFunc("qvd:rows", {}, { page: 1, size: 100 });
+    // As JSON, which is how VS Code sends it: the page's objects are its own realm's.
+    // With the version of the file the page was made from
+    const headerKey = page.read("headerKey");
+    assert.strictEqual(typeof headerKey, "string");
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(page.posted.filter((message) => message.command === "page"))),
+      [{ command: "page", requestId: 1, offset: 0, limit: 100, headerKey }]
+    );
+    const answers = await answerPages(page, crafted);
+    assert.strictEqual(answers.at(-1).command, "pageRows", "the rows are sent");
+    const shownRows = JSON.parse(JSON.stringify((await loaded).data));
+    assert.deepStrictEqual(
+      shownRows.map((row) => [row.c0, row.c1]),
+      rows.slice(0, 100).map((row) => [row[FIELD], row.Id])
+    );
 
     // Each column's title is its field's name, which goes into the header as a text
     // node; the cells are Tabulator's plaintext, which escapes them
-    const table = page.tables.find((built) => built.selector === "#data-table");
     const columns = [...table.options.columns];
     assert.deepStrictEqual(
       columns.map((column) => column.title),
@@ -502,13 +555,17 @@ suite("Page Escaping Test Suite", () => {
       ]
     );
     assert.ok(columns.every((column) => column.formatter === undefined));
-    // A field's name is its name: one with a dot in it, as Qlik's QUALIFY names a
-    // field, isn't a path into the row for Tabulator to follow
+    // Each column is keyed by its field's place in the file, never by its name,
+    // which Tabulator would read as a path, and an object would put first if it were a number
+    assert.deepStrictEqual(
+      columns.map((column) => column.field),
+      ["c0", "c1"]
+    );
     assert.strictEqual(table.options.nestedFieldSeparator, false);
 
     // Profiled as the extension does it, the field's markup is in its prefixes,
     // suffixes, email addresses and duplicates
-    const results = profileFields(initial.data, [FIELD, "Id"]);
+    const results = profileFields(rows, [FIELD, "Id"]);
     const strings = results.fields[0].stringAnalysis;
     const duplicates = results.fields[0].qualityMetrics.uniqueness.topDuplicates;
     const prefixes = strings.patterns.prefixes.slice(0, 5).map(({ prefix }) => prefix);
@@ -597,7 +654,7 @@ suite("Page Escaping Test Suite", () => {
 
   test("The editor page and the read-failure notice write their own markup with html, and none shows as text", () => {
     // A failure, a header and rows with nothing to escape, in every case the pages
-    // write markup for: rows still to send, too many rows to profile lightly, rows
+    // write markup for: the grid's status, too many rows to profile lightly, rows
     // that couldn't be read, lineage or none, and the error page
     const failure = {
       kind: "memory",
@@ -606,7 +663,7 @@ suite("Page Escaping Test Suite", () => {
       advice: ["Close other files", "Try fewer rows"],
       actions: [
         { command: "retry", label: "Retry" },
-        { command: "loadRows", label: "Load 1,000 rows", rows: 1000 },
+        { command: "showLogs", label: "Show Logs" },
         { command: "openSetting", label: "Settings", setting: "ctrl-q-qvd-viewer.maxPreviewRows" },
       ],
       detail: "Error: out of memory",
@@ -621,10 +678,10 @@ suite("Page Escaping Test Suite", () => {
     const webview = recordingWebview();
     const context = { extensionPath: root, extensionUri: vscode.Uri.file(root) };
     const markup = [
-      getHtmlForWebview({ metadata, data: [], totalRows: 200000, dataError: failure, fileSize: 10 }, webview, context, {
-        embedData: false,
-      }),
-      getHtmlForWebview({ metadata: { ...metadata, lineage: [] }, data: [{ Amount: 1 }], totalRows: 1, fileSize: 10 }, webview, context),
+      getHtmlForWebview({ metadata, columns: ["Amount"], totalRows: 200000, fileSize: 10 }, webview, context),
+      getHtmlForWebview({ metadata: { ...metadata, lineage: [] }, columns: ["Amount"], totalRows: 1, fileSize: 10 }, webview, context),
+      // As a page that failed says why, in the Data tab
+      String(failureNoticeHtml(failure, { headerShown: true, heading: "h3" })),
       getErrorHtml(failure),
     ]
       .map(markupOf)
@@ -633,7 +690,7 @@ suite("Page Escaping Test Suite", () => {
     // Each part of it is there as markup, and none of it as text, which a literal
     // that isn't html\`...\` would give, put into one that is
     const parts = [
-      'id="loading-indicator"',
+      'id="data-grid-status"',
       '<div class="export-dropdown-item" data-format="csv">',
       '<div class="export-dropdown-separator">',
       '<span class="beta-badge">BETA</span>',
@@ -644,7 +701,6 @@ suite("Page Escaping Test Suite", () => {
       "<p>The file's header could still be read",
       '<ul class="read-failure-advice">',
       "<li>Close other files</li>",
-      'data-rows="1000"',
       'data-setting="ctrl-q-qvd-viewer.maxPreviewRows"',
       "<pre>Error: out of memory</pre>",
     ];
@@ -724,7 +780,7 @@ suite("Page Escaping Test Suite", () => {
         errors.push(message);
         return undefined;
       };
-      setupMessageHandler(panel, path.join(dir, "a|<i>b.qvd"), new QvdReader(), {}, async () => {}, 5000);
+      setupMessageHandler(panel, path.join(dir, "a|<i>b.qvd"), new QvdReader(), {}, async () => {}, null);
       await panel.webview.listener({ command: "openProfilingInWindow", fieldResult, displayType: "markdown" });
     } finally {
       listening.dispose();

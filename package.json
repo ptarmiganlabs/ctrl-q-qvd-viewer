@@ -75,10 +75,18 @@
     "configuration": {
       "title": "Ctrl-Q QVD Viewer",
       "properties": {
+        "ctrl-q-qvd-viewer.pageSize": {
+          "type": "number",
+          "default": 100,
+          "description": "Rows a page of the Data tab shows when a QVD opens. The grid reads one page at a time, wherever it is in the file, and you can pick another page size below it.",
+          "minimum": 10,
+          "maximum": 1000
+        },
         "ctrl-q-qvd-viewer.maxPreviewRows": {
           "type": "number",
           "default": 5000,
-          "description": "Maximum number of rows to load from the QVD file for preview and pagination",
+          "description": "No longer used: the Data tab reads one page at a time. See Page Size.",
+          "markdownDeprecationMessage": "No longer used. The Data tab reads one page of rows at a time, wherever it is in the file: set `#ctrl-q-qvd-viewer.pageSize#` for how many rows a page shows.",
           "minimum": 100,
           "maximum": 100000
         },

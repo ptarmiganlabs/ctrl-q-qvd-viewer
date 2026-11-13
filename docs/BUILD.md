@@ -150,9 +150,9 @@ This will:
    **Scenario 3: Configuration**
 
    - Go to Settings → search for "Ctrl-Q QVD"
-   - Change "Max Preview Rows" value
-   - Open a QVD file with more rows
-   - Verify the row limit is respected
+   - Change the "Page Size" value
+   - Open a QVD file with more rows than that
+   - Verify that a page shows that many rows, and that the last page can be reached
 
 ### Creating Test QVD Files
 

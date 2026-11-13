@@ -385,5 +385,4 @@ This document outlines potential enhancements to the field profiling feature bey
 ## Related Documentation
 
 - [Current Profiling Implementation](../PROFILING.md) (if exists)
-- [Load More Feature](./LOAD_MORE_FEATURE.md)
-- [Pagination Enhancement](./PAGINATION_ENHANCEMENT.md)
+- [Paging the Data tab](../PAGINATION.md)

@@ -1,201 +1,44 @@
-# Pagination Implementation
+# Paging the Data tab
 
-## Overview
+The Data tab reads a QVD one page at a time, wherever that page is in the file. A file of 30 million rows opens as fast as a small one, and its last page is one click away.
 
-This extension now includes **lightweight client-side pagination** for viewing QVD file data. The implementation uses pure vanilla JavaScript (~2-3KB) instead of heavy frameworks like React (~130KB).
+## What happens when a QVD opens
 
-## Features
+1. **The header first.** `QvdEditorProvider.updateWebview()` reads the file's header with `QvdReader.readHeader()`. That takes milliseconds whatever the file's size, and none at all when the file hasn't changed since it was last read. The page is built from the header alone. The Schema, File Metadata and Lineage tabs and the structure chart are complete at once.
+2. **The grid asks for a page.** The Data tab's grid (`src/webview/client/dataGrid.js`) is a Tabulator table with remote pagination. Its columns come from the file's field list, in file order. Each column is keyed by the field's position (`c0`, `c1`, …), never by its name: Tabulator would read a name with a dot in it as a path, and an object puts a name that is a number before the others. The page's Content Security Policy allows no `fetch`, so Tabulator's `ajaxRequestFunc` posts `{command: "page", requestId, offset, limit}` to the extension.
+3. **The extension answers from an open copy of the file.** `src/webview/pageServer.mjs` holds one pager per editor (`src/qvdPager.mjs`). The pager opens the file with qvdjs's `QvdDataFrame.open()`, which reads the header only, and reads each page with `rows({offset, limit})`. A page decodes only the values its rows use.
+4. **The rows go back as arrays,** one value per field in file order, in `{command: "pageRows", requestId, offset, rows, totalRows}`. A page holds at most 1,000 rows, so no message comes near the longest string VS Code can send.
 
-### Current Implementation
+## What a page costs
 
-- ✅ **Client-side pagination**: All loaded rows are paginated in the browser
-- ✅ **Configurable page sizes**: 25, 50, 100, 250, 500 rows per page
-- ✅ **Navigation controls**: First, Previous, Next, Last page buttons
-- ✅ **Jump to page**: Direct page number input
-- ✅ **Page info display**: Shows "Showing X - Y of Z rows"
-- ✅ **VS Code theming**: Fully integrated with VS Code's color schemes
-- ✅ **Keyboard support**: Enter key to jump to pages
+The first page to touch a column walks that column's symbols once. On a file of a few gigabytes that takes seconds. While it runs, the grid shows "Reading field 3 of 21…" with a Cancel button, from qvdjs's `symbol-census` progress. Later pages take milliseconds.
 
-### Bundle Size
+qvdjs keeps the values a page decodes, for later pages, until the file is closed. The pager:
 
-- **Pagination code**: ~2-3KB (inline JavaScript)
-- **No external dependencies**: Everything is self-contained
-- **No build step required**: Pure vanilla JS in the webview
+- **Prices each page first.** It calls qvdjs's `check()` before each page, which counts what the open copy holds already. It compares that with the heap left in the memory guard (`src/memoryGuard.mjs`), less what exports, profiling and other tabs have booked. A page that doesn't fit is refused with a message that says how much it needs and how much is left. It doesn't crash the extension host.
+- **Books what the open copy holds,** so that other reads are priced against it.
+- **Opens the file afresh** once the open copy holds more than 128 MiB, which lets go of those values.
+- **Runs in the read queue's small lane,** one page at a time in the extension host, beside at most one large read, which leaves 128 MiB for it.
 
-## How It Works
+## Answers other than rows
 
-### Current Flow (Client-Side Pagination)
+| Message | When |
+| --- | --- |
+| `pageProgress {requestId, current, total}` | While a page walks columns: columns walked, of those it walks |
+| `pageFailed {requestId, failure, html}` | The page couldn't be read. `failure` is `describeReadFailure()`'s account, `html` the notice that says so. The grid shows it above the table, and its Retry asks for the page again |
+| `pageCancelled {requestId}` | The user cancelled the page with `{command: "cancelPage", requestId}` |
 
-```
-1. Extension loads data via qvdjs (currently loads entire file)
-2. Data is sent to webview as JSON
-3. Pagination class in webview handles:
-   - Slicing data into pages
-   - Rendering current page
-   - Handling navigation events
-```
+A request supersedes the one before it, which is given up without an answer. The grid ignores an answer to a request it no longer waits for.
 
-### Architecture
+If the file changes on disk while it is open, as a reload storing it again would, the next page finds out. Its header may no longer describe it, so the editor is shown afresh from the new header.
 
-```
-┌─────────────────┐
-│  qvdReader.js   │  ← Loads QVD data via qvdjs
-└────────┬────────┘
-         │
-         ↓
-┌─────────────────────┐
-│ qvdEditorProvider.js│  ← Sends data to webview
-└────────┬────────────┘
-         │
-         ↓
-┌─────────────────────┐
-│   Webview HTML      │
-│                     │
-│  [Pagination Class] │  ← Client-side paging
-│  ├─ getCurrentPage()│
-│  ├─ renderTable()   │
-│  └─ renderControls()│
-└─────────────────────┘
-```
+When the editor closes, its page server gives up what runs and closes the file.
 
-## Future: Server-Side Pagination
+## Settings
 
-When `qvdjs` adds streaming/lazy loading support, the extension is architected to easily switch to server-side pagination:
+- `ctrl-q-qvd-viewer.pageSize`: rows a page shows when a file opens (default 100, from 10 to 1,000). The grid also offers 25, 50, 100, 250, 500 and 1,000 below the table.
+- `ctrl-q-qvd-viewer.maxPreviewRows` is no longer used. It is kept, marked deprecated, so that settings.json files that set it don't show it as unknown.
 
-### Future Flow (Server-Side Pagination)
+## Search and sort
 
-```
-1. Extension loads only requested page via qvdjs
-2. Webview requests new page via postMessage
-3. Extension responds with page data
-4. Webview updates display
-```
-
-### Migration Steps (When Available)
-
-1. **Update qvdReader.js**:
-
-   ```javascript
-   async readPage(filePath, page, pageSize) {
-       const metadata = await this.extractMetadata(filePath);
-       const startRow = page * pageSize;
-       const endRow = Math.min(startRow + pageSize, metadata.noOfRecords);
-
-       const reader = new QvdFileReader(filePath);
-       const dataFrame = await reader.loadRange(startRow, endRow); // New API
-
-       return {
-           metadata,
-           data: dataFrame.data,
-           columns: dataFrame.columns,
-           totalRows: metadata.noOfRecords,
-           page,
-           pageSize
-       };
-   }
-   ```
-
-2. **Update message handler** (already stubbed in code):
-
-   ```javascript
-   case 'loadPage':
-       const pageData = await this.qvdReader.readPage(
-           filePath,
-           message.page,
-           message.pageSize
-       );
-       webviewPanel.webview.postMessage({
-           command: 'pageData',
-           data: pageData
-       });
-       break;
-   ```
-
-3. **Update webview pagination** (minimal change):
-   ```javascript
-   goToPage(page) {
-       this.currentPage = page;
-       // Request new page from extension
-       vscode.postMessage({
-           command: 'loadPage',
-           page: page,
-           pageSize: this.pageSize
-       });
-   }
-   ```
-
-## Benefits of This Approach
-
-### 1. **Lightweight**
-
-- No React, no webpack, no babel
-- Entire pagination logic is ~2-3KB
-- Fast load times
-
-### 2. **Future-Proof**
-
-- Designed for easy migration to server-side pagination
-- Message-passing architecture already in place
-- Minimal code changes needed
-
-### 3. **User-Friendly**
-
-- Intuitive pagination controls
-- Keyboard shortcuts
-- Configurable page sizes
-- VS Code-themed UI
-
-### 4. **Performant**
-
-- Efficient DOM updates
-- No unnecessary re-renders
-- Works well with large datasets (when paginated)
-
-## Files Modified
-
-- ✅ `qvdEditorProvider.js` - Added pagination HTML, CSS, and inline JS
-- ✅ `qvdReader.js` - Added future `readPage()` method stub
-- ✅ `src/webview/pagination.js` - Standalone pagination class (for reference; since removed, as nothing loaded it)
-
-## Testing
-
-To test the pagination:
-
-1. Open a QVD file with data
-2. Verify pagination controls appear
-3. Test navigation:
-   - Click Next/Previous buttons
-   - Click First/Last buttons
-   - Type a page number and press Enter
-   - Change rows per page dropdown
-4. Verify data updates correctly on each page
-5. Test with different QVD file sizes
-
-## Performance Considerations
-
-### Current Limitations
-
-- Still loads entire QVD file into memory (qvdjs limitation)
-- For very large files (>100K rows), initial load may be slow
-- Memory usage proportional to file size
-
-### Future Improvements
-
-- When qvdjs supports streaming:
-  - Only load requested pages
-  - Dramatically reduce memory usage
-  - Faster initial load times
-  - Support for files with millions of rows
-
-## Comparison: Why Not React?
-
-| Aspect           | Vanilla JS (Current) | React + TanStack Table           |
-| ---------------- | -------------------- | -------------------------------- |
-| Bundle Size      | ~2-3KB               | ~130KB                           |
-| Dependencies     | None                 | React, ReactDOM, @tanstack/table |
-| Build Step       | Not needed           | Webpack/Babel required           |
-| Load Time        | Instant              | ~100-200ms                       |
-| Complexity       | Simple               | Medium                           |
-| Future Migration | Easy                 | Easy                             |
-
-**Decision**: For a simple file viewer extension, vanilla JS provides the best balance of simplicity, performance, and maintainability.
+For now, search filters the rows of the page shown, and the grid's columns don't sort: a sort of one page would look like a sort of the file. Whole-file search and sort, on the extension host, come next.

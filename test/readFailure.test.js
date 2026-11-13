@@ -12,7 +12,8 @@ let QvdReader;
 let errorFacts;
 let describeReadFailure;
 let describeViewerFailure;
-let PREVIEW_ROWS_SETTING;
+let PAGE_SIZE_SETTING;
+let createPageServer;
 let getErrorHtml;
 let escapeHtml;
 let QvdEditorProvider;
@@ -125,15 +126,29 @@ function realProvider(extensionPath = root) {
 /**
  * Open a file the way the editor does, and give the page it shows
  * @param {string} filePath - The file
- * @param {number} [maxRows=5000] - Rows to open it with
  * @param {object} [provider] - The editor provider, the real reader's unless given
  * @returns {Promise<string>} The page's HTML
  */
-async function pageFor(filePath, maxRows = 5000, provider = realProvider()) {
+async function pageFor(filePath, provider = realProvider()) {
   const webview = recordingWebview();
-  const shown = await provider.updateWebview(filePath, webview, maxRows);
-  await shown?.rowsSent;
+  await provider.updateWebview(filePath, webview);
   return webview.html;
+}
+
+/**
+ * Ask for a file's first page, the way the Data tab's grid does, and give the answer
+ * @param {string} filePath - The file
+ * @returns {Promise<object>} The message that answers it
+ */
+async function firstPageFor(filePath) {
+  const messages = [];
+  const pages = createPageServer({ filePath, webview: recordingWebview(messages) });
+  try {
+    await pages.servePage({ requestId: 1, offset: 0, limit: 100 });
+  } finally {
+    await pages.close();
+  }
+  return messages.find((message) => message.requestId === 1 && message.command !== "pageProgress");
 }
 
 /**
@@ -193,7 +208,8 @@ suite("Read Failure Test Suite", () => {
     // Import the ESM modules
     ({ default: QvdReader, errorFacts } = await import("../src/qvdReader.mjs"));
     ({ describeReadFailure, describeViewerFailure } = await import("../src/webview/readFailure.mjs"));
-    ({ PREVIEW_ROWS_SETTING } = await import("../src/webview/loadMore.mjs"));
+    ({ PAGE_SIZE_SETTING } = await import("../src/webview/pageSize.mjs"));
+    ({ createPageServer } = await import("../src/webview/pageServer.mjs"));
     ({ getErrorHtml } = await import("../src/webview/templates/errorTemplate.mjs"));
     ({ escapeHtml } = await import("../src/webview/templates/escaping.mjs"));
     ({ default: QvdEditorProvider } = await import("../src/qvdEditorProvider.mjs"));
@@ -393,51 +409,49 @@ suite("Read Failure Test Suite", () => {
     }
   });
 
-  test("A memory refusal says what didn't fit, and offers the rows that fit and the setting", () => {
-    const refused = (fitRows) => ({
-      error: guard.describeReadRefusal({ rows: 5000, totalRows: 30000000, fitRows, forCaller: false }),
+  test("A memory refusal says what didn't fit, and offers a smaller page and the setting", () => {
+    const refused = {
+      error: guard.describePageRefusal({ offset: 0, rows: 1000, neededBytes: 3 * 2 ** 30, leftBytes: 2 ** 30 }),
       errorName: "QvdValidationError",
       errorReason: "memory",
-      refusal: { rows: 5000, totalRows: 30000000, fitRows, forCaller: false, neededBytes: 0, leftBytes: 0 },
-    });
+      refusal: { rows: 1000, totalRows: 30000000, fitRows: 0, forCaller: false, neededBytes: 0, leftBytes: 0 },
+    };
 
-    const some = describeReadFailure(refused(1200), { filePath: "/data/huge.qvd" });
-    assert.strictEqual(some.kind, "memory");
-    assert.strictEqual(some.title, "Not enough memory to show this many rows");
-    assert.ok(some.summary.includes("needs more memory than VS Code gives its extensions"));
-    assert.deepStrictEqual(
-      some.actions.find((action) => action.rows),
-      { command: "retry", label: "Open the first 1,200 rows", rows: 1200 }
+    const failure = describeReadFailure(refused, { filePath: "/data/huge.qvd" });
+    assert.strictEqual(failure.kind, "memory");
+    assert.strictEqual(failure.title, "Not enough memory to show these rows");
+    assert.strictEqual(
+      failure.summary,
+      "Showing rows 1 to 1,000 needs about 3.0 GiB of memory, and about 1.0 GiB is left in what VS Code gives its extensions."
     );
+    assert.ok(failure.advice.some((line) => line.includes("smaller page size")));
     assert.ok(
-      some.actions.some((action) => action.command === "openSettings" && action.setting === PREVIEW_ROWS_SETTING)
+      failure.actions.some((action) => action.command === "openSettings" && action.setting === PAGE_SIZE_SETTING)
     );
-    assert.strictEqual(some.dataOnly, true);
+    // No button reads a row count of its own: the grid's page size says how many
+    assert.ok(failure.actions.every((action) => !("rows" in action)));
+    assert.strictEqual(failure.dataOnly, true);
     // Not qvdjs's own advice, which a VS Code user can't follow
-    const said = [some.summary, ...some.advice].join(" ");
+    const said = [failure.summary, ...failure.advice].join(" ");
     assert.ok(!said.includes("limit parameter") && !said.includes("max-old-space-size"));
-
-    const none = describeReadFailure(refused(0), { filePath: "/data/huge.qvd" });
-    assert.strictEqual(none.title, "Not enough memory to read this file");
-    assert.ok(!none.actions.some((action) => action.rows));
   });
 
-  test("An option refusal names maxPreviewRows only for the rows to read", () => {
+  test("An option refusal names pageSize only for a page's rows", () => {
     const refused = (errorOption) => ({
       error: `${errorOption} must be a number of 0 or more, not -1`,
       errorName: "QvdValidationError",
       errorReason: "option",
       errorOption,
     });
-    const rows = describeReadFailure(refused("maxRows"), { filePath: "/data/sets.qvd" });
-    assert.ok(rows.advice[0].includes(PREVIEW_ROWS_SETTING));
-    assert.ok(rows.actions.some((action) => action.setting === PREVIEW_ROWS_SETTING));
+    const rows = describeReadFailure(refused("limit"), { filePath: "/data/sets.qvd" });
+    assert.ok(rows.advice[0].includes(PAGE_SIZE_SETTING));
+    assert.ok(rows.actions.some((action) => action.setting === PAGE_SIZE_SETTING));
     // A setting put right takes effect on a retry
     assert.ok(rows.actions.some((action) => action.command === "retry"));
 
     const cost = describeReadFailure(refused("bytesPerCell"), { filePath: "/data/sets.qvd" });
     assert.ok(cost.summary.includes("bytesPerCell"));
-    assert.ok(!cost.advice.join(" ").includes(PREVIEW_ROWS_SETTING));
+    assert.ok(!cost.advice.join(" ").includes(PAGE_SIZE_SETTING));
     assert.ok(!cost.actions.some((action) => action.command === "openSettings"));
     // No setting gives it, so a retry would fail the same way
     assert.deepStrictEqual(
@@ -459,7 +473,6 @@ suite("Read Failure Test Suite", () => {
   test("Opening each kind of failure shows its own page", async () => {
     assertSays(await pageFor(files.missing), "missing", "The file can't be found");
     assertSays(await pageFor(files.folder), "directory", "This is a folder, not a QVD file");
-    assertSays(await pageFor(sets, -5), "option", "A setting or option isn't valid");
     assertSays(await pageFor(`${sets}\0.qvd`), "path", "The viewer refused this file's path");
     // A file with no QVD header has nothing else to show
     for (const name of ["csv", "parquet", "damaged"]) {
@@ -476,37 +489,39 @@ suite("Read Failure Test Suite", () => {
     assertSays(await pageFor(files.unreadable), "permission", "You don't have permission to read this file");
   });
 
-  test("A file whose rows are damaged opens with its header, and the damage in the Data tab", async () => {
+  test("A file whose rows are damaged opens with its header, and its first page says why", async () => {
     for (const name of ["truncated", "lastByte", "badIndex"]) {
       const html = await pageFor(files[name]);
       assert.ok(isViewer(html), `${name} opens in the viewer`);
-      assertSays(html, "damaged", "This QVD file appears to be corrupted or damaged");
-      // The schema tab has the header's fields
+      // The schema tab has the header's fields, and the page reads no rows itself
       assert.ok(html.includes('"name":"set_num"') && html.includes('"name":"num_parts"'), name);
-      assert.ok(html.includes("The file's header could still be read"), name);
+      assert.ok(!html.includes('class="read-failure"'), name);
+
+      const answer = await firstPageFor(files[name]);
+      assert.strictEqual(answer.command, "pageFailed", name);
+      assert.strictEqual(answer.failure.kind, "damaged", name);
+      assert.ok(answer.html.includes('data-kind="damaged"'), name);
+      assert.ok(answer.html.includes("The file's header could still be read"), name);
       // Its header read, so it is a QVD: the notice doesn't suggest it might not be
-      assert.ok(html.includes("could read the header of"), name);
-      assert.ok(!html.includes("not a QVD") && !html.includes("renamed .qvd"), name);
-      // Neither Load More nor a wait for rows: the notice retries
-      assert.ok(html.includes("let hasMoreRows = false;"), name);
-      assert.ok(!html.includes('id="loading-indicator"'), name);
+      assert.ok(answer.html.includes("could read the header of"), name);
+      assert.ok(!answer.html.includes("not a QVD") && !answer.html.includes("renamed .qvd"), name);
     }
   });
 
-  test("Opening a file too large for the memory left shows its header, and why", async () => {
+  test("A page too large for the memory left says so, with the page size to lower", async () => {
     // qvdjs's budget is known once a read has asked for it
     (await new QvdReader().read(colors, 1)).release();
     const release = guard.bookHeap(guard.knownBudget().bytes);
-    let html;
+    let answer;
     try {
-      html = await pageFor(sets);
+      answer = await firstPageFor(sets);
     } finally {
       release();
     }
-    assert.ok(isViewer(html));
-    assertSays(html, "memory", /Not enough memory to (read this file|show this many rows)/);
-    assert.ok(html.includes("needs more memory than VS Code gives its extensions"));
-    assert.ok(html.includes(`data-setting="${PREVIEW_ROWS_SETTING}"`));
+    assert.strictEqual(answer.command, "pageFailed");
+    assert.strictEqual(answer.failure.kind, "memory");
+    assert.match(answer.failure.summary, /^Showing rows 1 to 100 needs about .+ of memory, and about .+ is left/);
+    assert.ok(answer.html.includes(`data-setting="${PAGE_SIZE_SETTING}"`));
   });
 
   test("The error page runs only its own script and style, and escapes what it shows", () => {
@@ -529,40 +544,19 @@ suite("Read Failure Test Suite", () => {
     assert.ok(html.includes("wireFailureButtons(acquireVsCodeApi());"));
   });
 
-  test("Retry reads the file again, with the rows the setting asks for now or the rows offered", async () => {
-    // The API as the handler imports it: on some VS Code versions, 1.103.0 among them, that is another object than require() gives
-    const api = await import("vscode");
-    const getConfiguration = api.workspace.getConfiguration;
+  test("Retry shows the file again, as opening it would", async () => {
     const panel = { webview: recordingWebview() };
     const updates = [];
     const signal = new AbortController().signal;
-    setupMessageHandler(
-      panel,
-      sets,
-      new QvdReader(),
-      {},
-      async (...update) => updates.push(update),
-      5000,
-      signal
-    );
-    try {
-      api.workspace.getConfiguration = () => ({
-        get: (key, fallback) => (key === "maxPreviewRows" ? 300 : fallback),
-      });
-      await panel.webview.listener({ command: "retry" });
-      await panel.webview.listener({ command: "retry", rows: 1200 });
-      await panel.webview.listener({ command: "retry", rows: "1200" });
-      await panel.webview.listener({ command: "retry", rows: 1e9 });
-    } finally {
-      api.workspace.getConfiguration = getConfiguration;
-    }
+    setupMessageHandler(panel, sets, new QvdReader(), {}, async (...update) => updates.push(update), null, signal);
+    await panel.webview.listener({ command: "retry" });
+    // A row count a page might send is no longer the viewer's to take
+    await panel.webview.listener({ command: "retry", rows: 1200 });
     assert.deepStrictEqual(
-      updates.map(([filePath, webview, rows, options]) => [filePath, webview === panel.webview, rows, options]),
+      updates.map(([filePath, webview, options]) => [filePath, webview === panel.webview, options]),
       [
-        [sets, true, 300, { signal }],
-        [sets, true, 1200, { signal }],
-        [sets, true, 300, { signal }],
-        [sets, true, 100000, { signal }],
+        [sets, true, { signal }],
+        [sets, true, { signal }],
       ]
     );
   });
@@ -574,12 +568,12 @@ suite("Read Failure Test Suite", () => {
     const panel = { webview: recordingWebview() };
     const commands = [];
     let shown = 0;
-    setupMessageHandler(panel, sets, new QvdReader(), {}, async () => {}, 5000);
+    setupMessageHandler(panel, sets, new QvdReader(), {}, async () => {}, null);
     try {
       api.commands.executeCommand = async (...command) => commands.push(command);
       logger.show = () => shown++;
       await panel.webview.listener({ command: "showLogs" });
-      await panel.webview.listener({ command: "openSettings", setting: PREVIEW_ROWS_SETTING });
+      await panel.webview.listener({ command: "openSettings", setting: PAGE_SIZE_SETTING });
       // Only the extension's own settings
       await panel.webview.listener({ command: "openSettings", setting: "security.workspace.trust.enabled" });
       await panel.webview.listener({ command: "openSettings" });
@@ -589,7 +583,7 @@ suite("Read Failure Test Suite", () => {
     }
     assert.strictEqual(shown, 1);
     assert.deepStrictEqual(commands, [
-      ["workbench.action.openSettings", PREVIEW_ROWS_SETTING],
+      ["workbench.action.openSettings", PAGE_SIZE_SETTING],
       ["workbench.action.openSettings", "ctrl-q-qvd-viewer"],
       ["workbench.action.openSettings", "ctrl-q-qvd-viewer"],
     ]);
@@ -599,7 +593,7 @@ suite("Read Failure Test Suite", () => {
     const late = path.join(dir, "late.qvd");
     const provider = realProvider();
     const webview = recordingWebview();
-    await provider.updateWebview(late, webview, 5000);
+    await provider.updateWebview(late, webview);
     assertSays(webview.html, "missing", "The file can't be found");
 
     fs.copyFileSync(sets, late);
@@ -609,7 +603,7 @@ suite("Read Failure Test Suite", () => {
       provider.qvdReader,
       provider.context,
       provider.updateWebview.bind(provider),
-      5000
+      null
     );
     await webview.listener({ command: "retry" });
     assert.ok(isViewer(webview.html));
@@ -618,7 +612,7 @@ suite("Read Failure Test Suite", () => {
 
   test("A page the viewer can't build is the viewer's failure, not the file's", async () => {
     // sets.qvd reads, but this extension folder has none of the libraries its pages inline
-    const html = await pageFor(sets, 5000, realProvider(files.noLibraries));
+    const html = await pageFor(sets, realProvider(files.noLibraries));
     assertSays(html, "viewer", "The viewer couldn't show this file");
     // The library's ENOENT is in the details, and isn't taken for the QVD's
     assert.ok(html.includes("ENOENT"));
@@ -628,24 +622,18 @@ suite("Read Failure Test Suite", () => {
     assert.strictEqual(describeViewerFailure(thrown, { filePath: sets }).kind, "viewer");
   });
 
-  test("A header page that can't be built gives way to the error page, which says why the rows failed", async () => {
-    const html = await pageFor(files.truncated, 5000, realProvider(files.noLibraries));
+  test("A damaged file's page that can't be built is the viewer's failure too", async () => {
+    // Its header reads, so its rows' damage is for its first page to find
+    const html = await pageFor(files.truncated, realProvider(files.noLibraries));
     assert.ok(!isViewer(html));
-    assertSays(html, "damaged", "This QVD file appears to be corrupted or damaged");
+    assertSays(html, "viewer", "The viewer couldn't show this file");
   });
 
-  test("Closing the editor while a failure's header is read leaves the page alone", async () => {
+  test("Closing the editor while its header is read leaves the page alone", async () => {
     const closed = new AbortController();
     const header = await new QvdReader().readHeader(sets);
     const provider = realProvider();
     provider.qvdReader = {
-      read: async () => ({
-        error: "Symbol index out of range",
-        errorName: "QvdCorruptedError",
-        errorReason: null,
-        errorCode: null,
-        release: () => {},
-      }),
       // The editor closes as the header arrives
       readHeader: async () => {
         closed.abort();
@@ -655,40 +643,33 @@ suite("Read Failure Test Suite", () => {
     const webview = recordingWebview();
     webview.html = "<p>the page</p>";
 
-    await provider.updateWebview(sets, webview, 5000, { signal: closed.signal });
+    await provider.updateWebview(sets, webview, { signal: closed.signal });
 
     assert.strictEqual(webview.html, "<p>the page</p>");
   });
 
-  test("Closing the editor once its rows are read leaves the page alone, and lets their memory go", async () => {
+  test("Closing the editor while a header that fails is read leaves the page alone", async () => {
     const closed = new AbortController();
-    const read = await new QvdReader().read(colors, 5);
-    let released = 0;
     const provider = realProvider();
     provider.qvdReader = {
-      // The editor closes as the rows arrive
-      read: async () => {
+      readHeader: async () => {
         closed.abort();
-        return { ...read, release: () => released++ };
+        throw Object.assign(new Error("The XML header contains no usable QvdTableHeader element"), {
+          name: "QvdCorruptedError",
+        });
       },
     };
     const webview = recordingWebview();
     webview.html = "<p>the page</p>";
 
-    const shown = await provider.updateWebview(colors, webview, 5, { signal: closed.signal });
-    read.release();
+    await provider.updateWebview(sets, webview, { signal: closed.signal });
 
-    assert.strictEqual(shown, undefined);
     assert.strictEqual(webview.html, "<p>the page</p>");
-    assert.strictEqual(released, 1);
   });
 
   test("A page set as its editor closes is given up, without a second try", async () => {
     const closed = new AbortController();
-    const read = await new QvdReader().read(colors, 5);
-    let released = 0;
     const provider = realProvider();
-    provider.qvdReader = { read: async () => ({ ...read, release: () => released++ }) };
     let tries = 0;
     const webview = recordingWebview();
     // VS Code's webview throws once its panel is disposed, which also aborts the editor's signal
@@ -701,11 +682,9 @@ suite("Read Failure Test Suite", () => {
       },
     });
 
-    await provider.updateWebview(colors, webview, 5, { signal: closed.signal });
-    read.release();
+    await provider.updateWebview(colors, webview, { signal: closed.signal });
 
     assert.strictEqual(tries, 1);
-    assert.strictEqual(released, 1);
   });
 
   test("The page shown when opening fails has buttons only when something hears them", async () => {

@@ -6,33 +6,33 @@ import {
   getChartJs,
   getHistogramViewJs,
   getHtmlJs,
+  getDataGridJs,
 } from "../assetLoader.mjs";
-import {
-  failureNoticeHtml,
-  FAILURE_BUTTONS_JS,
-  FAILURE_NOTICE_CSS,
-} from "./errorTemplate.mjs";
+import { FAILURE_NOTICE_CSS } from "./errorTemplate.mjs";
 import { html, scriptJson } from "./escaping.mjs";
 import DataExporter from "../../exporters/index.mjs";
 import { helpIconsHtml } from "../qualityMetricHelp.mjs";
-import { getLoadMoreRowCount } from "../loadMore.mjs";
+import { pageSizesOffered } from "../pageSize.mjs";
 
 /**
  * Generate HTML for webview with tabbed interface and Tabulator
- * @param {object} result - The QVD read result. Its dataError, when the file's rows
- *   couldn't be read but its header could, is why, as describeReadFailure() says it:
- *   the page then shows the header, with that in the Data tab
+ * The page is made from the file's header alone. Its Data tab's grid then asks the
+ * extension for its rows, a page at a time: see src/webview/client/dataGrid.js.
+ * @param {object} header - The file's header, as QvdReader.readHeader() gives it,
+ *   with the page's own settings
+ * @param {object} header.metadata - The file's metadata and its fields'
+ * @param {Array<string>} header.columns - Its field names, in file order
+ * @param {number} header.totalRows - Its rows
+ * @param {number} [header.fileSize] - Its size, for the chart of its structure; 0 leaves the chart out
+ * @param {number} [header.pageSize=100] - Rows a page of the grid shows to begin with
+ * @param {string|null} [header.key] - Which version of the file the header is, which
+ *   the grid's pages are checked against
  * @param {object} webview - The webview object
  * @param {object} context - The extension context
- * @param {object} options - Options for HTML generation
- * @param {boolean} options.embedData - Whether to embed data in HTML (default: true for backwards compatibility)
  * @returns {string} HTML content for the main webview
  */
-export function getHtmlForWebview(result, webview, context, options = {}) {
-  const { metadata, data, totalRows, dataError, fileSize } = result;
-  const embedData = options.embedData !== false; // Default to true for backwards compatibility
-  // Rows that couldn't be read aren't offered again: the notice in the Data tab retries
-  const hasMoreRows = !dataError && data.length < totalRows;
+export function getHtmlForWebview(header, webview, context) {
+  const { metadata, columns, totalRows, fileSize, pageSize = 100, key = null } = header;
   const nonce = getNonce();
 
   // Inline Tabulator for easier CSP compliance
@@ -41,6 +41,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
   const chartJs = getChartJs(context.extensionPath);
   const histogramViewJs = getHistogramViewJs(context.extensionPath);
   const htmlJs = getHtmlJs(context.extensionPath);
+  const dataGridJs = getDataGridJs(context.extensionPath);
 
   // Get the logo URI for the webview
   const logoUri = webview.asWebviewUri(
@@ -387,24 +388,48 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             flex-shrink: 0;
         }
         
-        .load-button {
-            background-color: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
+        /* What the Data tab's grid waits for, with a Cancel button, or why a page failed */
+        .data-grid-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+            flex-shrink: 0;
+        }
+        
+        .data-grid-status[hidden] {
+            display: none;
+        }
+        
+        .data-grid-status.waiting,
+        .data-grid-status.cancelled {
+            background-color: var(--vscode-textBlockQuote-background);
+            border-left: 4px solid var(--vscode-textBlockQuote-border);
+            padding: 8px 15px;
+        }
+        
+        .data-grid-status.failed {
+            display: block;
+        }
+        
+        .data-grid-progress {
+            flex: 1;
+            max-width: 20em;
+        }
+        
+        .data-grid-cancel,
+        .data-grid-retry {
+            background-color: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
             border: none;
-            padding: 5px 10px;
+            padding: 4px 10px;
             border-radius: 2px;
             cursor: pointer;
-            font-size: 0.85em;
-            margin-left: 8px;
         }
         
-        .load-button:hover {
-            background-color: var(--vscode-button-hoverBackground);
-        }
-        
-        .load-button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
+        .data-grid-cancel:hover,
+        .data-grid-retry:hover {
+            background-color: var(--vscode-button-secondaryHoverBackground);
         }
         
         /* Tabulator overrides for VSCode theme */
@@ -1196,32 +1221,6 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
 </head>
 <body>
     ${html`
-    ${
-      !embedData
-        ? html`
-    <!-- Loading indicator for postMessage data -->
-    <div id="loading-indicator" style="
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: var(--vscode-editor-background);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-direction: column;
-        z-index: 10000;
-    ">
-        <div style="font-size: 48px; margin-bottom: 20px;">⏳</div>
-        <div style="font-size: 18px; color: var(--vscode-foreground);">Loading QVD data...</div>
-        <div id="loading-progress" style="font-size: 14px; color: var(--vscode-descriptionForeground); margin-top: 10px;">
-            Large file optimization in progress
-        </div>
-    </div>
-    `
-        : ""
-    }
     <div class="container">
         <div class="header-container">
             <h1><img src="${logoUri}" alt="Ctrl-Q Logo" class="logo" />Ctrl-Q QVD File Viewer</h1>
@@ -1248,17 +1247,10 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             
             <!-- Data Tab -->
             <div id="data-tab" class="tab-content active">
-                <!-- Filled in by updateLoadedRowsBanner() once the rows are known -->
-                <div class="info-banner" id="loaded-rows-banner" style="display: none;">
-                    <div id="loaded-rows-text"></div>
-                    <div>
-                        <button class="load-button" id="loadMoreBtn">Load More</button>
-                        <button class="load-button" id="loadAllBtn">Load All Remaining</button>
-                    </div>
-                </div>
-                ${dataError ? failureNoticeHtml(dataError, { headerShown: true }) : ""}
+                <!-- What the grid waits for, with a Cancel button, or why a page failed: see dataGrid.js -->
+                <div class="data-grid-status" id="data-grid-status" role="status" aria-live="polite" hidden></div>
                 <div class="search-container">
-                    <input type="text" class="search-input" id="data-search" placeholder="🔍 Search in data..." />
+                    <input type="text" class="search-input" id="data-search" placeholder="🔍 Search this page..." />
                     <button class="clear-search-btn" id="clear-data-search">✕ Clear</button>
                 </div>
                 <div class="table-wrapper">
@@ -1406,15 +1398,18 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
     </script>
     
     <script nonce="${nonce}">
+        /* The Data tab's grid, which asks for a page of rows at a time - inlined */
+        ${dataGridJs}
+    </script>
+    
+    <script nonce="${nonce}">
         const vscode = acquireVsCodeApi();
         const totalRowsInFile = ${totalRows};
-        // Updated when the rows arrive via postMessage
-        let currentLoadedRows = ${data.length};
-        let hasMoreRows = ${hasMoreRows};
-        // Rows that Load More reads, counted from the start of the file
-        let loadMoreRowCount = ${getLoadMoreRowCount(data.length)};
-        // Rows to expect: they arrive in batches, loadInitialData with the first and appendRows with the rest
-        let expectedRows = 0;
+        // Rows a page of the grid shows to begin with, and the sizes it offers
+        const pageSize = ${pageSize};
+        // The version of the file this page shows, which each page of the grid is checked against
+        const headerKey = ${scriptJson(key)};
+        const pageSizes = ${scriptJson(pageSizesOffered(pageSize))};
         
         // Logging helper - sends logs to extension
         const logger = {
@@ -1433,16 +1428,12 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
         };
         
         // Data for tables, written by scriptJson(): what the file says can't end this script
-        // When embedData is false, data will be sent via postMessage after page load
-        let tableData = ${embedData ? scriptJson(data) : "[]"};
         const schemaData = ${scriptJson(schemaData)};
         const metadataData = ${scriptJson(metadataKV)};
         const lineageData = ${scriptJson(lineageData)};
 
-        // Available field names for profiling
-        const availableFields = ${scriptJson(
-          metadata && metadata.fields ? metadata.fields.map((f) => f.name) : []
-        )};
+        // The file's field names, in file order: the grid's columns, and the fields to profile
+        const availableFields = ${scriptJson(columns ?? (metadata?.fields ?? []).map((f) => f.name))};
 
         // escapeHtml() and the html tag, as the extension has them, for the HTML this
         // script writes: each value in an html\`...\` literal is escaped
@@ -1461,31 +1452,19 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
         }
 
         let currentContextCell = null;
-        let dataTable, schemaTable, metadataTable, lineageTable;
+        let dataGrid, schemaTable, metadataTable, lineageTable;
         let profilingCharts = [];
         let currentProfilingResults = null;
         
-        // Flag to track if we're waiting for initial data
-        let waitingForInitialData = ${!embedData};
-        
         // Initialize tables on load
         window.addEventListener('DOMContentLoaded', function() {
-            ${
-              embedData
-                ? "initializeTables();\n            updateLoadedRowsBanner();"
-                : "// Tables will be initialized after receiving data via postMessage"
-            }
+            initializeTables();
             setupEventListeners();
             setupMessageListener();
             initQvdStructureChart();
         });
         
-        // Buttons of the notice that says why the file's rows couldn't be read
-        ${FAILURE_BUTTONS_JS}
-
         function setupEventListeners() {
-            wireFailureButtons(vscode);
-
             // Tab switching
             document.querySelectorAll('.tab-button').forEach(button => {
                 button.addEventListener('click', function(e) {
@@ -1497,8 +1476,12 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             // Search inputs
             const dataSearch = document.getElementById('data-search');
             if (dataSearch) {
-                dataSearch.addEventListener('keyup', function() {
-                    filterDataTable(this.value);
+                // Once typing pauses, not at every key
+                let searchTimer = null;
+                dataSearch.addEventListener('input', function() {
+                    const text = this.value;
+                    clearTimeout(searchTimer);
+                    searchTimer = setTimeout(() => filterDataTable(text), 250);
                 });
             }
             
@@ -1606,17 +1589,6 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
                 });
             }
             
-            // Load more buttons
-            const loadMoreBtn = document.getElementById('loadMoreBtn');
-            if (loadMoreBtn) {
-                loadMoreBtn.addEventListener('click', loadMoreRows);
-            }
-            
-            const loadAllBtn = document.getElementById('loadAllBtn');
-            if (loadAllBtn) {
-                loadAllBtn.addEventListener('click', loadAllRows);
-            }
-            
             // Context menu
             const copyCellBtn = document.getElementById('copy-cell-btn');
             if (copyCellBtn) {
@@ -1666,77 +1638,12 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
         }
         
         function setupMessageListener() {
-            // Listen for messages from the extension
+            // Listen for messages from the extension: the grid's pages, the rest elsewhere
             window.addEventListener('message', event => {
-                const message = event.data;
-                
-                switch (message.command) {
-                    case 'loadInitialData':
-                        logger.log('Received initial data via postMessage');
-                        logger.log('Data rows:', message.data ? message.data.length : 0);
-                        
-                        // The first batch of rows takes the placeholder's place
-                        tableData = message.data || [];
-                        expectedRows = message.loadedRows !== undefined
-                            ? message.loadedRows
-                            : tableData.length;
-                        
-                        // Update hasMoreRows, from the message if it says
-                        hasMoreRows = message.hasMoreRows !== undefined
-                            ? message.hasMoreRows
-                            : expectedRows < totalRowsInFile;
-                        if (message.loadMoreRowCount !== undefined) {
-                            loadMoreRowCount = message.loadMoreRowCount;
-                        }
-                        receivedRows();
-                        break;
-                        
-                    case 'appendRows':
-                        // One row at a time: push(...rows) overflows the stack from about 125,000 rows
-                        for (const row of message.data) {
-                            tableData.push(row);
-                        }
-                        receivedRows();
-                        break;
-
-                    case 'loadRefused':
-                        // The read failed, and the extension kept this page: put the load buttons back
-                        updateLoadedRowsBanner();
-                        break;
-
-                    default:
-                        logger.log('Unknown message command:', message.command);
+                if (dataGrid && dataGrid.handleMessage(event.data)) {
+                    return;
                 }
             });
-            
-            logger.log('Message listener setup complete. Waiting for data:', waitingForInitialData);
-        }
-        
-        // Show the rows once every batch has arrived, and how many have arrived until then
-        function receivedRows() {
-            if (tableData.length < expectedRows) {
-                const progress = document.getElementById('loading-progress');
-                if (progress) {
-                    progress.textContent = \`Received \${tableData.length.toLocaleString()} of \${expectedRows.toLocaleString()} rows\`;
-                }
-                return;
-            }
-            
-            currentLoadedRows = tableData.length;
-            updateLoadedRowsBanner();
-            
-            // Hide loading indicator
-            const loadingIndicator = document.getElementById('loading-indicator');
-            if (loadingIndicator) {
-                loadingIndicator.style.display = 'none';
-            }
-            
-            // Initialize tables now that we have data
-            if (waitingForInitialData) {
-                waitingForInitialData = false;
-                initializeTables();
-                logger.log('Tables initialized with postMessage data');
-            }
         }
         
         // QVD Structure Chart data (pre-calculated)
@@ -1910,45 +1817,21 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
         
         function initializeTables() {
             logger.log('Initializing tables...');
-            logger.log('tableData length:', tableData ? tableData.length : 'undefined');
             logger.log('Tabulator available:', typeof Tabulator !== 'undefined');
             
             try {
-                // Initialize Data Table
-                if (tableData.length > 0) {
-                    const columns = Object.keys(tableData[0]).map(key => ({
-                        title: key,
-                        // The field's name as text: Tabulator sets a title as HTML
-                        titleFormatter: () => document.createTextNode(key),
-                        field: key,
-                        headerSort: true,
-                        headerFilter: false
-                    }));
-                    
-                    logger.log('Creating data table with', columns.length, 'columns');
-                    
-                    dataTable = new Tabulator("#data-table", {
-                        data: tableData,
-                        columns: columns,
-                        // A field's name is its name, dots and all: Tabulator would read
-                        // Orders.Amount, as Qlik's QUALIFY names a field, as a path
-                        nestedFieldSeparator: false,
-                        layout: "fitDataStretch",
-                        pagination: true,
-                        paginationSize: 100,
-                        paginationSizeSelector: [25, 50, 100, 250, 500],
-                        paginationCounter: "rows",
-                        movableColumns: true
-                    });
-                    
-                    logger.log('Data table created successfully');
-                    
-                    // Add context menu handler
-                    dataTable.on("cellContext", function(e, cell){
-                        e.preventDefault();
-                        showContextMenu(e, cell);
-                    });
-                }
+                // The Data tab's grid, which asks for its rows a page at a time
+                dataGrid = createDataGrid({
+                    element: document.getElementById('data-table'),
+                    status: document.getElementById('data-grid-status'),
+                    fields: availableFields,
+                    totalRows: totalRowsInFile,
+                    pageSize,
+                    pageSizes,
+                    headerKey,
+                    vscode,
+                    onCellContext: showContextMenu
+                });
             } catch (error) {
                 logger.error('Error initializing data table:', error);
             }
@@ -2045,7 +1928,7 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             
             // Redraw the table to fix any layout issues
             setTimeout(() => {
-                if (tabName === 'data' && dataTable) dataTable.redraw();
+                if (tabName === 'data' && dataGrid) dataGrid.table.redraw();
                 if (tabName === 'schema' && schemaTable) schemaTable.redraw();
                 if (tabName === 'metadata' && metadataTable) metadataTable.redraw();
                 if (tabName === 'lineage' && lineageTable) lineageTable.redraw();
@@ -2054,18 +1937,8 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
         
         // Filter functions
         function filterDataTable(searchText) {
-            if (dataTable) {
-                if (searchText) {
-                    // Use custom filter function for OR logic across all columns
-                    dataTable.setFilter(function(data) {
-                        const search = searchText.toLowerCase();
-                        return Object.values(data).some(value => 
-                            String(value).toLowerCase().includes(search)
-                        );
-                    });
-                } else {
-                    dataTable.clearFilter();
-                }
+            if (dataGrid) {
+                dataGrid.search(searchText);
             }
         }
         
@@ -2135,60 +2008,6 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
             });
         }
         
-        // Show how many rows are loaded, or hide the banner once they all are
-        function updateLoadedRowsBanner() {
-            const banner = document.getElementById('loaded-rows-banner');
-            if (!banner) return;
-            if (!hasMoreRows) {
-                banner.style.display = 'none';
-                return;
-            }
-            
-            const remainingRows = totalRowsInFile - currentLoadedRows;
-            const nextBatch = Math.min(loadMoreRowCount, totalRowsInFile) - currentLoadedRows;
-            
-            document.getElementById('loaded-rows-text').textContent =
-                \`📊 Showing \${currentLoadedRows.toLocaleString()} of \${totalRowsInFile.toLocaleString()} rows (\${((currentLoadedRows / totalRowsInFile) * 100).toFixed(1)}% of file loaded)\`;
-            
-            // Labelled and enabled afresh, in case an earlier click left them on "Loading..."
-            const loadMoreBtn = document.getElementById('loadMoreBtn');
-            loadMoreBtn.textContent = \`Load More (next \${nextBatch.toLocaleString()} rows)\`;
-            loadMoreBtn.style.display = nextBatch > 0 ? '' : 'none';
-            loadMoreBtn.disabled = false;
-            
-            const loadAllBtn = document.getElementById('loadAllBtn');
-            loadAllBtn.textContent = \`Load All Remaining (\${remainingRows.toLocaleString()} rows)\`;
-            loadAllBtn.disabled = false;
-            
-            banner.style.display = '';
-        }
-        
-        function loadMoreRows() {
-            const btn = document.getElementById('loadMoreBtn');
-            if (btn) {
-                btn.disabled = true;
-                btn.textContent = 'Loading...';
-            }
-            vscode.postMessage({ 
-                command: 'loadMore',
-                currentRows: currentLoadedRows,
-                loadAll: false
-            });
-        }
-        
-        function loadAllRows() {
-            const btn = document.getElementById('loadAllBtn');
-            if (btn) {
-                btn.disabled = true;
-                btn.textContent = 'Loading...';
-            }
-            vscode.postMessage({ 
-                command: 'loadMore',
-                currentRows: currentLoadedRows,
-                loadAll: true
-            });
-        }
-        
         // Context menu handlers
         function showContextMenu(e, cell) {
             e.preventDefault();
@@ -2206,10 +2025,10 @@ export function getHtmlForWebview(result, webview, context, options = {}) {
         
         function copyCell() {
             if (currentContextCell) {
-                const value = currentContextCell.getValue();
+                // A null copies as nothing, as it shows
                 vscode.postMessage({ 
                     command: 'copyToClipboard',
-                    text: String(value)
+                    text: cellText(currentContextCell.getValue())
                 });
             }
             hideContextMenu();
