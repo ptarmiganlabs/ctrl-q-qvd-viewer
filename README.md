@@ -112,7 +112,7 @@ VS Code 1.101 and 1.102 can't install this version. The Marketplace offers them 
 3. **Start Viewing**
    - The QVD file will open and automatically show a data preview, with schema, metadata and lineage information in separate tabs
 
-That's it! You're ready to view QVD files in VS Code.
+That's it! You're ready to view QVD files in VS Code. If you get stuck, see [Getting Help](#getting-help).
 
 ### First-Time Setup: Setting Default Editor
 
@@ -310,6 +310,14 @@ To change these settings:
 2. Search for "Ctrl-Q QVD"
 3. Adjust the value you want to change
 
+## Getting Help
+
+- **This guide**: the viewer's ❓ **Help** button opens it, as does **QVD: Open Documentation** in the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P` on Mac)
+- **Questions**: ask in [GitHub Discussions](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/discussions), or run **QVD: Ask a Question**
+- **Bugs**: run **QVD: Report Issue**. It opens VS Code's issue reporter with this extension picked, which adds the VS Code, OS and extension versions itself. You can also open an issue in [GitHub Issues](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues). A page that says why a file couldn't be shown has a **Report Issue** button too, when the cause may be a bug
+- **Logs**: **QVD: Show Extension Logs** shows what the extension did. Lines from it around the problem help a bug report. Issues and discussions are public, so leave out data, file names and paths you can't share
+- **About**: the viewer's ℹ️ **About** button, or **QVD: About**, has the same links and the extension's version
+
 ## Development
 
 This section provides a quick overview for developers. For detailed information, see the following documentation:
@@ -332,7 +340,7 @@ For more details on building, testing, and packaging, see **[BUILD.md](docs/BUIL
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit issues or pull requests.
+Contributions are welcome! Report bugs in [GitHub Issues](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues), ask questions in [GitHub Discussions](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/discussions), and send pull requests.
 
 ## Sponsorship
 

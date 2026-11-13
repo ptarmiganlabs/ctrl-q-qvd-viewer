@@ -9,11 +9,11 @@ import { PAGE_SIZE_SETTING } from "./pageSize.mjs";
  * so does a failure of the viewer's own.
  */
 
-// Where a failure that is the viewer's own fault is reported
-const ISSUES_URL = "https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues";
 
 const RETRY = { command: "retry", label: "Retry" };
 const SHOW_LOGS = { command: "showLogs", label: "Show Logs" };
+// A failure that is the viewer's own fault, or that nothing explains, is reported
+const REPORT_ISSUE = { command: "reportIssue", label: "Report Issue" };
 const PAGE_SIZE_SETTINGS = {
   command: "openSettings",
   label: "Open Settings",
@@ -23,7 +23,8 @@ const PAGE_SIZE_SETTINGS = {
 /**
  * A button on the page that says why a read failed
  * @typedef {object} FailureAction
- * @property {string} command - The message the page posts: retry, showLogs or openSettings
+ * @property {string} command - The message the page posts: retry, showLogs, reportIssue or
+ *   openSettings
  * @property {string} label - The button's text
  * @property {string} [setting] - For openSettings: the setting to open
  */
@@ -126,9 +127,10 @@ export function describeReadFailure(
       code
         ? "If the file is on a network drive or share, check that it is connected. Then Retry."
         : "Retry.",
-      `If it fails again, Show Logs, and report it at ${ISSUES_URL}.`,
+      "If it fails again, Report Issue, with the lines Show Logs shows.",
     ],
     detail,
+    actions: [RETRY, SHOW_LOGS, REPORT_ISSUE],
   });
 }
 
@@ -146,8 +148,9 @@ export function describeViewerFailure(error, { filePath = "" } = {}) {
   return failure("viewer", {
     title: "The viewer couldn't show this file",
     summary: `The viewer failed while showing ${name}. The file itself may well be fine.`,
-    advice: ["Retry.", `If it fails again, Show Logs, and report it at ${ISSUES_URL}.`],
+    advice: ["Retry.", "If it fails again, Report Issue, with the lines Show Logs shows."],
     detail: error?.message ?? String(error),
+    actions: [RETRY, SHOW_LOGS, REPORT_ISSUE],
   });
 }
 
@@ -190,7 +193,7 @@ function memoryFailure(result) {
  * @returns {ReadFailure} The failure
  */
 function optionFailure(option, detail) {
-  const report = `Show Logs, and report it at ${ISSUES_URL}.`;
+  const report = "Report Issue, with the lines Show Logs shows.";
   // A page's rows come from a setting; the reader's other options are the viewer's own
   if (option === "limit") {
     return failure("option", {
@@ -202,7 +205,7 @@ function optionFailure(option, detail) {
         `If it is set right, this is a bug in the viewer. ${report}`,
       ],
       detail,
-      actions: [RETRY, PAGE_SIZE_SETTINGS, SHOW_LOGS],
+      actions: [RETRY, PAGE_SIZE_SETTINGS, SHOW_LOGS, REPORT_ISSUE],
     });
   }
   // No setting gives these, so a retry would fail the same way
@@ -213,7 +216,7 @@ function optionFailure(option, detail) {
       : "The QVD reader can't use an option the viewer gave it.",
     advice: [`This is a bug in the viewer. ${report}`],
     detail,
-    actions: [SHOW_LOGS],
+    actions: [SHOW_LOGS, REPORT_ISSUE],
   });
 }
 
@@ -239,9 +242,10 @@ function pathFailure(reason, detail) {
     summary: summaries[reason] ?? "The viewer's check of the file's path refused it.",
     advice: [
       "Open the file from the folder it is really in, rather than through a link. Then Retry.",
-      `If it happens again, Show Logs, and report it at ${ISSUES_URL}.`,
+      "If it happens again, Report Issue, with the lines Show Logs shows.",
     ],
     detail,
+    actions: [RETRY, SHOW_LOGS, REPORT_ISSUE],
   });
 }
 

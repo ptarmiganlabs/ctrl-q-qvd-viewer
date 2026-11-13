@@ -453,10 +453,10 @@ suite("Read Failure Test Suite", () => {
     assert.ok(cost.summary.includes("bytesPerCell"));
     assert.ok(!cost.advice.join(" ").includes(PAGE_SIZE_SETTING));
     assert.ok(!cost.actions.some((action) => action.command === "openSettings"));
-    // No setting gives it, so a retry would fail the same way
+    // No setting gives it, so a retry would fail the same way: it is a bug to report
     assert.deepStrictEqual(
       cost.actions.map((action) => action.command),
-      ["showLogs"]
+      ["showLogs", "reportIssue"]
     );
   });
 
@@ -619,7 +619,30 @@ suite("Read Failure Test Suite", () => {
     assert.ok(!html.includes(escapeHtml("The file can't be found")));
 
     const thrown = Object.assign(new Error("ENOENT: no such file, open 'tabulator.min.js'"), { code: "ENOENT" });
-    assert.strictEqual(describeViewerFailure(thrown, { filePath: sets }).kind, "viewer");
+    const failure = describeViewerFailure(thrown, { filePath: sets });
+    assert.strictEqual(failure.kind, "viewer");
+    // The viewer's own failure is a bug, so its page has a button that reports one
+    assert.deepStrictEqual(
+      failure.actions.map((action) => action.command),
+      ["retry", "showLogs", "reportIssue"]
+    );
+    assert.ok(html.includes('data-command="reportIssue"'));
+  });
+
+  test("Report Issue on a page opens the issue reporter, and Help the user guide", async () => {
+    const api = await import("vscode");
+    const executeCommand = api.commands.executeCommand;
+    const panel = { webview: recordingWebview() };
+    const commands = [];
+    setupMessageHandler(panel, sets, new QvdReader(), {}, async () => {}, null);
+    try {
+      api.commands.executeCommand = async (...command) => commands.push(command);
+      await panel.webview.listener({ command: "reportIssue" });
+      await panel.webview.listener({ command: "openDocumentation" });
+    } finally {
+      api.commands.executeCommand = executeCommand;
+    }
+    assert.deepStrictEqual(commands, [["ctrl-q-qvd-viewer.reportIssue"], ["ctrl-q-qvd-viewer.openDocumentation"]]);
   });
 
   test("A damaged file's page that can't be built is the viewer's failure too", async () => {

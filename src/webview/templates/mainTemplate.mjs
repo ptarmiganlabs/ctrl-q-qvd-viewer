@@ -1239,6 +1239,7 @@ export function getHtmlForWebview(header, webview, context) {
                         ${exportMenuItems}
                     </div>
                 </div>
+                <button class="header-button" id="help-btn" title="Open the user guide in the browser">❓ Help</button>
                 <button class="header-button" id="about-btn">ℹ️ About</button>
                 <button class="header-button" id="settings-btn">⚙️ Settings</button>
             </div>
@@ -1573,6 +1574,13 @@ export function getHtmlForWebview(header, webview, context) {
             }
             
             // Header buttons
+            const helpBtn = document.getElementById('help-btn');
+            if (helpBtn) {
+                helpBtn.addEventListener('click', function () {
+                    vscode.postMessage({ command: 'openDocumentation' });
+                });
+            }
+
             const aboutBtn = document.getElementById('about-btn');
             if (aboutBtn) {
                 aboutBtn.addEventListener('click', openAbout);

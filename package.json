@@ -9,6 +9,11 @@
     "type": "git",
     "url": "https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer.git"
   },
+  "homepage": "https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer#readme",
+  "bugs": {
+    "url": "https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues"
+  },
+  "qna": "https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/discussions",
   "license": "MIT",
   "keywords": [
     "qvd",
@@ -54,6 +59,21 @@
       {
         "command": "ctrl-q-qvd-viewer.showLogs",
         "title": "Show Extension Logs",
+        "category": "QVD"
+      },
+      {
+        "command": "ctrl-q-qvd-viewer.openDocumentation",
+        "title": "Open Documentation",
+        "category": "QVD"
+      },
+      {
+        "command": "ctrl-q-qvd-viewer.askQuestion",
+        "title": "Ask a Question",
+        "category": "QVD"
+      },
+      {
+        "command": "ctrl-q-qvd-viewer.reportIssue",
+        "title": "Report Issue",
         "category": "QVD"
       }
     ],
