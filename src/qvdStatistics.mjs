@@ -6,6 +6,12 @@
 import { isBlank, toCellValue } from "./cellValue.mjs";
 
 /**
+ * Most modes a field's statistics list. Where every value occurs twice, each is a
+ * mode, and listing them all would make the results as large as the field.
+ */
+export const MAX_MODES = 1000;
+
+/**
  * Check if a value is numeric: a number, or text the reader reads as one, so that a
  * code such as 0901 or blank text isn't a number here either
  * @param {*} value - Value to check
@@ -357,7 +363,9 @@ export function calculateStatistics(data, fieldName) {
   const count = numericValues.length;
   const mean = calculateMean(numericValues);
   const median = calculateMedian(sortedValues);
-  const mode = calculateMode(numericValues);
+  // The smallest modes, if there are more than can be listed
+  const modes = calculateMode(numericValues);
+  const mode = modes.slice(0, MAX_MODES);
 
   // Spread measures
   const range = max - min;
@@ -384,6 +392,8 @@ export function calculateStatistics(data, fieldName) {
       mean,
       median,
       mode,
+      // How many modes there are, listed or not
+      modeCount: modes.length,
       sum,
       count,
     },

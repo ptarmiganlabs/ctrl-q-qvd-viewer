@@ -637,9 +637,11 @@ export function setupMessageHandler(
                 2
               )} |\n`;
               if (stats.descriptive.mode && stats.descriptive.mode.length > 0) {
+                // Only the smallest modes are listed when there are many
+                const unlisted = (stats.descriptive.modeCount ?? 0) - stats.descriptive.mode.length;
                 markdownContent += `| Mode | ${stats.descriptive.mode
                   .map((m) => m.toFixed(2))
-                  .join(", ")} |\n`;
+                  .join(", ")}${unlisted > 0 ? `, and ${unlisted.toLocaleString()} more` : ""} |\n`;
               }
               markdownContent += `| Sum | ${stats.descriptive.sum.toLocaleString()} |\n`;
               markdownContent += `| Count | ${stats.descriptive.count.toLocaleString()} |\n`;

@@ -35,15 +35,14 @@ export function profileFields(data, fieldNames, maxUniqueValues = 1000) {
   const results = [];
 
   for (const fieldName of fieldNames) {
-    // Count value frequencies
+    // Every distinct value's count, in the order the values first occur
     const valueCounts = new Map();
     let nullCount = 0;
     let emptyStringCount = 0;
-    let uniqueValueCount = 0;
 
     for (const row of data) {
       const value = row[fieldName];
-      
+
       // Handle null/undefined/empty values
       if (value === null || value === undefined) {
         nullCount++;
@@ -56,23 +55,17 @@ export function profileFields(data, fieldNames, maxUniqueValues = 1000) {
 
       // Convert to string for consistent handling
       const valueStr = String(value);
-      
-      if (valueCounts.has(valueStr)) {
-        valueCounts.set(valueStr, valueCounts.get(valueStr) + 1);
-      } else {
-        uniqueValueCount++;
-        if (uniqueValueCount <= maxUniqueValues) {
-          valueCounts.set(valueStr, 1);
-        }
-      }
+      valueCounts.set(valueStr, (valueCounts.get(valueStr) ?? 0) + 1);
     }
 
-    // Check if we exceeded max unique values
+    const uniqueValueCount = valueCounts.size;
+    // The distribution shows the most frequent values only
     const truncated = uniqueValueCount > maxUniqueValues;
 
-    // Sort by frequency (descending) and convert to array
+    // The most frequent values first, values as frequent in the order they first occur
     const sortedValues = Array.from(valueCounts.entries())
       .sort((a, b) => b[1] - a[1])
+      .slice(0, maxUniqueValues)
       .map(([value, count]) => ({
         value,
         count,
