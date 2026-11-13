@@ -137,7 +137,7 @@
     "@vscode/vsce": "^4.1.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
-    "globals": "^17.13.0"
+    "globals": "^17.14.0"
   },
   "dependencies": {
     "apache-arrow": "^21.2.0",
