@@ -247,22 +247,83 @@ suite("Profiling Identity Test Suite", function () {
       const seeds = [1, 2];
       let weak = 0;
       // Every text has one hash with the first seeds
-      const hashText = (text, seed) => {
-        if (seed === seeds[0] || seed === seeds[1]) {
+      const hashPair = (text, seedA, seedB, out) => {
+        if (seedA === seeds[0]) {
           weak++;
-          return 7;
+          out[0] = 7;
+          out[1] = 7;
+          return;
         }
-        return fieldSummary.hash32(text, seed);
+        fieldSummary.hashPair(text, seedA, seedB, out);
       };
+      const kinds = { numeric: false, date: false, string: true };
 
-      const summary = fieldSummary.summarizeRows(data, "v", { seeds, hashText, kinds: { numeric: false, date: false, string: true } });
+      const summary = fieldSummary.summarizeRows(data, "v", { seeds, hashPair, kinds });
 
       assert.ok(weak > 0, "The weak hash was used");
+      assert.deepStrictEqual(summary, fieldSummary.summarizeRows(data, "v", { kinds }));
+      assert.strictEqual(summary.uniqueValues, 37);
+    });
+
+    test("Texts with one hash whatever the seeds are told apart by the texts themselves", async () => {
+      const data = Array.from({ length: 300 }, (_, i) => ({ v: `value ${(i * 7) % 41}` }));
+      // Every text has one hash, whatever the seeds
+      const hashPair = (text, seedA, seedB, out) => {
+        out[0] = 7;
+        out[1] = 7;
+      };
+      const kinds = { numeric: false, date: false, string: true };
+      const expected = fieldSummary.summarizeRows(data, "v", { kinds });
+
+      assert.deepStrictEqual(fieldSummary.summarizeRows(data, "v", { hashPair, kinds }), expected);
+
+      // And as a QVD's field is, a pass and a chunk at a time, the event loop let run
+      const { codes, symbols } = fieldSummary.codesOf(data, "v");
+      let reads = 0;
+      const summary = await fieldSummary.summarizeAsync(
+        { hashPair, kinds, totalRows: data.length, symbolCount: symbols.length },
+        async (summarizer) => {
+          reads++;
+          for (let offset = 0; offset < codes.length; offset += 64) {
+            await summarizer.takeAsync(codes.subarray(offset, offset + 64), symbols, offset);
+          }
+        }
+      );
+      assert.deepStrictEqual(summary, expected);
+      // Two reads with seeds, then one with the texts: two passes each
+      assert.strictEqual(reads, 6);
+    });
+
+    test("A field of few values that needs nothing in row order is read once", async () => {
+      const values = ["2020-01-01", "2020-02-15", "", null, "2021-07-04", "not a date"];
+      const data = Array.from({ length: 3000 }, (_, i) => ({ v: values[(i * 5) % values.length] }));
+      const { codes, symbols } = fieldSummary.codesOf(data, "v");
+      const passes = [];
+
+      const summary = await fieldSummary.summarizeAsync(
+        { kinds: { numeric: false, date: true, string: false }, totalRows: data.length, symbolCount: symbols.length },
+        async (summarizer, pass) => {
+          passes.push(pass);
+          await summarizer.takeAsync(codes, symbols, 0);
+        }
+      );
+
+      assert.deepStrictEqual(passes, [1]);
       assert.deepStrictEqual(
         summary,
-        fieldSummary.summarizeRows(data, "v", { kinds: { numeric: false, date: false, string: true } })
+        fieldSummary.summarizeRows(data, "v", { kinds: { numeric: false, date: true, string: false }, chunkRows: 1 })
       );
-      assert.strictEqual(summary.uniqueValues, 37);
+      assert.deepStrictEqual(
+        profiler.profileFields(data, ["v"]).fields[0],
+        legacy.profileFields(data, ["v"]).fields[0]
+      );
+    });
+
+    test("A field of more rows than 32 bits count is refused", () => {
+      assert.throws(
+        () => new fieldSummary.FieldSummarizer({ totalRows: 2 ** 32, symbolCount: 1 }),
+        (error) => error instanceof RangeError && /32 bits/.test(error.message)
+      );
     });
 
     test("Past PREFIXES_COUNTED distinct prefixes, the prefixes are estimates, and say so", async () => {
@@ -293,12 +354,94 @@ suite("Profiling Identity Test Suite", function () {
       const release = memoryGuard.bookHeap(1e15);
       try {
         await assert.rejects(profiler.profileFile(file, ["year", "name"]), (error) => {
-          assert.ok(error.profileRefusal.startsWith("Profiling name, a field of 10,368 distinct values, needs about"), error.profileRefusal);
+          assert.ok(error.profileMessage.startsWith("Profiling name, a field of 10,368 distinct values, needs about"), error.profileMessage);
           return true;
         });
       } finally {
         release();
       }
+    });
+
+    test("What profiling needs follows its largest field, up to HEAP_BYTES", async () => {
+      const fields = [
+        { name: "small", symbols: 2, bytes: 12 },
+        { name: "large", symbols: 50000000, bytes: 450000000 },
+      ];
+      const small = profiler.profileMemory({ fields }, ["small"]);
+      const large = profiler.profileMemory({ fields }, ["small", "large"]);
+
+      assert.ok(small.heapBytes < 128 * 2 ** 20, `${small.heapBytes}`);
+      assert.strictEqual(large.heapBytes, fieldSummary.HEAP_BYTES);
+      assert.strictEqual(large.outsideBytes, 50000000 * fieldSummary.BYTES_PER_DISTINCT_VALUE);
+
+      // A small field profiles with too little heap left for a large one
+      const file = path.join(testData, "lego", "colors.qvd");
+      await profiler.profileFile(file, ["is_trans"]);
+      const budget = memoryGuard.knownBudget();
+      const left = budget.factor * budget.bytes - memoryGuard.bookedBytes();
+      const release = memoryGuard.bookHeap(left - 256 * 2 ** 20);
+      try {
+        const { fields: [result] } = await profiler.profileFile(file, ["is_trans"]);
+        assert.strictEqual(result.uniqueValues, 2);
+      } finally {
+        release();
+      }
+    });
+
+    test("A refusal for fields the file doesn't have says what is short, rather than failing", async () => {
+      const release = memoryGuard.bookHeap(1e15);
+      try {
+        await assert.rejects(profiler.profileFile(path.join(testData, "lego", "colors.qvd"), ["No such field"]), (error) => {
+          assert.ok(error.profileMessage.startsWith("Profiling needs about"), error.profileMessage);
+          return true;
+        });
+      } finally {
+        release();
+      }
+    });
+
+    test("A file rewritten between passes is reported, not profiled from both", async () => {
+      const file = path.join(dir, "rewritten.qvd");
+      const rows = Array.from({ length: 2000 }, (_, i) => [i % 50, `t${i % 7}`]);
+      await new QvdDataFrame(rows, ["n", "t"]).toQvd(file, { allowedDir: dir });
+      let touched = false;
+
+      await assert.rejects(
+        profiler.profileFile(file, ["n"], {
+          chunkRows: 500,
+          // Once the first pass has read a chunk, the file is stored again, as a reload would
+          onProgress: ({ pass, rows }) => {
+            if (pass === 1 && rows > 0 && !touched) {
+              touched = true;
+              const later = new Date(Date.now() + 60000);
+              fs.utimesSync(file, later, later);
+            }
+          },
+        }),
+        (error) => {
+          assert.ok(error.profileMessage?.startsWith("The file changed on disk"), error.message);
+          return true;
+        }
+      );
+      assert.ok(touched);
+    });
+
+    test("The work between passes is given up at its next step", async () => {
+      const n = 1100000;
+      const codes = Int32Array.from({ length: n }, (_, i) => i);
+      const symbols = Array.from({ length: n }, (_, i) => n - i);
+      const summarizer = new fieldSummary.FieldSummarizer({
+        totalRows: n,
+        symbolCount: n,
+        kinds: { numeric: true, date: false, string: false },
+      });
+      assert.strictEqual(await summarizer.nextPassAsync(), 1);
+      await summarizer.takeAsync(codes, symbols, 0);
+      const controller = new AbortController();
+      controller.abort();
+
+      // Sorting a million and more numbers takes several steps: it stops after the first
+      await assert.rejects(summarizer.nextPassAsync(controller.signal), { name: "AbortError" });
     });
 
     test("Profiling given up between chunks stops, and gives its memory back", async () => {

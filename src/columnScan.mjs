@@ -116,7 +116,8 @@ export async function scanColumn({ filePath, allowedDir, heldBytes, ...scan }) {
   try {
     return await scanner.scan(scan);
   } finally {
-    await scanner.close();
+    // A failure to close mustn't hide what went wrong, or spoil a scan that is done
+    await scanner.close().catch(() => {});
   }
 }
 
@@ -193,8 +194,13 @@ export function openColumnScanner({ filePath, allowedDir, heldBytes = SCAN_HELD_
         signal?.throwIfAborted();
         return { reopened };
       } catch (error) {
-        // A scan given up may have left the file in the middle of a page
-        await reopen();
+        // A scan given up may have left the file in the middle of a page. Closing it
+        // may fail too, which mustn't hide why the scan stopped
+        await reopen().catch(() => {
+          file = null;
+          held = 0;
+          seenByField = new Map();
+        });
         throw error;
       } finally {
         busy = false;

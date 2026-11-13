@@ -9,7 +9,6 @@ import { getVisualAnalysisHtml } from "./templates/visualAnalysisTemplate.mjs";
 import { markdownText } from "./templates/escaping.mjs";
 import {
   describeExportRefusal,
-  describeProfileRefusal,
   describeReadRefusal,
   exportHeapBytes,
   memoryLeftOutsideHeap,
@@ -55,34 +54,29 @@ export function exportReadFailure(result, format, rowsChosen) {
 }
 
 /**
- * Say why the read for profiling failed
- * Profiling reads every row, so no row count is offered.
- * @param {object} result - The failed read, as QvdReader.read() gives it
- * @param {number} fieldCount - Fields to profile
+ * Say why reading a file for profiling failed
+ * Profiling reads every row of its fields, so no row count is offered.
+ * @param {object} result - The failed read, as failedRead() gives it
  * @returns {string} The message
  */
-export function profileReadFailure(result, fieldCount) {
-  const refusal = result.refusal;
-  if (refusal?.forCaller) {
-    return describeProfileRefusal(fieldCount, refusal.rows, refusal.neededBytes, refusal.leftBytes);
-  }
-  const why = refusal ? describeReadRefusal(refusal, { offerRows: false }) : result.error;
+export function profileReadFailure(result) {
+  const why = result.refusal ? describeReadRefusal(result.refusal, { offerRows: false }) : result.error;
   return `Failed to read QVD: ${why}`;
 }
 
 /**
  * Say why profiling failed
  * @param {Error} error - What profileFile() threw
- * @param {number} fieldCount - Fields to profile
  * @returns {string} The message
  */
-export function profilingFailure(error, fieldCount) {
-  if (error?.profileRefusal) {
-    // Too little memory left for the largest field's distinct values
-    return error.profileRefusal;
+export function profilingFailure(error) {
+  if (error?.profileMessage) {
+    // Too little memory left for the largest field's distinct values, or the file
+    // changed while it was read
+    return error.profileMessage;
   }
   if (isReadError(error)) {
-    return profileReadFailure(failedRead(error), fieldCount);
+    return profileReadFailure(failedRead(error));
   }
   return `Profiling failed: ${error?.message ?? error}`;
 }
@@ -375,7 +369,7 @@ export function setupMessageHandler(
           } else {
             webviewPanel.webview.postMessage({
               command: "profilingError",
-              error: profilingFailure(error, fieldNames.length || 1),
+              error: profilingFailure(error),
             });
           }
         }

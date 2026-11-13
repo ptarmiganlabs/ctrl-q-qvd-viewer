@@ -10,7 +10,6 @@ let readLanes;
 let QvdReader;
 let DataExporter;
 let QvdDataFrame;
-let PROFILE_BYTES_PER_VALUE;
 let exportReadFailure;
 let profileReadFailure;
 
@@ -80,7 +79,6 @@ suite("Memory Guard Test Suite", () => {
     ({ toRowObjects, readLanes, default: QvdReader } = await import("../src/qvdReader.mjs"));
     ({ default: DataExporter } = await import("../src/exporters/index.mjs"));
     ({ QvdDataFrame } = await import("qvdjs"));
-    ({ PROFILE_BYTES_PER_VALUE } = await import("../src/qvdProfiler.mjs"));
     ({ exportReadFailure, profileReadFailure } = await import("../src/webview/messageHandler.mjs"));
   });
 
@@ -117,8 +115,6 @@ suite("Memory Guard Test Suite", () => {
     // A read for dates built a Date of 32 bytes and a map entry of up to 43 per distinct value
     assert.ok(guard.DATE_BYTES_PER_VALUE >= (32 + 43) * 1.25);
     assert.ok(guard.HELD_BYTES_PER_DATE >= 32 * 1.5);
-    // Profiling a date field needed 181 bytes per value
-    assert.ok(PROFILE_BYTES_PER_VALUE >= 181 * 1.5);
     // An Excel export needed 0.84 per cell in one chunk, and 10.5 per character of the
     // chunks it writes
     const excel = DataExporter.memoryCost("excel");
@@ -501,13 +497,6 @@ suite("Memory Guard Test Suite", () => {
     }
   });
 
-  test("A refused profile says what it needs, and to profile fewer fields", () => {
-    const message = guard.describeProfileRefusal(3, 1975108, 1.6 * 2 ** 30, 900 * 2 ** 20);
-    assert.ok(message.startsWith(`Profiling 3 fields over ${(1975108).toLocaleString()} rows needs about 1.6 GiB`));
-    assert.ok(message.endsWith("Profile fewer fields at a time."));
-    assert.ok(!guard.describeProfileRefusal(1, 10, 2 ** 20, 0).includes("fewer fields"));
-  });
-
   test("A refusal of what the caller builds is told apart from one of the rows", () => {
     // qvdjs's estimate of 1 GB, 3 GB left, the row objects 0.5 GB: the rows fit, and 1.5 GB is left
     const check = { estimate: { heapBytes: 1e9, externalBytes: 4e8 }, budget: { bound: "heap" } };
@@ -536,7 +525,7 @@ suite("Memory Guard Test Suite", () => {
     assert.ok(read.startsWith("Failed to read QVD for export: Reading all"));
     assert.ok(!read.includes("would fit"));
     assert.ok(exportReadFailure({ error: "x", refusal }, "qlik", true).includes("About 800,000 rows would fit."));
-    assert.ok(!profileReadFailure({ error: "x", refusal }, 2).includes("would fit"));
+    assert.ok(!profileReadFailure({ error: "x", refusal }).includes("would fit"));
 
     const forCaller = { ...refusal, forCaller: true, neededBytes: 40 * 2 ** 30, leftBytes: 2 * 2 ** 30 };
     const sqlite = exportReadFailure({ error: "x", refusal: forCaller }, "sqlite", false);
@@ -548,7 +537,6 @@ suite("Memory Guard Test Suite", () => {
         format
       );
     }
-    assert.ok(profileReadFailure({ error: "x", refusal: forCaller }, 3).startsWith("Profiling 3 fields"));
 
     // Any other failure keeps the reader's message
     assert.strictEqual(
