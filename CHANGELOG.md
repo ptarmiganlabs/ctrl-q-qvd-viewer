@@ -4,6 +4,29 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [1.4.3](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.4.2...v1.4.3) (2026-11-13)
+
+
+### Bug Fixes
+
+* **export:** bound Excel's stalls, and refuse chunk and sheet sizes it can't use ([f02b09a](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/f02b09a6a94ffee4380e04f9c2f20d71337c3676)), closes [#163](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/163)
+* **export:** bound PostgreSQL and Qlik stalls, and escape what broke their scripts ([e257cba](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/e257cba9044d4881bb32e2a29f6ef2dff9c92e8d))
+* **export:** cap JSON, YAML and XML chunks by cells, and check their size ([f0842bb](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/f0842bb73376fd2fc844d2eb4f967eaae01f6381))
+* **export:** insert SQLite exports in one transaction through one statement ([1f5a657](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/1f5a6579a4e9a7b14505d89118871d5539df01cf)), closes [#163](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/163)
+* **export:** let Arrow's dictionaries yield, and price their distinct values ([5e112e2](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/5e112e2750d5b89449a0f4803d567e4104a9e814))
+* **export:** log Excel's lost backpressure, and abort its waits on a failed file ([a03766f](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/a03766f0dabe7ae06c0aab472a52ca0a2a928652)), closes [#163](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/163)
+* **export:** price Arrow's dictionaries from its own columns, before and after the read ([ae6b2f2](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/ae6b2f2f5eed8cf3f1c534d9dc3b4e6124e6cd7b))
+* **export:** refuse a SQLite export the computer's memory can't hold, and cap its slices ([523de6c](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/523de6c45bcabaa69efc89db840a6e5795d5db01))
+* **export:** write Arrow exports a record batch at a time ([a601527](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/a601527f38392f2d07ebc636151c2a771da143e5)), closes [#163](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/163)
+* **export:** write Excel exports as they go, onto more sheets past a sheet's rows ([a85c220](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/a85c220be3abff0bb5d8f52349de72ee4c165044)), closes [#163](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/163)
+* **export:** write JSON, YAML and XML a chunk of rows at a time ([899c063](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/899c0635348bad818630abc3a26a32424bad8d98)), closes [#163](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/163)
+* **export:** write PostgreSQL and Qlik inline scripts a chunk of rows at a time ([a8c39d3](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/a8c39d3aeeb2624e63b78eb71a1b4fd3a869f24e)), closes [#163](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/163)
+
+
+### Miscellaneous
+
+* **deps-dev:** bump eslint from 10.13.0 to 10.14.0 in the dev-dependencies group ([8b013b4](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/8b013b46fbd537f1e7244fd7822fdb5282d0bead))
+
 ## [1.4.2](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.4.1...v1.4.2) (2026-11-07)
 
 
