@@ -66,6 +66,8 @@ class QvdEditorProvider {
       filePath,
       webview: webviewPanel.webview,
       signal: closed.signal,
+      // Text sorts as the language VS Code shows
+      locale: vscode.env.language,
       onFileChanged: () => this.updateWebview(filePath, webviewPanel.webview, { signal: closed.signal }),
     });
     webviewPanel.onDidDispose(() => {

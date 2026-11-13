@@ -1248,7 +1248,7 @@ export function getHtmlForWebview(header, webview, context) {
                 <!-- What the grid waits for, with a Cancel button, or why a page failed: see dataGrid.js -->
                 <div class="data-grid-status" id="data-grid-status" role="status" aria-live="polite" hidden></div>
                 <div class="search-container">
-                    <input type="text" class="search-input" id="data-search" placeholder="🔍 Search this page..." />
+                    <input type="text" class="search-input" id="data-search" placeholder="🔍 Search all rows..." />
                     <button class="clear-search-btn" id="clear-data-search">✕ Clear</button>
                 </div>
                 <div class="table-wrapper">
@@ -1472,12 +1472,18 @@ export function getHtmlForWebview(header, webview, context) {
             // Search inputs
             const dataSearch = document.getElementById('data-search');
             if (dataSearch) {
-                // Once typing pauses, not at every key
+                // Every row of the file is searched: once typing pauses, or at Enter, not at every key
                 let searchTimer = null;
                 dataSearch.addEventListener('input', function() {
                     const text = this.value;
                     clearTimeout(searchTimer);
-                    searchTimer = setTimeout(() => filterDataTable(text), 250);
+                    searchTimer = setTimeout(() => filterDataTable(text), 400);
+                });
+                dataSearch.addEventListener('keydown', function(event) {
+                    if (event.key === 'Enter') {
+                        clearTimeout(searchTimer);
+                        filterDataTable(this.value);
+                    }
                 });
             }
             
@@ -1820,6 +1826,7 @@ export function getHtmlForWebview(header, webview, context) {
                 dataGrid = createDataGrid({
                     element: document.getElementById('data-table'),
                     status: document.getElementById('data-grid-status'),
+                    searchInput: document.getElementById('data-search'),
                     fields: availableFields,
                     totalRows: totalRowsInFile,
                     pageSize,

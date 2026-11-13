@@ -32,7 +32,8 @@ const PAGE_SIZE_SETTINGS = {
  * Why a read failed, as the page says it. Plain text: the page escapes it.
  * @typedef {object} ReadFailure
  * @property {string} kind - missing, directory, permission, locked, memory, path,
- *   option, damaged or unknown for a read; viewer for the viewer's own failure
+ *   option, damaged or unknown for a read; view for a search or sort the viewer
+ *   won't do; viewer for the viewer's own failure
  * @property {string} title - What happened, as a heading
  * @property {string} summary - What happened, in a sentence or two
  * @property {Array<string>} advice - What to do about it, in order
@@ -64,6 +65,16 @@ export function describeReadFailure(
   // qvdjs's own classes and reasons first: they say more than a system code
   if (result.errorReason === "memory") {
     return memoryFailure(result);
+  }
+  if (result.errorReason === "view") {
+    return failure("view", {
+      title: "This search or sort can't be done here",
+      summary: String(result.error ?? "The viewer can't search or sort this file this way."),
+      advice: ["Clear the search, or sort by another field, to see the file's rows again."],
+      detail: null,
+      dataOnly: true,
+      actions: [SHOW_LOGS],
+    });
   }
   if (result.errorReason === "option") {
     return optionFailure(result.errorOption ?? null, detail);

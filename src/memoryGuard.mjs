@@ -484,6 +484,20 @@ export function describePageRefusal({ offset, rows, neededBytes, leftBytes }) {
 }
 
 /**
+ * Say why a whole-file search or sort for the viewer's grid was refused for memory
+ * @param {{what: string, neededBytes: number, leftBytes: number}} view - what: what
+ *   was asked, such as "Sorting all 30,000,000 rows by OrderID"; neededBytes: what it
+ *   needs; leftBytes: what is left for it
+ * @returns {string} The message
+ */
+export function describeViewRefusal({ what, neededBytes, leftBytes }) {
+  return (
+    `${what} needs about ${size(neededBytes)} of memory, and about ${size(leftBytes)} is left in ` +
+    "what VS Code gives its extensions."
+  );
+}
+
+/**
  * Say why a read was refused when its rows fit, and what is built from them doesn't
  * @param {Refusal} refusal - The refusal
  * @returns {string} The message

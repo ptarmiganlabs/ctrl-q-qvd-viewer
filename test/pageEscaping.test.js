@@ -527,7 +527,7 @@ suite("Page Escaping Test Suite", () => {
     // As JSON, which is how VS Code sends it: the page's objects are its own realm's
     assert.deepStrictEqual(
       JSON.parse(JSON.stringify(page.posted.filter((message) => message.command === "page"))),
-      [{ command: "page", requestId: 1, offset: 0, limit: 100 }]
+      [{ command: "page", requestId: 1, offset: 0, limit: 100, search: "", sort: null }]
     );
     const answers = await answerPages(page, crafted);
     assert.strictEqual(answers.at(-1).command, "pageRows", "the rows are sent");

@@ -8,17 +8,21 @@ import logger from "../logger.mjs";
 /**
  * Answers the Data tab's requests for pages, for one editor
  *
- * The grid asks for a page with {command: "page", requestId, offset, limit}, and
- * is answered with one of:
- * - {command: "pageRows", requestId, offset, rows, totalRows}: rows, one array per
- *   row, one value per field in file order;
+ * The grid asks for a page with {command: "page", requestId, offset, limit,
+ * search, sort}: search, text a row must have a cell holding, whatever its case;
+ * sort, {fieldIndex, descending} or null. A search and a sort cover every row of
+ * the file. The grid is answered with one of:
+ * - {command: "pageRows", requestId, offset, rows, totalRows, fileRows}: rows, one
+ *   array per row, one value per field in file order; totalRows, the rows the
+ *   search found, or the file's; fileRows, the file's;
  * - {command: "pageFailed", requestId, failure, html}: why, as describeReadFailure()
  *   says it, and the notice that says so, written by failureNoticeHtml();
  * - {command: "pageCancelled", requestId}: the user cancelled it, with
  *   {command: "cancelPage", requestId}.
- * While a page walks the file's columns, the first time a page touches them, the
- * grid is told how far it has got with {command: "pageProgress", requestId,
- * current, total}: columns walked, of those the page walks.
+ * While a page walks the file's columns, the first time a page touches them, and
+ * while a search or sort runs, the grid is told how far it has got with
+ * {command: "pageProgress", requestId, text, fraction}: what it is doing, in
+ * words, and how much is done, from 0 to 1.
  *
  * A request supersedes the one before it, which is given up without an answer:
  * the grid shows one page at a time. The file is opened once, by the first page,
@@ -34,8 +38,10 @@ const PROGRESS_MS = 100;
  * @returns {boolean} Whether it is
  */
 function isReadError(error) {
-  const { errorName, errorCode } = errorFacts(error);
-  return Boolean(errorCode) || (typeof errorName === "string" && errorName.startsWith("Qvd"));
+  const { errorName, errorCode, errorReason } = errorFacts(error);
+  return (
+    Boolean(errorCode) || errorReason === "view" || (typeof errorName === "string" && errorName.startsWith("Qvd"))
+  );
 }
 
 /**
@@ -46,12 +52,13 @@ function isReadError(error) {
  * @param {AbortSignal} [options.signal] - Aborted once the editor is closed
  * @param {function(): Promise<void>} [options.onFileChanged] - Shows the file again,
  *   once a page finds it changed on disk since it was opened
+ * @param {string} [options.locale] - The language text sorts in, such as VS Code's
  * @param {typeof openQvdPager} [options.openPager] - Opens the file, for tests to replace
  * @returns {{servePage: function(object): Promise<void>, cancel: function(*): void, close: function(): Promise<void>}}
  *   servePage answers a page message; cancel gives up the request it names, and
  *   answers it pageCancelled; close gives up what runs and closes the file
  */
-export function createPageServer({ filePath, webview, signal, onFileChanged, openPager = openQvdPager }) {
+export function createPageServer({ filePath, webview, signal, onFileChanged, locale, openPager = openQvdPager }) {
   // The pager, once a page has opened it, or while one opens it
   let pager = null;
   // The request running, if any: {requestId, controller, cancelled}
@@ -66,7 +73,7 @@ export function createPageServer({ filePath, webview, signal, onFileChanged, ope
    */
   function pagerFor(requestSignal) {
     if (!pager) {
-      const opening = openPager(filePath, { signal: requestSignal });
+      const opening = openPager(filePath, { signal: requestSignal, locale });
       pager = opening;
       opening.catch(() => {
         if (pager === opening) {
@@ -101,10 +108,10 @@ export function createPageServer({ filePath, webview, signal, onFileChanged, ope
 
   /**
    * Answer a request for a page
-   * @param {{requestId: *, offset: number, limit: number}} message - The request
+   * @param {{requestId: *, offset: number, limit: number, search?: string, sort?: object}} message - The request
    * @returns {Promise<void>} Resolves once it is answered, or given up
    */
-  async function servePage({ requestId, offset, limit }) {
+  async function servePage({ requestId, offset, limit, search, sort }) {
     if (closed) {
       return;
     }
@@ -116,29 +123,30 @@ export function createPageServer({ filePath, webview, signal, onFileChanged, ope
       : request.controller.signal;
 
     let lastProgress = 0;
-    const onProgress = ({ stage, current: done, total }) => {
-      if (stage !== "symbol-census") {
-        return;
-      }
+    let lastText = null;
+    const onProgress = ({ text, fraction }) => {
       const now = Date.now();
-      if (done < total && now - lastProgress < PROGRESS_MS) {
+      // A new step, and the end of one, are always told
+      if (text === lastText && fraction < 1 && now - lastProgress < PROGRESS_MS) {
         return;
       }
       lastProgress = now;
-      post({ command: "pageProgress", requestId, current: done, total }).catch(() => {});
+      lastText = text;
+      post({ command: "pageProgress", requestId, text, fraction }).catch(() => {});
     };
 
     try {
       const opened = await pagerFor(requestSignal);
       // Superseded, cancelled or closed while the file opened
       requestSignal.throwIfAborted();
-      const page = await opened.page({ offset, limit, signal: requestSignal, onProgress });
+      const page = await opened.page({ offset, limit, search, sort, signal: requestSignal, onProgress });
       await post({
         command: "pageRows",
         requestId,
         offset: page.offset,
         rows: page.rows,
         totalRows: page.totalRows,
+        fileRows: page.fileRows,
       });
     } catch (error) {
       if (error?.name === "AbortError") {
