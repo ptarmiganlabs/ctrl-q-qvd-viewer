@@ -1,0 +1,11 @@
+# Blank issues stay allowed: VS Code's issue reporter, and the extension's QVD: Report
+# Issue where the reporter is missing, open issues/new with the body already written,
+# and that needs a blank issue rather than one of the forms.
+blank_issues_enabled: true
+contact_links:
+  - name: Ask a question
+    url: https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/discussions/categories/q-a
+    about: How to do something with the viewer, or whether it can. Questions get answered in Discussions.
+  - name: User guide
+    url: https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer#readme
+    about: Opening QVD files, each of the viewer's tabs, profiling, exports and settings.

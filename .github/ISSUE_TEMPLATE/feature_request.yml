@@ -1,0 +1,27 @@
+name: Feature request
+description: Something Ctrl-Q QVD Viewer could do that it doesn't
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Not sure yet what you need, or want to talk it over first? [Ideas in Discussions](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/discussions/categories/ideas) is the place.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you're trying to do
+      description: The task, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help
+      description: How you'd like the viewer to do it. A sketch or a screenshot is welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do now instead
+      description: Other tools or workarounds you use for it, if any.
