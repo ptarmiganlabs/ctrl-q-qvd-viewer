@@ -4,6 +4,37 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [1.5.0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.4.3...v1.5.0) (2026-11-13)
+
+
+### Features
+
+* **help:** find the user guide, questions and bug reports from inside VS Code ([b8825f0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/b8825f0e69e6c636161d967127b4a3180f4b192c))
+
+
+### Bug Fixes
+
+* **about:** list the Ptarmigan Labs tools as the README does ([6b5047e](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/6b5047e65d1b1fb8509358c975b22334c208b321))
+* **profiling:** find URLs and email addresses in linear time ([28f9231](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/28f9231a4767425932e695287be8f1db54dc6cf2))
+* **viewer:** book a search's rows once, search large files at Enter, refuse huge text sorts early ([e54a02a](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/e54a02afff8d9b6a8c86a28d33ad8aa0a496b918)), closes [#190](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/190)
+* **viewer:** show each field's number format in the Schema tab ([d014457](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/d014457e5df31b750a148b87bc1c4b15585a3945))
+
+
+### Documentation
+
+* check the README against the extension, and list the Ptarmigan Labs tools ([168d6d1](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/168d6d139ad78be93740629f0f1e59a3b5785eae))
+
+
+### Miscellaneous
+
+* **github:** add bug report and feature request forms, and send questions to Discussions ([84d18a9](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/84d18a9c01fed2bc7c84002ea9f347648f48459c))
+* release 1.5.0 ([57dd27a](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/57dd27ae8715de36ad81e17baaeabb488738f715)), closes [#190](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/190)
+
+
+### Tests
+
+* **about:** match the About panel's links by exact address ([90a0eda](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/90a0edad7343723c068870655a9ed3315942da61))
+
 ## [1.4.3](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.4.2...v1.4.3) (2026-11-13)
 
 
