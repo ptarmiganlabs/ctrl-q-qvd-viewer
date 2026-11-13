@@ -65,8 +65,10 @@ export function getHtmlForWebview(header, webview, context) {
     metadata && metadata.fields
       ? metadata.fields.map((field) => ({
           name: field.name,
-          type: field.type || "",
-          extent: field.extent || "",
+          // A QVD field has no type of its own, only the number format Qlik shows it
+          // in: its type, such as INTEGER, DATE or UNKNOWN, and its format string
+          numberFormat: field.numberFormat?.type || "",
+          format: field.numberFormat?.fmt || "",
           noOfSymbols: field.noOfSymbols || 0,
           offset: field.offset || 0,
           length: field.length || 0,
@@ -1870,8 +1872,8 @@ export function getHtmlForWebview(header, webview, context) {
             if (schemaData.length > 0) {
                 const schemaColumns = [
                     { title: "Name", field: "name", headerSort: true },
-                    { title: "Type", field: "type", headerSort: true },
-                    { title: "Extent", field: "extent", headerSort: true },
+                    { title: "Number Format", field: "numberFormat", headerSort: true },
+                    { title: "Format", field: "format", headerSort: true },
                     { title: "No. of Symbols", field: "noOfSymbols", headerSort: true },
                     { title: "Offset", field: "offset", headerSort: true },
                     { title: "Length", field: "length", headerSort: true },
@@ -1979,7 +1981,8 @@ export function getHtmlForWebview(header, webview, context) {
                     schemaTable.setFilter(function(data) {
                         return (
                             String(data.name || '').toLowerCase().includes(search) ||
-                            String(data.type || '').toLowerCase().includes(search) ||
+                            String(data.numberFormat || '').toLowerCase().includes(search) ||
+                            String(data.format || '').toLowerCase().includes(search) ||
                             String(data.tags || '').toLowerCase().includes(search) ||
                             String(data.comment || '').toLowerCase().includes(search)
                         );

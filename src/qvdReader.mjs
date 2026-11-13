@@ -364,8 +364,6 @@ function viewerMetadata(fileMetadata, fields) {
     fields: fields.map((field) => {
       return {
         name: field.fieldName || "",
-        type: field.type || "",
-        extent: field.extent || "",
         noOfSymbols: parseInt(field.noOfSymbols) || 0,
         offset: parseInt(field.offset) || 0,
         length: parseInt(field.length) || 0,
