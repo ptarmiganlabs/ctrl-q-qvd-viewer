@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 ### Features
 
 * **help:** find the user guide, questions and bug reports from inside VS Code ([b8825f0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/b8825f0e69e6c636161d967127b4a3180f4b192c))
+* **viewer:** read the Data tab a page at a time, from one open copy of the file ([0363636](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/03636365b80cb68ed20580106d1bcf58931f0a5c)), closes [#190](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/190)
+* **viewer:** search and sort every row of the file, with progress and cancel ([e245ab6](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/e245ab665aec750919f89cda87c7881bb9bf6d54)), closes [#190](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/190)
 
 
 ### Bug Fixes
@@ -17,18 +19,20 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/).
 * **about:** list the Ptarmigan Labs tools as the README does ([6b5047e](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/6b5047e65d1b1fb8509358c975b22334c208b321))
 * **profiling:** find URLs and email addresses in linear time ([28f9231](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/28f9231a4767425932e695287be8f1db54dc6cf2))
 * **viewer:** book a search's rows once, search large files at Enter, refuse huge text sorts early ([e54a02a](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/e54a02afff8d9b6a8c86a28d33ad8aa0a496b918)), closes [#190](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/190)
+* **viewer:** check pages against the file the page shows, and run them one at a time ([99b3c17](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/99b3c174f6539c2249e49278e42b7574a9836f55)), closes [#190](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/190)
 * **viewer:** show each field's number format in the Schema tab ([d014457](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/d014457e5df31b750a148b87bc1c4b15585a3945))
 
 
 ### Documentation
 
 * check the README against the extension, and list the Ptarmigan Labs tools ([168d6d1](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/168d6d139ad78be93740629f0f1e59a3b5785eae))
+* describe the paged Data tab and its page size setting ([757b97c](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/757b97c968dd3d216de72bd56a4a65a6622383e4)), closes [#190](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/190)
+* describe whole-file search and sort in the Data tab ([ef970c9](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/ef970c9c0e01e0ea652f8e64d82ccba2bae7b39c)), closes [#190](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/190)
 
 
 ### Miscellaneous
 
 * **github:** add bug report and feature request forms, and send questions to Discussions ([84d18a9](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/84d18a9c01fed2bc7c84002ea9f347648f48459c))
-* release 1.5.0 ([57dd27a](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/57dd27ae8715de36ad81e17baaeabb488738f715)), closes [#190](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/190)
 
 
 ### Tests
