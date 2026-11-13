@@ -356,10 +356,21 @@ function detectFormats(stringValues) {
     dateString: { count: 0, samples: [], patterns: new Map() },
   };
 
-  // Regex patterns for format detection
+  // Regex patterns for format detection. Each runs in time linear in the value's
+  // length: a field's values are whatever the QVD holds, and a pattern that
+  // backtracks can take seconds, or hours, over one long value.
   const patterns = {
-    email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-    url: /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/i,
+    // A local part, @, and a domain with a dot that is neither its first nor its
+    // last character. The domain's first character is any; then it runs up to its
+    // first dot after that, so that there is one way to match and nothing to try again.
+    email: /^[^\s@]+@[^\s@][^\s@.]*\.[^\s@]+$/,
+    // An optional http(s)://, a host with a dot after its first character that is
+    // followed by two letters or dots, and then letters, digits, _, /, space, . and -.
+    // The host runs up to the first such dot: each other character is a digit, letter
+    // or -, or a dot that isn't followed by two letters or dots. It matches what
+    // /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/i did, whose
+    // nested * made it exponential: an address and 30 spaces took a minute.
+    url: /^(?:https?:\/\/)?[\da-z.-](?:[\da-z-]|\.(?![a-z.]{2}))*\.[a-z.]{2}[/\w .-]*$/i,
 
     // Phone patterns for different countries
     phone: {
