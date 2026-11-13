@@ -294,6 +294,22 @@ suite("Profiling Identity Test Suite", function () {
       assert.strictEqual(reads, 6);
     });
 
+    test("Two texts with one hash are told apart on the one-pass path too", () => {
+      const values = ["2020-01-01", "2020-02-15", "", null, "2021-07-04", "not a date"];
+      const data = Array.from({ length: 600 }, (_, i) => ({ v: values[(i * 5) % values.length] }));
+      const kinds = { numeric: false, date: true, string: false };
+      // Every text has one hash, whatever the seeds
+      const hashPair = (text, seedA, seedB, out) => {
+        out[0] = 3;
+        out[1] = 3;
+      };
+
+      assert.deepStrictEqual(
+        fieldSummary.summarizeRows(data, "v", { hashPair, kinds }),
+        fieldSummary.summarizeRows(data, "v", { kinds })
+      );
+    });
+
     test("A field of few values that needs nothing in row order is read once", async () => {
       const values = ["2020-01-01", "2020-02-15", "", null, "2021-07-04", "not a date"];
       const data = Array.from({ length: 3000 }, (_, i) => ({ v: values[(i * 5) % values.length] }));
@@ -373,6 +389,16 @@ suite("Profiling Identity Test Suite", function () {
       assert.ok(small.heapBytes < 128 * 2 ** 20, `${small.heapBytes}`);
       assert.strictEqual(large.heapBytes, fieldSummary.HEAP_BYTES);
       assert.strictEqual(large.outsideBytes, 50000000 * fieldSummary.BYTES_PER_DISTINCT_VALUE);
+
+      // Each field is priced on its own: the one of fewer, longer values can need more heap
+      const mixed = [
+        { name: "Id", symbols: 1000000, bytes: 9000000 },
+        { name: "Notes", symbols: 100000, bytes: 300000000 },
+      ];
+      const both = profiler.profileMemory({ fields: mixed }, ["Id", "Notes"]);
+      assert.strictEqual(both.heapField.name, "Notes");
+      assert.strictEqual(both.outsideField.name, "Id");
+      assert.ok(both.heapBytes > profiler.profileMemory({ fields: mixed }, ["Id"]).heapBytes);
 
       // A small field profiles with too little heap left for a large one
       const file = path.join(testData, "lego", "colors.qvd");

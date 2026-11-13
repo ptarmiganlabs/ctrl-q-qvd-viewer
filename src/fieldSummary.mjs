@@ -130,7 +130,8 @@ export const MAX_ROWS = 0xffffffff;
 
 /**
  * Two 32-bit hashes of a text, for two seeds, in one walk of it: MurmurHash3's mixing
- * over its UTF-16 code units, once per seed
+ * over its UTF-16 code units for the first, FNV-1a's for the second, so that texts
+ * made to collide in one, whatever its seed, don't collide in the other too
  * @param {string} text - The text
  * @param {number} seedA - The first seed
  * @param {number} seedB - The second seed
@@ -145,9 +146,7 @@ export function hashPair(text, seedA, seedB, out) {
     a ^= k;
     a = (a << 13) | (a >>> 19);
     a = (Math.imul(a, 5) + 0xe6546b64) | 0;
-    b ^= k;
-    b = (b << 13) | (b >>> 19);
-    b = (Math.imul(b, 5) + 0xe6546b64) | 0;
+    b = Math.imul(b ^ text.charCodeAt(i), 0x01000193);
   }
   out[0] = finish32(a, text.length);
   out[1] = finish32(b, text.length);
@@ -476,6 +475,10 @@ export class FieldSummarizer {
       if (this.#retainedCodes && !this.#statistics && !this.#strings) {
         yield* this.#replayFirstSights();
         this.#pass = 2;
+      } else {
+        // Pass 2 reads the rows: the values kept for it aren't needed
+        this.#retainedCodes = null;
+        this.#retainedValues = null;
       }
     }
     if (this.#pass === 2) {
@@ -534,6 +537,25 @@ export class FieldSummarizer {
     while (!steps.next().done) {
       await nextTurn();
       signal?.throwIfAborted();
+    }
+  }
+
+  /**
+   * Take rows that are all null, in row order, for the pass nextPass() named: in time
+   * for the rows the kind is told from, not for every row
+   * @param {number} count - Rows
+   * @param {number} offset - The first of them
+   */
+  takeNulls(count, offset) {
+    if (this.#pass !== 1) {
+      // Nulls add nothing to the later passes
+      return;
+    }
+    this.#nullRows += count;
+    this.#statNullRows += count;
+    const step = this.#step;
+    for (let row = Math.ceil(offset / step) * step; row < offset + count; row += step) {
+      this.#sample.push(null);
     }
   }
 
