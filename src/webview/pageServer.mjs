@@ -1,6 +1,5 @@
-import { openPager as openQvdPager } from "../qvdPager.mjs";
-import { errorFacts } from "../qvdReader.mjs";
-import { memoryRefusalOf } from "../memoryGuard.mjs";
+import { FileChangedError, openPager as openQvdPager } from "../qvdPager.mjs";
+import { failedRead, isReadError } from "../qvdReader.mjs";
 import { describeReadFailure, describeViewerFailure } from "./readFailure.mjs";
 import { failureNoticeHtml } from "./templates/errorTemplate.mjs";
 import logger from "../logger.mjs";
@@ -8,8 +7,10 @@ import logger from "../logger.mjs";
 /**
  * Answers the Data tab's requests for pages, for one editor
  *
- * The grid asks for a page with {command: "page", requestId, offset, limit}, and
- * is answered with one of:
+ * The grid asks for a page with {command: "page", requestId, offset, limit,
+ * headerKey}: headerKey, the version of the file its page was made from, so that
+ * rows of a file rewritten since aren't shown under its old fields. It is
+ * answered with one of:
  * - {command: "pageRows", requestId, offset, rows, totalRows}: rows, one array per
  *   row, one value per field in file order;
  * - {command: "pageFailed", requestId, failure, html}: why, as describeReadFailure()
@@ -29,16 +30,6 @@ import logger from "../logger.mjs";
 const PROGRESS_MS = 100;
 
 /**
- * Whether an error is the reader's account of the file, not the viewer's own failure
- * @param {Error} error - What was thrown
- * @returns {boolean} Whether it is
- */
-function isReadError(error) {
-  const { errorName, errorCode } = errorFacts(error);
-  return Boolean(errorCode) || (typeof errorName === "string" && errorName.startsWith("Qvd"));
-}
-
-/**
  * Create the page server for one editor
  * @param {object} options
  * @param {string} options.filePath - The QVD file
@@ -47,9 +38,10 @@ function isReadError(error) {
  * @param {function(): Promise<void>} [options.onFileChanged] - Shows the file again,
  *   once a page finds it changed on disk since it was opened
  * @param {typeof openQvdPager} [options.openPager] - Opens the file, for tests to replace
- * @returns {{servePage: function(object): Promise<void>, cancel: function(*): void, close: function(): Promise<void>}}
+ * @returns {{servePage: function(object): Promise<void>, cancel: function(*): void, rest: function(): Promise<void>, close: function(): Promise<void>}}
  *   servePage answers a page message; cancel gives up the request it names, and
- *   answers it pageCancelled; close gives up what runs and closes the file
+ *   answers it pageCancelled; rest lets go of what the open file holds, for a tab
+ *   that isn't shown; close gives up what runs and closes the file
  */
 export function createPageServer({ filePath, webview, signal, onFileChanged, openPager = openQvdPager }) {
   // The pager, once a page has opened it, or while one opens it
@@ -101,10 +93,10 @@ export function createPageServer({ filePath, webview, signal, onFileChanged, ope
 
   /**
    * Answer a request for a page
-   * @param {{requestId: *, offset: number, limit: number}} message - The request
+   * @param {{requestId: *, offset: number, limit: number, headerKey?: string|null}} message - The request
    * @returns {Promise<void>} Resolves once it is answered, or given up
    */
-  async function servePage({ requestId, offset, limit }) {
+  async function servePage({ requestId, offset, limit, headerKey }) {
     if (closed) {
       return;
     }
@@ -132,6 +124,10 @@ export function createPageServer({ filePath, webview, signal, onFileChanged, ope
       const opened = await pagerFor(requestSignal);
       // Superseded, cancelled or closed while the file opened
       requestSignal.throwIfAborted();
+      // Opened since the page was made, the file may have been rewritten in between
+      if (headerKey !== undefined && opened.header.key !== headerKey) {
+        throw new FileChangedError(filePath);
+      }
       const page = await opened.page({ offset, limit, signal: requestSignal, onProgress });
       await post({
         command: "pageRows",
@@ -157,10 +153,7 @@ export function createPageServer({ filePath, webview, signal, onFileChanged, ope
       }
       logger.error(`Page of ${filePath} failed, from row ${offset}:`, error);
       const failure = isReadError(error)
-        ? describeReadFailure(
-            { error: error?.message ?? String(error), ...errorFacts(error), refusal: memoryRefusalOf(error) },
-            { filePath, headerRead: true }
-          )
+        ? describeReadFailure(failedRead(error), { filePath, headerRead: true })
         : describeViewerFailure(error, { filePath });
       await post({
         command: "pageFailed",
@@ -187,6 +180,16 @@ export function createPageServer({ filePath, webview, signal, onFileChanged, ope
   }
 
   /**
+   * Let go of what the open file holds, until the next page: for a tab that isn't
+   * shown, so that its memory is free for other tabs, exports and profiling
+   * @returns {Promise<void>} Resolves once it is let go
+   */
+  async function rest() {
+    const opened = await pager?.catch(() => null);
+    await opened?.rest();
+  }
+
+  /**
    * Give up what runs, and close the file
    * @returns {Promise<void>} Resolves once the file is closed
    */
@@ -196,5 +199,5 @@ export function createPageServer({ filePath, webview, signal, onFileChanged, ope
     await closePager();
   }
 
-  return { servePage, cancel, close };
+  return { servePage, cancel, rest, close };
 }

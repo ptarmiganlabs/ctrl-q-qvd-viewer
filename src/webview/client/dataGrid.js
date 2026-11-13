@@ -57,6 +57,8 @@ function cellText(value) {
  * @param {number} options.totalRows - Rows in the file
  * @param {number} options.pageSize - Rows a page shows to begin with
  * @param {Array<number>} options.pageSizes - The page sizes offered
+ * @param {string|null} [options.headerKey] - The version of the file the page shows,
+ *   sent with each request, so that the extension notices a file rewritten since
  * @param {{postMessage: function(object): void}} options.vscode - The page's VS Code API
  * @param {function} [options.Tabulator] - Tabulator, for tests to replace
  * @param {function(Event, object): void} [options.onCellContext] - Called on a cell's context menu
@@ -74,6 +76,7 @@ function createDataGrid(options) {
     totalRows,
     pageSize,
     pageSizes,
+    headerKey = null,
     vscode,
     onCellContext,
     progressDelayMs = 250,
@@ -171,6 +174,9 @@ function createDataGrid(options) {
     status.hidden = false;
   }
 
+  // Rows there are to page through, as the extension last said
+  let knownRows = totalRows;
+
   /**
    * The answer Tabulator's remote pagination takes
    * @param {Array<Object>} data - The page's rows
@@ -179,8 +185,8 @@ function createDataGrid(options) {
    */
   function answer(data, size) {
     return {
-      last_page: Math.max(1, Math.ceil(totalRows / size)),
-      last_row: totalRows,
+      last_page: Math.max(1, Math.ceil(knownRows / size)),
+      last_row: knownRows,
       data: data,
     };
   }
@@ -208,7 +214,13 @@ function createDataGrid(options) {
     }, progressDelayMs);
     return new Promise(function (resolve) {
       pending.set(requestId, { resolve: resolve, size: size });
-      vscode.postMessage({ command: "page", requestId: requestId, offset: (page - 1) * size, limit: size });
+      vscode.postMessage({
+        command: "page",
+        requestId: requestId,
+        offset: (page - 1) * size,
+        limit: size,
+        headerKey: headerKey,
+      });
     });
   }
 
@@ -262,6 +274,9 @@ function createDataGrid(options) {
           pending.delete(message.requestId);
           waitingFor = null;
           clearStatus();
+          if (typeof message.totalRows === "number") {
+            knownRows = message.totalRows;
+          }
           request.resolve(answer(message.rows.map(rowObject), request.size));
         }
         return true;

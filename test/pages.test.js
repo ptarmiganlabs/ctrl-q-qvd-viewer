@@ -300,6 +300,72 @@ suite("Page Test Suite", () => {
     await pages.close();
   });
 
+  test("A page made from an older version of the file shows the file again, without its rows", async () => {
+    const copy = path.join(dir, "rewritten-before-its-first-page.qvd");
+    fs.copyFileSync(colors, copy);
+    // The page was made from this version
+    const { key } = await new QvdReader().readHeader(copy);
+    // A reload stores it again before the grid's first page is read
+    fs.copyFileSync(sets, copy);
+    const messages = [];
+    let shownAgain = 0;
+    const pages = createPageServer({
+      filePath: copy,
+      webview: recordingWebview(messages),
+      onFileChanged: async () => shownAgain++,
+    });
+    try {
+      await pages.servePage({ requestId: 1, offset: 0, limit: 10, headerKey: key });
+      assert.deepStrictEqual(messages, []);
+      assert.strictEqual(shownAgain, 1);
+      // The version shown now is read
+      const { key: now } = await new QvdReader().readHeader(copy);
+      await pages.servePage({ requestId: 2, offset: 0, limit: 10, headerKey: now });
+      assert.strictEqual(messages.at(-1).command, "pageRows");
+      assert.strictEqual(messages.at(-1).totalRows, 11673);
+    } finally {
+      await pages.close();
+    }
+  });
+
+  test("A tab that isn't shown lets go of what its open file holds, and its next page reads it again", async () => {
+    const before = guard.bookedBytes();
+    const messages = [];
+    const pages = createPageServer({ filePath: inventoryParts, webview: recordingWebview(messages) });
+    try {
+      await pages.servePage({ requestId: 1, offset: 0, limit: 100 });
+      assert.ok(guard.bookedBytes() > before);
+      await pages.rest();
+      // At most what was booked before: rows other tests dropped may be let go meanwhile
+      assert.ok(guard.bookedBytes() <= before + 1, "nothing is booked while it rests");
+      await pages.servePage({ requestId: 2, offset: 290000, limit: 100 });
+      assert.deepStrictEqual(messages.at(-1).rows, rows.inventoryParts.slice(290000, 290100));
+    } finally {
+      await pages.close();
+    }
+    assert.ok(guard.bookedBytes() <= before + 1, "nothing is booked once it is closed");
+  });
+
+  test("Pages of one pager run one at a time, even past the read queue's grace for one given up", async () => {
+    const pager = await openPager(inventoryParts);
+    try {
+      // Asked for together, each with a signal of its own: as many pages as a queue that let them all start would run
+      const offsets = [0, 100000, 200000, 300000, 400000, 500000];
+      const pages = await Promise.all(offsets.map((offset) => pager.page({ offset, limit: 50 })));
+      pages.forEach((page, i) =>
+        assert.deepStrictEqual(page.rows, rows.inventoryParts.slice(offsets[i], offsets[i] + 50), `from ${offsets[i]}`)
+      );
+      // Many pages, most of them without a check of their own, still give the file's rows
+      for (let offset = 0; offset < 40 * 1000; offset += 1000) {
+        const page = await pager.page({ offset, limit: 20 });
+        assert.deepStrictEqual(page.rows, rows.inventoryParts.slice(offset, offset + 20), `from ${offset}`);
+      }
+      assert.ok(pager.heldBytes > 0);
+    } finally {
+      await pager.close();
+    }
+  });
+
   test("A failure of the viewer's own is the viewer's, not the file's", async () => {
     const messages = [];
     const pages = createPageServer({
@@ -354,6 +420,22 @@ suite("Page Test Suite", () => {
     assert.deepStrictEqual(messages, []);
     // Nor is there a Load More, or a wait for every row
     assert.ok(!webview.html.includes("loadMoreBtn") && !webview.html.includes('id="loading-indicator"'));
+  });
+
+  test("A header the viewer fails to read is the viewer's failure, and one the file fails is the file's", async () => {
+    const provider = new QvdEditorProvider({ extensionPath: root, extensionUri: vscode.Uri.file(root) });
+    const webview = recordingWebview();
+    provider.qvdReader = {
+      readHeader: async () => {
+        throw new TypeError("Cannot read properties of undefined (reading 'String')");
+      },
+    };
+    await provider.updateWebview(colors, webview);
+    assert.ok(webview.html.includes('data-kind="viewer"'));
+
+    provider.qvdReader = new QvdReader();
+    await provider.updateWebview(path.join(dir, "not-there.qvd"), webview);
+    assert.ok(webview.html.includes('data-kind="missing"'));
   });
 
   test("Closing the editor while it opens leaves the closed panel alone", async () => {

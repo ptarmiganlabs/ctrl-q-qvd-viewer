@@ -25,12 +25,14 @@ import { pageSizesOffered } from "../pageSize.mjs";
  * @param {number} header.totalRows - Its rows
  * @param {number} [header.fileSize] - Its size, for the chart of its structure; 0 leaves the chart out
  * @param {number} [header.pageSize=100] - Rows a page of the grid shows to begin with
+ * @param {string|null} [header.key] - Which version of the file the header is, which
+ *   the grid's pages are checked against
  * @param {object} webview - The webview object
  * @param {object} context - The extension context
  * @returns {string} HTML content for the main webview
  */
 export function getHtmlForWebview(header, webview, context) {
-  const { metadata, columns, totalRows, fileSize, pageSize = 100 } = header;
+  const { metadata, columns, totalRows, fileSize, pageSize = 100, key = null } = header;
   const nonce = getNonce();
 
   // Inline Tabulator for easier CSP compliance
@@ -1405,6 +1407,8 @@ export function getHtmlForWebview(header, webview, context) {
         const totalRowsInFile = ${totalRows};
         // Rows a page of the grid shows to begin with, and the sizes it offers
         const pageSize = ${pageSize};
+        // The version of the file this page shows, which each page of the grid is checked against
+        const headerKey = ${scriptJson(key)};
         const pageSizes = ${scriptJson(pageSizesOffered(pageSize))};
         
         // Logging helper - sends logs to extension
@@ -1824,6 +1828,7 @@ export function getHtmlForWebview(header, webview, context) {
                     totalRows: totalRowsInFile,
                     pageSize,
                     pageSizes,
+                    headerKey,
                     vscode,
                     onCellContext: showContextMenu
                 });

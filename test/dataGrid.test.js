@@ -147,14 +147,15 @@ suite("Data Grid Test Suite", () => {
   test("A page is asked for by offset, and its rows answer Tabulator's request", async () => {
     const { grid, table, posted } = makeGrid({ totalRows: 1234 });
     const loading = table.options.ajaxRequestFunc("qvd:rows", {}, { page: 3, size: 50 });
-    assert.deepStrictEqual(posted, [{ command: "page", requestId: 1, offset: 100, limit: 50 }]);
+    assert.deepStrictEqual(posted, [{ command: "page", requestId: 1, offset: 100, limit: 50, headerKey: null }]);
+    // The rows the extension says there are, not those the page was made with
     assert.strictEqual(
-      grid.handleMessage({ command: "pageRows", requestId: 1, offset: 100, rows: [[1, "a"], [2, null]], totalRows: 1234 }),
+      grid.handleMessage({ command: "pageRows", requestId: 1, offset: 100, rows: [[1, "a"], [2, null]], totalRows: 1260 }),
       true
     );
     assert.deepStrictEqual(await loading, {
-      last_page: 25,
-      last_row: 1234,
+      last_page: 26,
+      last_row: 1260,
       data: [
         { c0: 1, c1: "a" },
         { c0: 2, c1: null },

@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { stat } from "fs/promises";
-import QvdReader, { errorFacts } from "./qvdReader.mjs";
+import QvdReader, { errorFacts, failedRead, isReadError } from "./qvdReader.mjs";
 import { getErrorHtml } from "./webview/templates/errorTemplate.mjs";
 import { getHtmlForWebview } from "./webview/templates/mainTemplate.mjs";
 import { setupMessageHandler } from "./webview/messageHandler.mjs";
@@ -71,6 +71,13 @@ class QvdEditorProvider {
     webviewPanel.onDidDispose(() => {
       closed.abort();
       pages.close().catch((error) => logger.error(`Closing ${filePath} failed:`, error));
+    });
+    // A tab that isn't shown lets go of what its open file holds, for other tabs,
+    // exports and profiling; its next page opens the file again
+    webviewPanel.onDidChangeViewState?.(() => {
+      if (!webviewPanel.visible && !closed.signal.aborted) {
+        pages.rest().catch((error) => logger.error(`Resting ${filePath} failed:`, error));
+      }
     });
     // Whether the page's buttons reach the extension
     let listening = false;
@@ -144,10 +151,10 @@ class QvdEditorProvider {
         reason: facts.errorReason,
         code: facts.errorCode,
       });
-      const failure = describeReadFailure(
-        { error: error?.message ?? String(error), ...facts, refusal: null },
-        { filePath }
-      );
+      // The file's failure, or the viewer's own while it read the header
+      const failure = isReadError(error)
+        ? describeReadFailure(failedRead(error), { filePath })
+        : describeViewerFailure(error, { filePath });
       this.showPage(webview, () => getErrorHtml(failure), filePath, signal);
       return;
     }
