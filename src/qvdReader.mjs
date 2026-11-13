@@ -289,14 +289,16 @@ export function errorFacts(error) {
 
 /**
  * Whether an error is the reader's account of the file, rather than the viewer's own failure
- * qvdjs's errors, the system's, and the viewer's own refusals of a read or a page are
- * about the file; anything else thrown while it is read, such as a TypeError, is the viewer's.
+ * qvdjs's errors, the system's, and the viewer's own refusals of a read, a page, or
+ * a search or sort it won't make, are about the file; anything else thrown while it is read, such as a TypeError, is the viewer's.
  * @param {Error} error - What was thrown
  * @returns {boolean} Whether it is
  */
 export function isReadError(error) {
-  const { errorName, errorCode } = errorFacts(error);
-  return Boolean(errorCode) || (typeof errorName === "string" && errorName.startsWith("Qvd"));
+  const { errorName, errorCode, errorReason } = errorFacts(error);
+  return (
+    Boolean(errorCode) || errorReason === "view" || (typeof errorName === "string" && errorName.startsWith("Qvd"))
+  );
 }
 
 /**
@@ -311,8 +313,8 @@ export function failedRead(error) {
   let message;
   if (aborted) {
     message = "The read was given up, because its editor was closed.";
-  } else if (refusal && error.page) {
-    // A page of the viewer's grid, whose refusal says which rows, and what is left
+  } else if (refusal && (error.page || error.view)) {
+    // A page, or a search or sort, of the viewer's grid, whose refusal says what was asked, and what is left
     message = error.message;
   } else if (refusal) {
     message = refusal.forCaller ? describeCallerRefusal(refusal) : describeReadRefusal(refusal);

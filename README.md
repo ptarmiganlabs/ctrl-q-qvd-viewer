@@ -192,6 +192,8 @@ The extension displays QVD files in five tabs:
 
 A table of the file's rows, with all its columns in file order, a page at a time. Go to any page of the file, the last one included: only the rows of the page shown are read.
 
+Search and sort cover every row of the file. Type in the search box to see only the rows with a cell that holds the text, in any case. Click a column's header to sort every row by it: numbers and dates by value, text as your language sorts it, and empty cells last. A large file takes a while to search or sort, so a bar shows how far it has got, with a Cancel button. Paging through the result is then as quick as before.
+
 The first page of a large file takes a few seconds, because the viewer reads each field's values once. A bar below the tabs shows how far it has got, with a Cancel button. Later pages take milliseconds.
 
 #### 2. Field Information / Schema

@@ -3,7 +3,10 @@ import { realpath } from "fs/promises";
 import { dirname } from "path";
 import { toCellValue } from "./cellValue.mjs";
 import { budgetFor, fileVersion, headerOf, readLanes, requireCount } from "./qvdReader.mjs";
-import { bookHeap, bookedBytes, describePageRefusal } from "./memoryGuard.mjs";
+import { bookHeap, bookedBytes, describePageRefusal, describeViewRefusal, tryBookHeap } from "./memoryGuard.mjs";
+import { SCAN_PEAK_BYTES } from "./columnScan.mjs";
+import { searchHeapBytes, searchRows } from "./viewSearch.mjs";
+import { sortHeapBytes, sortRows } from "./viewSort.mjs";
 
 /**
  * Pages of a QVD for the viewer's grid, from one open copy of the file per editor
@@ -35,6 +38,92 @@ export const HELD_BYTES = 128 * 1024 * 1024;
 // checks qvdjs's own check of each page guards the heap, and what the copy holds
 // is booked as the last check found it.
 const PAGES_PER_CHECK = 16;
+
+/**
+ * Rows between a page's rows that may be read with them, for each row the page
+ * shows. A sorted or searched page's rows are spread through the file, and each
+ * read of a few rows reopens the file and parses its header, which costs more than
+ * the rows between near ones.
+ */
+const EXTRA_ROWS_PER_ROW = 16;
+
+/**
+ * What the grid shows: the file's rows in file order, or those of a search, in
+ * the order of a sort
+ * @typedef {{search: string, sort: {fieldIndex: number, descending: boolean}|null}} View
+ *   search: the text a cell must hold, whatever its case; none for every row.
+ *   sort: the field to order the rows by, and which way; null for file order
+ */
+
+/**
+ * The key a view is known by, and the view, from what a page asks for
+ * @param {*} search - The search text
+ * @param {*} sort - The sort
+ * @param {import('./qvdReader.mjs').Header} header - The file's header
+ * @returns {View & {key: string}} The view
+ * @throws {Error} A QvdValidationError with context.reason "option" for a search
+ *   that isn't text, or a sort by a field the file doesn't have
+ */
+function viewOf(search, sort, header) {
+  if (search !== undefined && search !== null && typeof search !== "string") {
+    throw Object.assign(new Error(`search must be text, not ${typeof search}`), {
+      name: "QvdValidationError",
+      context: { reason: "option", option: "search" },
+    });
+  }
+  const text = search ?? "";
+  let order = null;
+  if (sort !== undefined && sort !== null) {
+    const fieldIndex = sort.fieldIndex;
+    if (!Number.isSafeInteger(fieldIndex) || fieldIndex < 0 || fieldIndex >= header.fields.length) {
+      throw Object.assign(new Error(`sort.fieldIndex must be a field's place in the file, not ${String(fieldIndex)}`), {
+        name: "QvdValidationError",
+        context: { reason: "option", option: "sort" },
+      });
+    }
+    order = { fieldIndex, descending: sort.descending === true };
+  }
+  return { search: text, sort: order, key: JSON.stringify([text, order]) };
+}
+
+/**
+ * The rows of a page of a view, as windows of the file to read: near rows together
+ * The gaps between them are closed smallest first, while the rows read between
+ * fit in EXTRA_ROWS_PER_ROW for each row shown, so that rows near each other in the
+ * file are read in one go, and rows far apart aren't.
+ * @param {Uint32Array} rows - The page's rows, in view order
+ * @returns {Array<{start: number, end: number}>} Windows, in file order, end exclusive
+ */
+function windowsOf(rows) {
+  const sorted = Uint32Array.from(rows).sort();
+  if (sorted.length === 0) {
+    return [];
+  }
+  // The rows between each row and the next, in order of size
+  const gaps = [];
+  for (let i = 1; i < sorted.length; i++) {
+    gaps.push(Math.max(0, sorted[i] - sorted[i - 1] - 1));
+  }
+  const smallestFirst = gaps.map((_, i) => i).sort((a, b) => gaps[a] - gaps[b]);
+  const closed = new Uint8Array(gaps.length);
+  let budget = EXTRA_ROWS_PER_ROW * sorted.length;
+  for (const i of smallestFirst) {
+    if (gaps[i] > budget) {
+      break;
+    }
+    budget -= gaps[i];
+    closed[i] = 1;
+  }
+  const windows = [{ start: sorted[0], end: sorted[0] + 1 }];
+  for (let i = 1; i < sorted.length; i++) {
+    if (closed[i - 1]) {
+      windows.at(-1).end = sorted[i] + 1;
+    } else {
+      windows.push({ start: sorted[i], end: sorted[i] + 1 });
+    }
+  }
+  return windows;
+}
 
 /**
  * Error thrown when the file has changed on disk since its header was read: its
@@ -89,20 +178,21 @@ function pageRefusal({ offset, rows, totalRows, neededBytes, leftBytes }) {
  * Its header is read now, from the headers kept unless the file has changed;
  * the file itself is opened by the first page.
  * @param {string} filePath - Path to the QVD file
- * @param {{signal?: AbortSignal, heldBytes?: number}} [options] - signal: gives
+ * @param {{signal?: AbortSignal, heldBytes?: number, locale?: string}} [options] - signal: gives
  *   reading the header up; heldBytes: what the open copy may hold before it is
- *   opened afresh, HELD_BYTES unless a test says otherwise
+ *   opened afresh, HELD_BYTES unless a test says otherwise; locale: the language
+ *   text sorts in, such as VS Code's, the system's unless given
  * @returns {Promise<Pager>} The pager
  * @throws {Error} What reading the header throws
  */
-export async function openPager(filePath, { signal, heldBytes = HELD_BYTES } = {}) {
+export async function openPager(filePath, { signal, heldBytes = HELD_BYTES, locale } = {}) {
   // As QvdReader.read() does: qvdjs resolves links before it checks the file is in
   // the directory it may read, so that directory is the real path's
   const realFilePath = await realpath(filePath).catch(() => filePath);
   const allowedDir = dirname(realFilePath);
   const header = await headerOf(filePath, realFilePath, allowedDir, signal);
   const budget = await budgetFor(filePath, allowedDir, header, signal);
-  return new Pager({ filePath, realFilePath, allowedDir, header, budget, heldBytes });
+  return new Pager({ filePath, realFilePath, allowedDir, header, budget, heldBytes, locale });
 }
 
 /**
@@ -122,6 +212,12 @@ export class Pager {
   #held = 0;
   #release = () => {};
   #closed = false;
+  #collator;
+  // The view shown: its key, its rows in order, null for every row in file order, and what releases them
+  #view = { key: JSON.stringify(["", null]), rows: null, release: () => {} };
+  // The rows the search shown found, in file order, booked once: the view shows them,
+  // or a sort of them, and another sort of them starts from them
+  #searched = { text: "", rows: null, release: () => {} };
   // Pages read since qvdjs last checked one, and the most rows that check was for
   #sinceCheck = 0;
   #checkedRows = 0;
@@ -132,12 +228,14 @@ export class Pager {
   /**
    * @param {object} options - As openPager() finds them
    */
-  constructor({ filePath, realFilePath, allowedDir, header, budget, heldBytes }) {
+  constructor({ filePath, realFilePath, allowedDir, header, budget, heldBytes, locale }) {
     this.#filePath = filePath;
     this.#realFilePath = realFilePath;
     this.#allowedDir = allowedDir;
     this.#budget = budget;
     this.#heldBytes = heldBytes;
+    // Numbers in text compared as numbers: "Item 9" before "Item 10"
+    this.#collator = new Intl.Collator(locale || undefined, { numeric: true });
     /**
      * The file's header, as it was when the pager was opened
      * @type {import('./qvdReader.mjs').Header}
@@ -170,31 +268,50 @@ export class Pager {
   }
 
   /**
-   * Read a page of rows
-   * Pages run in the read queue's small lane, one at a time in the whole
-   * extension host, beside at most one large read, which leaves room for them.
+   * Rows the view shown holds: the file's, or the search's
+   * @returns {number} Rows
+   */
+  get viewRows() {
+    return this.#view.rows ? this.#view.rows.length : this.header.rowCount;
+  }
+
+  /**
+   * Read a page of rows, of the file in file order or of a view of it
+   * A view other than the one shown is made first: the rows of a search, in the
+   * order of a sort, from every row of the file. That runs in the read queue's
+   * large lane, one large read at a time in the extension host, and is priced
+   * against the memory left first. The view is then kept for the pages that follow.
+   * Pages run in the small lane, beside at most one large read, which leaves room for them.
    * @param {object} page - The page
-   * @param {number} page.offset - Its first row, counted from 0
-   * @param {number} page.limit - Its rows, at most MAX_PAGE_ROWS; fewer at the end of the file
-   * @param {AbortSignal} [page.signal] - Gives the page up, queued or running
-   * @param {function({stage: string, current: number, total: number, percent: number}): void} [page.onProgress] -
-   *   Told how the page is getting on, as qvdjs tells it: "symbol-census" once for each
-   *   column the page walks, the first time a page touches it
-   * @returns {Promise<{rows: Array<Array<*>>, offset: number, totalRows: number}>} The
-   *   rows, one array per row with one value per field in file order, each as
-   *   toCellValue() makes it, a dual's text included; the offset asked for; and the
-   *   rows in the file
+   * @param {number} page.offset - Its first row in the view, counted from 0
+   * @param {number} page.limit - Its rows, at most MAX_PAGE_ROWS; fewer at the end of the view
+   * @param {string} [page.search] - Text a row must have a cell holding, whatever its case; none for every row
+   * @param {{fieldIndex: number, descending?: boolean}|null} [page.sort] - The field to order
+   *   the rows by, its place in the file; null for file order
+   * @param {AbortSignal} [page.signal] - Gives the page up, queued or running, its view included
+   * @param {function({text: string, fraction: number|null}): void} [page.onProgress] -
+   *   Told how the page is getting on, in words for the grid, and how much is done:
+   *   while it walks the columns it touches first, and while its view is made
+   * @returns {Promise<{rows: Array<Array<*>>, offset: number, totalRows: number, fileRows: number}>}
+   *   The rows, one array per row with one value per field in file order, each as
+   *   toCellValue() makes it, a dual's text included; the offset asked for; the rows
+   *   in the view; and the rows in the file
    * @throws {Error} A QvdValidationError with context.reason "option" for a page that
-   *   isn't a count of rows, or "memory" for one that doesn't fit in the memory left;
-   *   FileChangedError when the file has changed since the pager was opened; an
+   *   isn't a count of rows, or a view that isn't one, or "memory" for a page or view
+   *   that doesn't fit in the memory left; a ViewRefusedError for a sort too large to
+   *   make; FileChangedError when the file has changed since the pager was opened; an
    *   AbortError when the page is given up, or the pager is closed; and what qvdjs
    *   throws for a file it can't read
    */
-  async page({ offset, limit, signal, onProgress } = {}) {
+  async page({ offset, limit, search, sort, signal, onProgress } = {}) {
     requireCount(offset, "offset", true);
     requireCount(limit, "limit", true, MAX_PAGE_ROWS);
+    const view = viewOf(search, sort, this.header);
     if (this.#closed) {
       throw closedError();
+    }
+    if (view.key !== this.#view.key) {
+      await readLanes.large.run(() => this.#inTurn(() => this.#makeView(view, signal, onProgress)), { signal });
     }
     return await readLanes.small.run(() => this.#inTurn(() => this.#pageNow(offset, limit, signal, onProgress)), {
       signal,
@@ -202,7 +319,8 @@ export class Pager {
   }
 
   /**
-   * Run work on the open copy of the file once the work before it has stopped
+   * Run work on the pager once the work before it has stopped: a page, a view, or
+   * letting go of the open copy of the file
    * @param {function(): Promise<*>} work - The work
    * @returns {Promise<*>} As the work settles
    */
@@ -214,7 +332,7 @@ export class Pager {
 
   /**
    * Let go of the open copy of the file, and the values it holds, until the next
-   * page opens it again: for a tab that isn't shown
+   * page opens it again: for a tab that isn't shown. The view shown is kept.
    * @returns {Promise<void>} Resolves once it is closed
    */
   async rest() {
@@ -222,82 +340,243 @@ export class Pager {
   }
 
   /**
+   * Throw unless the file is as it was when the pager was opened
+   * @throws {FileChangedError} When it has changed
+   */
+  async #checkFile() {
+    // qvdjs would read a file rewritten since, by a reload say, under the header read before
+    if (this.header.key && (await fileVersion(this.#realFilePath)) !== this.header.key) {
+      throw new FileChangedError(this.#filePath);
+    }
+  }
+
+  /**
+   * Make a view, at its turn, in place of the one shown
+   * @param {View & {key: string}} view - The view
+   * @param {AbortSignal} [signal] - Gives it up
+   * @param {Function} [onProgress] - Told how it is getting on
+   * @returns {Promise<void>} Resolves once it is the view shown
+   */
+  async #makeView(view, signal, onProgress) {
+    signal?.throwIfAborted();
+    if (this.#closed) {
+      throw closedError();
+    }
+    if (view.key === this.#view.key) {
+      return;
+    }
+    if (!view.search && !view.sort) {
+      this.#showView(view.key, null, "", null);
+      return;
+    }
+    await this.#checkFile();
+
+    const header = this.header;
+    const field = view.sort ? header.fields[view.sort.fieldIndex] : null;
+    // The search shown, sorted again rather than made again
+    const kept = view.search && view.search === this.#searched.text ? this.#searched.rows : null;
+    // A field is scanned at a time, each with a file of its own, closed once it is scanned
+    const neededBytes =
+      SCAN_PEAK_BYTES +
+      (view.search && !kept ? searchHeapBytes(header) : 0) +
+      (view.sort ? sortHeapBytes(header, view.sort.fieldIndex, header.rowCount) : 0);
+    const booked = tryBookHeap(neededBytes, this.#budget ?? undefined);
+    if (!("release" in booked)) {
+      const all = `all ${header.rowCount.toLocaleString()} rows`;
+      let what = `Searching ${all}`;
+      if (view.sort) {
+        what = view.search ? `Searching ${all}, and sorting the rows found by ${field.name},` : `Sorting ${all} by ${field.name}`;
+      }
+      throw Object.assign(new Error(describeViewRefusal({ what, neededBytes, leftBytes: booked.leftBytes })), {
+        name: "QvdValidationError",
+        context: { reason: "memory", maxRows: header.rowCount, totalRows: header.rowCount, recommendedMaxRows: 0 },
+        // Not the rows the grid shows: what is made from them
+        pricing: { forCaller: true, neededBytes, leftBytes: booked.leftBytes },
+        view: { what, neededBytes, leftBytes: booked.leftBytes },
+      });
+    }
+
+    const scanned = { filePath: this.#filePath, allowedDir: this.#allowedDir, header, signal };
+    // A search and a sort share the progress bar: the search its first half. A sort
+    // reads its field in its first half, and sorts its values in the second.
+    const searchShare = view.search ? (view.sort ? 0.5 : 1) : 0;
+    // The search's rows, in file order, and the view's: those, or a sort of them or of every row
+    let found = kept;
+    let rows = null;
+    try {
+      if (view.search && !found) {
+        found = await searchRows({
+          ...scanned,
+          text: view.search,
+          onProgress: ({ field: name, fieldIndex, fields, fraction }) =>
+            onProgress?.({
+              text: `Searching ${name} (field ${fieldIndex + 1} of ${fields})…`,
+              fraction: fraction * searchShare,
+            }),
+        });
+      }
+      rows = found;
+      if (view.sort && (!found || found.length > 0)) {
+        rows = await sortRows({
+          ...scanned,
+          fieldIndex: view.sort.fieldIndex,
+          descending: view.sort.descending,
+          rows: found,
+          collator: this.#collator,
+          onProgress: ({ stage, fraction }) =>
+            onProgress?.({
+              text: stage === "reading" ? `Sorting by ${field.name}: reading its values…` : `Sorting by ${field.name}…`,
+              fraction: searchShare + (1 - searchShare) * (stage === "reading" ? fraction / 2 : 0.5 + fraction / 2),
+            }),
+        });
+      }
+    } finally {
+      booked.release();
+    }
+    signal?.throwIfAborted();
+    if (this.#closed) {
+      throw closedError();
+    }
+    // A file rewritten while it was scanned may have given rows of both
+    await this.#checkFile();
+    this.#showView(view.key, rows, view.search, found);
+  }
+
+  /**
+   * Show a view, and let the view and search shown before go
+   * The search's rows are booked once, whether the view shows them or a sort of
+   * them; a sort's own rows are booked with the view.
+   * @param {string} key - The view's key
+   * @param {Uint32Array|null} rows - Its rows in order, null for every row in file order
+   * @param {string} search - Its search text, none for none
+   * @param {Uint32Array|null} found - The rows the search found, in file order; null for none
+   */
+  #showView(key, rows, search, found) {
+    const shown = this.#view;
+    const searched = this.#searched;
+    if (found !== searched.rows) {
+      this.#searched = { text: search, rows: found, release: found ? bookHeap(found.byteLength) : () => {} };
+    }
+    const own = rows !== null && rows !== found;
+    this.#view = { key, rows, release: own ? bookHeap(rows.byteLength) : () => {} };
+    shown.release();
+    if (found !== searched.rows) {
+      searched.release();
+    }
+  }
+
+  /**
+   * Price a read of rows of the file, and book what the open copy then holds
+   * The open copy is opened afresh first if it holds more than it may, and again
+   * if what it holds is why the read doesn't fit.
+   * @param {number} offset - The read's first row in the file
+   * @param {number} rows - Its rows
+   * @param {AbortSignal} [signal] - Gives it up
+   * @param {Function|null} progress - Told how it is getting on, as qvdjs tells it
+   * @param {{offset: number, rows: number, totalRows: number}} page - The page, for a refusal
+   * @returns {Promise<object>} qvdjs's QvdFile, priced for the read
+   */
+  async #pricedFile(offset, rows, signal, progress, page) {
+    // Opened afresh once it holds more than it may, letting go of the values it holds
+    if (this.#used && this.#held > this.#heldBytes) {
+      await this.#closeFile();
+    }
+    for (;;) {
+      const file = await this.#openFile();
+      // The copy has walked every column, and was checked lately for a read as large:
+      // qvdjs's own check of the read guards the heap
+      if (this.#used && rows <= this.#checkedRows && this.#sinceCheck < PAGES_PER_CHECK) {
+        this.#sinceCheck++;
+        return file;
+      }
+      // qvdjs prices the read from the values its rows use and what the copy holds
+      // already, and walks the columns it touches first, which the read then uses
+      const check = await file.check({ offset, limit: rows, signal, onProgress: progress });
+      if (this.#closed) {
+        throw closedError();
+      }
+      const neededBytes = heapNeeded(check);
+      // What this copy holds is booked already, and is part of what the read needs
+      const leftBytes = this.#budget
+        ? this.#budget.factor * this.#budget.bytes - (bookedBytes() - this.#held)
+        : Infinity;
+      if (check.fits !== false && neededBytes <= leftBytes) {
+        this.#book(neededBytes);
+        this.#sinceCheck = 0;
+        this.#checkedRows = rows;
+        return file;
+      }
+      // What the copy holds may be why: opened afresh, it holds nothing
+      if (this.#used) {
+        await this.#closeFile();
+        continue;
+      }
+      // Refused by qvdjs's own budget, what is left is what it allows
+      const allowedBytes = check.fits === false ? Number(check.budget?.allowedBytes) : NaN;
+      const left = Number.isFinite(allowedBytes) ? Math.min(leftBytes, allowedBytes) : leftBytes;
+      throw pageRefusal({ ...page, neededBytes, leftBytes: Math.max(0, left) });
+    }
+  }
+
+  /**
    * Read a page now, at its turn
-   * @param {number} offset - Its first row
+   * @param {number} offset - Its first row in the view
    * @param {number} limit - Its rows
    * @param {AbortSignal} [signal] - Gives it up
    * @param {Function} [onProgress] - Told how it is getting on
-   * @returns {Promise<{rows: Array<Array<*>>, offset: number, totalRows: number}>} As page() gives it
+   * @returns {Promise<{rows: Array<Array<*>>, offset: number, totalRows: number, fileRows: number}>} As page() gives it
    */
   async #pageNow(offset, limit, signal, onProgress) {
     signal?.throwIfAborted();
     if (this.#closed) {
       throw closedError();
     }
-    // qvdjs would read a file rewritten since, by a reload say, under the header read before
-    if (this.header.key && (await fileVersion(this.#realFilePath)) !== this.header.key) {
-      throw new FileChangedError(this.#filePath);
-    }
-    const totalRows = this.header.rowCount;
+    await this.#checkFile();
+    const fileRows = this.header.rowCount;
+    const viewRows = this.#view.rows;
+    const totalRows = viewRows ? viewRows.length : fileRows;
     const rows = Math.max(0, Math.min(offset + limit, totalRows) - offset);
     if (rows === 0) {
-      return { rows: [], offset, totalRows };
+      return { rows: [], offset, totalRows, fileRows };
     }
-    const progress = onProgress ?? null;
-
-    // Opened afresh once it holds more than it may, letting go of the values it holds
-    if (this.#used && this.#held > this.#heldBytes) {
-      await this.#closeFile();
-    }
+    const progress = onProgress
+      ? ({ stage, current, total }) => {
+          if (stage === "symbol-census" && total > 0) {
+            onProgress({ text: `Reading field ${current} of ${total}…`, fraction: current / total });
+          }
+        }
+      : null;
+    const page = { offset, rows, totalRows };
 
     try {
-      let file;
-      for (;;) {
-        file = await this.#openFile();
-        // The copy has walked every column, and was checked lately for a page as large:
-        // qvdjs's own check of the page guards the heap
-        if (this.#used && rows <= this.#checkedRows && this.#sinceCheck < PAGES_PER_CHECK) {
-          this.#sinceCheck++;
-          break;
+      let data;
+      if (!viewRows) {
+        const file = await this.#pricedFile(offset, rows, signal, progress, page);
+        data = (await file.rows({ offset, limit: rows, signal, onProgress: progress })).data;
+      } else {
+        // The page's rows are spread through the file: read near ones together, in file order
+        const wanted = viewRows.subarray(offset, offset + rows);
+        const windows = windowsOf(wanted);
+        const byRow = new Map();
+        // Priced by its first window: qvdjs prices each read itself too, and the next
+        // page's price counts what this one leaves the open copy holding
+        const file = await this.#pricedFile(windows[0].start, windows[0].end - windows[0].start, signal, progress, page);
+        for (const { start, end } of windows) {
+          const read = await file.rows({ offset: start, limit: end - start, signal, onProgress: progress });
+          for (let i = 0; i < read.data.length; i++) {
+            byRow.set(start + i, read.data[i]);
+          }
         }
-        // qvdjs prices the page from the values its rows use and what the copy holds
-        // already, and walks the columns it touches first, which the page then uses
-        const check = await file.check({ offset, limit: rows, signal, onProgress: progress });
-        if (this.#closed) {
-          throw closedError();
-        }
-        const neededBytes = heapNeeded(check);
-        // What this copy holds is booked already, and is part of what the page needs
-        const leftBytes = this.#budget
-          ? this.#budget.factor * this.#budget.bytes - (bookedBytes() - this.#held)
-          : Infinity;
-        if (check.fits !== false && neededBytes <= leftBytes) {
-          this.#book(neededBytes);
-          this.#sinceCheck = 0;
-          this.#checkedRows = rows;
-          break;
-        }
-        // What the copy holds may be why: opened afresh, it holds nothing
-        if (this.#used) {
-          await this.#closeFile();
-          continue;
-        }
-        // Refused by qvdjs's own budget, what is left is what it allows
-        const allowedBytes = check.fits === false ? Number(check.budget?.allowedBytes) : NaN;
-        const left = Number.isFinite(allowedBytes) ? Math.min(leftBytes, allowedBytes) : leftBytes;
-        throw pageRefusal({ offset, rows, totalRows, neededBytes, leftBytes: Math.max(0, left) });
+        data = Array.from(wanted, (row) => byRow.get(row));
       }
-
-      const frame = await file.rows({ offset, limit: rows, signal, onProgress: progress });
       this.#used = true;
-      const data = frame.data;
       for (let i = 0; i < data.length; i++) {
         const row = data[i];
         for (let j = 0; j < row.length; j++) {
           row[j] = toCellValue(row[j]);
         }
       }
-      return { rows: data, offset, totalRows };
+      return { rows: data, offset, totalRows, fileRows };
     } catch (error) {
       // Closed while it ran: qvdjs refuses a closed file's page, and nobody waits for it
       if (this.#closed && error?.name !== "AbortError") {
@@ -360,6 +639,10 @@ export class Pager {
       return;
     }
     this.#closed = true;
+    this.#view.release();
+    this.#view = { key: this.#view.key, rows: null, release: () => {} };
+    this.#searched.release();
+    this.#searched = { text: "", rows: null, release: () => {} };
     await this.#closeFile();
   }
 }

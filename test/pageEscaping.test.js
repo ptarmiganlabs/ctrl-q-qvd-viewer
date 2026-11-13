@@ -530,7 +530,7 @@ suite("Page Escaping Test Suite", () => {
     assert.strictEqual(typeof headerKey, "string");
     assert.deepStrictEqual(
       JSON.parse(JSON.stringify(page.posted.filter((message) => message.command === "page"))),
-      [{ command: "page", requestId: 1, offset: 0, limit: 100, headerKey }]
+      [{ command: "page", requestId: 1, offset: 0, limit: 100, search: "", sort: null, headerKey }]
     );
     const answers = await answerPages(page, crafted);
     assert.strictEqual(answers.at(-1).command, "pageRows", "the rows are sent");
