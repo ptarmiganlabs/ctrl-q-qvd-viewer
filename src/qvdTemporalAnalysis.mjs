@@ -7,7 +7,6 @@
  */
 
 import { calculateDateRange } from "./temporal/dateRange.mjs";
-import { calculateTemporalDistribution } from "./temporal/distribution.mjs";
 import { detectDateGaps } from "./temporal/gapDetection.mjs";
 import { analyzeTimeSeries } from "./temporal/trendAnalysis.mjs";
 import { summarizeRows } from "./fieldSummary.mjs";
@@ -17,12 +16,13 @@ export { isDateField, isDateSample } from "./temporal/dateDetection.mjs";
 
 /**
  * The temporal analysis of a date field, from its summary
- * @param {object} dates - The summary's dates: each distinct date's time and rows, the
- *   valid, invalid and null rows, and the first values in row order: see FieldSummarizer.summary()
+ * @param {object} dates - The summary's dates: each distinct date's time and rows, their
+ *   distribution, the valid, invalid and null rows, and the first values in row order:
+ *   see FieldSummarizer.summary()
  * @returns {Object} Temporal analysis results
  */
 export function temporalFrom(dates) {
-  const { validCount, invalidCount, nullCount, totalRows, times, rows, firstValues } = dates;
+  const { validCount, invalidCount, nullCount, totalRows, times, rows, distribution, firstValues } = dates;
 
   // Check if field is predominantly dates
   // Use 60% threshold to allow for some invalid entries while still
@@ -43,8 +43,8 @@ export function temporalFrom(dates) {
     // Date range
     range: calculateDateRange(times, firstValues),
 
-    // Temporal distribution
-    distribution: calculateTemporalDistribution(times, rows),
+    // Temporal distribution, by year, month, day of week and quarter
+    distribution,
 
     // Gap detection
     gaps: detectDateGaps(times, validCount),

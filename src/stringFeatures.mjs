@@ -94,6 +94,13 @@ const ALL_FORMATS = (1 << FORMATS.length) - 1;
 // Samples kept per format
 const SAMPLES = 5;
 
+// Which UTF-16 code units /\s/ matches, as this JavaScript engine's own regular
+// expressions say: a character's whitespace is looked up rather than tested
+const WHITESPACE = new Uint8Array(65536);
+for (let unit = 0; unit < 65536; unit++) {
+  WHITESPACE[unit] = /\s/.test(String.fromCharCode(unit)) ? 1 : 0;
+}
+
 /**
  * Most distinct prefixes, or suffixes, counted at once. A field of millions of
  * distinct values has millions of prefixes, too many to count each. Past this,
@@ -115,11 +122,33 @@ function addAffix(counts, key, count) {
   if (counts.size <= PREFIXES_COUNTED) {
     return false;
   }
+  // The least frequent go, as few counts as let PREFIXES_KEPT stay: found from how
+  // many have each count up to 64, which is where most of them are
+  const excess = counts.size - PREFIXES_KEPT;
+  const tally = new Float64Array(66);
+  for (const seen of counts.values()) {
+    tally[Math.min(seen, 65)]++;
+  }
+  let least = 0;
+  let going = 0;
+  while (least < 64 && going < excess) {
+    least++;
+    going += tally[least];
+  }
+  if (going >= excess) {
+    for (const [affix, seen] of counts) {
+      if (seen <= least) {
+        counts.delete(affix);
+      }
+    }
+    return true;
+  }
+  // So many are that frequent that their counts are sorted
   const sorted = Float64Array.from(counts.values()).sort();
-  const least = sorted[sorted.length - PREFIXES_KEPT];
+  const kept = sorted[sorted.length - PREFIXES_KEPT];
   let gone = 0;
   for (const [affix, seen] of counts) {
-    if (seen < least) {
+    if (seen < kept) {
       counts.delete(affix);
       gone++;
     }
@@ -127,7 +156,7 @@ function addAffix(counts, key, count) {
   // Where most share the count kept, those go too, or this would run on each new one
   if (gone === 0) {
     for (const [affix, seen] of counts) {
-      if (seen <= least) {
+      if (seen <= kept) {
         counts.delete(affix);
       }
     }
@@ -291,21 +320,30 @@ export class StringStats {
     if (value.length > 0 && /\s$/.test(value)) {
       this.#trailingWhitespace += count;
     }
-    for (const char of value) {
-      if (/[a-zA-Z0-9]/.test(char)) {
+    // Each character, as for...of takes them: a surrogate pair is one, a lone surrogate
+    // one too. Only ASCII letters and digits are alphanumeric, and every character
+    // outside the Basic Multilingual Plane is special, so a pair's first unit says it
+    for (let i = 0; i < value.length; i++) {
+      const unit = value.charCodeAt(i);
+      if (unit >= 48 && unit <= 57) {
         this.#alphanumeric += count;
-        if (/[a-zA-Z]/.test(char)) {
-          this.#alphabetic += count;
-        } else {
-          this.#numeric += count;
-        }
-      } else if (/\s/.test(char)) {
+        this.#numeric += count;
+      } else if ((unit >= 65 && unit <= 90) || (unit >= 97 && unit <= 122)) {
+        this.#alphanumeric += count;
+        this.#alphabetic += count;
+      } else if (WHITESPACE[unit] === 1) {
         this.#whitespace += count;
       } else {
         this.#special += count;
+        if (unit >= 0xd800 && unit <= 0xdbff && i + 1 < value.length) {
+          const next = value.charCodeAt(i + 1);
+          if (next >= 0xdc00 && next <= 0xdfff) {
+            i++;
+          }
+        }
       }
       // Check for non-ASCII characters
-      if (char.charCodeAt(0) > 127) {
+      if (unit > 127) {
         this.#nonAscii += count;
       }
     }

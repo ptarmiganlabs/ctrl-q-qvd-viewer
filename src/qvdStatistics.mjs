@@ -9,13 +9,11 @@
 
 import { isBlank, toCellValue } from "./cellValue.mjs";
 import { summarizeRows } from "./fieldSummary.mjs";
+import { drain, histogramOf } from "./sortedNumbers.mjs";
 import { sampleOf } from "./profileSample.mjs";
 
-/**
- * Most modes a field's statistics list. Where every value occurs twice, each is a
- * mode, and listing them all would make the results as large as the field.
- */
-export const MAX_MODES = 1000;
+// Most modes a field's statistics list
+export { MAX_MODES } from "./fieldSummary.mjs";
 
 /**
  * Check if a value is numeric: a number, or text the reader reads as one, so that a
@@ -72,66 +70,6 @@ export function isNumericField(data, fieldName, threshold = 0.9) {
 /**
  * Sort a field's numeric values into up to 20 bins of equal width, for the
  * profiling histogram
- * @param {ArrayLike<number>} values - The field's distinct numbers, in ascending order
- * @param {ArrayLike<number>} rows - The rows holding each
- * @param {number} count - Rows holding a number
- * @param {number} totalCount - Rows with a value, numeric or not: the percentages are shares of these
- * @returns {{labels: string[], counts: number[], rows: Array<{from: string, to: string, count: number, percentage: string}>}|null}
- *   The chart's labels and bar heights and the histogram table's rows, or null when there are no values
- */
-function histogramOf(values, rows, count, totalCount) {
-  if (count === 0) {
-    return null;
-  }
-
-  const percentage = (binCount) =>
-    Number.isFinite(totalCount) && totalCount > 0
-      ? ((binCount / totalCount) * 100).toFixed(2)
-      : "0.00";
-  const min = values[0];
-  const max = values[values.length - 1];
-
-  // A single distinct value gets a single bin, labelled with the value itself
-  if (min === max) {
-    const value = String(min);
-    return {
-      labels: [value],
-      counts: [count],
-      rows: [{ from: value, to: value, count, percentage: percentage(count) }],
-    };
-  }
-
-  const binCount = Math.min(20, Math.ceil(Math.sqrt(count)));
-  const binWidth = (max - min) / binCount;
-  // Enough decimals to tell neighbouring bin edges apart: one past binWidth's first significant digit
-  const decimals = Math.min(
-    20,
-    Math.max(1, 1 - Math.floor(Math.log10(binWidth)))
-  );
-
-  const counts = Array(binCount).fill(0);
-  for (let i = 0; i < values.length; i++) {
-    // The maximum falls on the last bin's upper edge
-    counts[Math.min(binCount - 1, Math.floor((values[i] - min) / binWidth))] += rows[i];
-  }
-
-  const binRows = counts.map((binRowCount, i) => ({
-    from: (min + i * binWidth).toFixed(decimals),
-    to: (min + (i + 1) * binWidth).toFixed(decimals),
-    count: binRowCount,
-    percentage: percentage(binRowCount),
-  }));
-
-  return {
-    labels: binRows.map((row) => `${row.from} – ${row.to}`),
-    counts,
-    rows: binRows,
-  };
-}
-
-/**
- * Sort a field's numeric values into up to 20 bins of equal width, for the
- * profiling histogram
  * @param {number[]} sortedValues - Every numeric value of the field, in ascending order
  * @param {number} totalCount - Rows with a value, numeric or not: the percentages are shares of these
  * @returns {{labels: string[], counts: number[], rows: Array<{from: string, to: string, count: number, percentage: string}>}|null}
@@ -151,7 +89,7 @@ export function calculateHistogram(sortedValues, totalCount) {
       rows.push(1);
     }
   }
-  return histogramOf(values, rows, sortedValues.length, totalCount);
+  return drain(histogramOf(values, rows, sortedValues.length, totalCount));
 }
 
 /**
@@ -170,29 +108,13 @@ export function statisticsFrom(numbers) {
     };
   }
 
-  const { values, rows, zeroSigns } = numbers;
-  // The row each distinct number's rows end at, in sorted order
-  const ends = new Float64Array(values.length);
-  let end = 0;
-  for (let i = 0; i < values.length; i++) {
-    end += rows[i];
-    ends[i] = end;
-  }
-  // The number at a position of the sorted numbers, rows that hold the same in row order
+  const { positions, zeroSigns } = numbers;
+  // The number at a position of every row's number in sorted order, rows that hold
+  // the same in row order: -0 or 0 as their rows have them
   const at = (position) => {
-    let low = 0;
-    let high = ends.length - 1;
-    while (low < high) {
-      const middle = (low + high) >>> 1;
-      if (ends[middle] > position) {
-        high = middle;
-      } else {
-        low = middle + 1;
-      }
-    }
-    const value = values[low];
+    const { value, start } = positions.get(position);
     if (value === 0 && zeroSigns) {
-      const negative = zeroSigns.get(position - (ends[low] - rows[low]));
+      const negative = zeroSigns.get(position - start);
       if (negative !== undefined) {
         return negative ? -0 : 0;
       }
@@ -218,21 +140,6 @@ export function statisticsFrom(numbers) {
   const min = at(0);
   const max = at(count - 1);
   const median = percentile(0.5);
-
-  // Modes: the most frequent numbers, unless every number is as frequent as one row
-  let maxFreq = 0;
-  for (let i = 0; i < rows.length; i++) {
-    maxFreq = Math.max(maxFreq, rows[i]);
-  }
-  const modes = [];
-  if (maxFreq > 1) {
-    for (let i = 0; i < values.length; i++) {
-      if (rows[i] === maxFreq) {
-        // A Map of the numbers, as the rows count them, holds -0 as 0
-        modes.push(values[i] === 0 ? 0 : values[i]);
-      }
-    }
-  }
 
   // Spread measures
   const range = max - min;
@@ -260,9 +167,9 @@ export function statisticsFrom(numbers) {
       mean,
       median,
       // The smallest modes, if there are more than can be listed
-      mode: modes.slice(0, MAX_MODES),
+      mode: numbers.modes,
       // How many modes there are, listed or not
-      modeCount: modes.length,
+      modeCount: numbers.modeCount,
       sum: numbers.sum,
       count,
     },
@@ -286,7 +193,7 @@ export function statisticsFrom(numbers) {
     },
 
     // Histogram bins over every numeric value, for the profiling chart and table
-    histogram: histogramOf(values, rows, count, count + nonNumericCount),
+    histogram: numbers.histogram,
 
     // Data quality
     quality: {

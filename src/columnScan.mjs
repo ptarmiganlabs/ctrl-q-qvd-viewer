@@ -49,15 +49,16 @@ export const SCAN_PEAK_BYTES = SCAN_HELD_BYTES + FRESH_VALUES_PER_CHUNK * BYTES_
  * Rows a chunk of a field holds: fewer where most rows hold a value of their own
  * @param {number} symbols - The field's distinct values
  * @param {number} totalRows - Rows in the file
+ * @param {number} [freshValues] - New values a chunk decodes at most, FRESH_VALUES_PER_CHUNK unless said
  * @returns {number} Rows
  */
-export function chunkRowsFor(symbols, totalRows) {
+export function chunkRowsFor(symbols, totalRows, freshValues = FRESH_VALUES_PER_CHUNK) {
   // Rows per new value, at worst: a field of distinct values has one in each row
   const freshPerRow = Math.min(1, Math.max(0, symbols) / Math.max(1, totalRows));
   if (freshPerRow === 0) {
     return CHUNK_ROWS;
   }
-  return Math.max(FRESH_VALUES_PER_CHUNK, Math.min(CHUNK_ROWS, Math.floor(FRESH_VALUES_PER_CHUNK / freshPerRow)));
+  return Math.max(freshValues, Math.min(CHUNK_ROWS, Math.floor(freshValues / freshPerRow)));
 }
 
 /**
@@ -98,10 +99,11 @@ function heldBytesOf(value) {
  * @param {string} options.field - The field's name
  * @param {number} options.symbols - Its distinct values, as its header says
  * @param {number} options.totalRows - Rows in the file
- * @param {function({codes: Int32Array, symbols: ReadonlyArray<*>, offset: number}): void} options.onChunk -
+ * @param {function({codes: Int32Array, symbols: ReadonlyArray<*>, offset: number}): (void|Promise<void>)} options.onChunk -
  *   Takes each chunk, in file order: codes, one per row of the chunk, a negative
  *   one for null; symbols, the values the codes stand for, indexed by code; offset,
- *   the chunk's first row. The arrays are qvdjs's, and are reused for the next chunk.
+ *   the chunk's first row. The arrays are qvdjs's, and are reused for the next chunk,
+ *   once a promise onChunk returns has settled.
  * @param {function(number): void} [options.onRows] - Told the rows scanned so far, after each chunk
  * @param {AbortSignal} [options.signal] - Gives the scan up between chunks, and within one
  * @param {number} [options.chunkRows] - Rows a chunk holds, as chunkRowsFor() says unless a test says otherwise
@@ -182,7 +184,8 @@ export function openColumnScanner({ filePath, allowedDir, heldBytes = SCAN_HELD_
               held += heldBytesOf(values[code]);
             }
           }
-          onChunk({ codes, symbols: values, offset });
+          // A chunk may be taken a slice at a time: the arrays are reused for the next
+          await onChunk({ codes, symbols: values, offset });
           onRows?.(offset + codes.length);
           // Other extensions run between chunks
           await new Promise((resolve) => setImmediate(resolve));

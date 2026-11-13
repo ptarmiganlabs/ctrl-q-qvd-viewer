@@ -2,6 +2,9 @@ import { isBlank, toCellValue } from "./cellValue.mjs";
 import { parseDate } from "./temporal/dateDetection.mjs";
 import { sampleStep } from "./profileSample.mjs";
 import { StringStats } from "./stringFeatures.mjs";
+import { STEP, atPositions, drain, groupNumbers, histogramOf, modesOf } from "./sortedNumbers.mjs";
+import { DateDistribution } from "./temporal/distribution.mjs";
+import { nextTurn } from "./memoryGuard.mjs";
 
 /**
  * What profiling needs from one field, read a chunk of rows at a time
@@ -22,6 +25,9 @@ import { StringStats } from "./stringFeatures.mjs";
  *    found, in the order the rows come in, and gives format samples.
  * 3. For a numeric field, the skewness and kurtosis, about the standard deviation
  *    pass 2 found, in the order the rows come in.
+ *
+ * The work between passes, such as sorting tens of millions of distinct numbers,
+ * is done in steps that let the event loop run between them (sortedNumbers.mjs).
  *
  * Values that show the same text are one value to the distribution, as they are
  * to a Map of the rows' texts: a dual and a number, "1.50" and 1.5. They are told
@@ -44,6 +50,18 @@ const GROUP_SEEN = 2;
 // Values in row order kept for the date format, as detectDateFormat() looks at them
 const FIRST_VALUES = 100;
 
+// A chunk's work runs this long, at most, before it lets the event loop run: a
+// value's first row costs from a microsecond to tens, for a text's analysis
+const SLICE_MS = 50;
+// First rows of values between looks at the clock
+const SIGHTS_PER_LOOK = 256;
+
+/**
+ * Most modes a field's statistics list. Where every value occurs twice, each is a
+ * mode, and listing them all would make the results as large as the field.
+ */
+export const MAX_MODES = 1000;
+
 /**
  * Most entries the duplicates list
  */
@@ -56,18 +74,22 @@ const SEEDS = [0x9747b28c, 0x5bd1e995];
 const SEED_STEP = 0x2545f491;
 
 /**
- * Heap profiling holds per distinct value of the field it profiles, at most: its
- * rows, tag, number, text hash and its slot in the hash table, the date and the
- * sort of the numbers or dates. About 1.5 times what was measured.
+ * Memory profiling holds per distinct value of the field it profiles, at most, in
+ * typed arrays, which live outside the heap: its rows, tag, number, text hash and
+ * its slot in the hash table, its date, and the sort of the numbers or dates. About
+ * 1.5 times the most measured, 57 bytes, on a field of 50 million distinct numbers,
+ * qvdjs's own arrays for the field included.
  */
-export const BYTES_PER_DISTINCT_VALUE = 64;
+export const BYTES_PER_DISTINCT_VALUE = 88;
 
 /**
- * Heap profiling holds whatever the field's distinct values: the samples, the
- * most frequent values and their texts, and string analysis's lengths and
- * prefixes, which stop at PREFIXES_COUNTED in stringFeatures.mjs
+ * Heap profiling holds at most, whatever the field: what its scan's open file holds,
+ * up to PROFILE_HELD_BYTES by the scan's count, which counts a dual's value short;
+ * the samples, the most frequent values and their texts; and string analysis's
+ * lengths and prefixes, which stop at PREFIXES_COUNTED. About 1.5 times the most
+ * measured, 959 MiB, on a text field of 6.25 million distinct values.
  */
-export const FIXED_BYTES = 192 * 1024 * 1024;
+export const HEAP_BYTES = 1.4 * 1024 * 1024 * 1024;
 
 /**
  * A 32-bit hash of a text: MurmurHash3's mixing over its UTF-16 code units
@@ -94,63 +116,37 @@ export function hash32(text, seed) {
 }
 
 /**
- * The index of a number in ascending distinct numbers, which hold it. -0 and 0 are one.
- * @param {Float64Array} sorted - The numbers
- * @param {number} value - The number
- * @returns {number} Its index
- */
-function indexOfNumber(sorted, value) {
-  let low = 0;
-  let high = sorted.length - 1;
-  while (low < high) {
-    const middle = (low + high) >>> 1;
-    if (sorted[middle] < value) {
-      low = middle + 1;
-    } else {
-      high = middle;
-    }
-  }
-  return low;
-}
-
-/**
- * The distinct numbers some codes stand for, in ascending order, and the rows of each
- * -0 and 0 are one number, as they are to a sort, and to a Map of numbers.
+ * Group codes by the number each stands for, a slice at a time: see groupNumbers()
  * @param {number} codeCount - Codes there are
  * @param {function(number): boolean} takes - Whether a code's number is one of them
  * @param {function(number): number} numberOf - A code's number
  * @param {ArrayLike<number>} counts - Each code's rows
- * @returns {{values: Float64Array, rows: Float64Array}} The numbers, and each one's rows
+ * @param {Uint32Array|null} groupOf - Filled with each code's group, unless null
+ * @returns {Generator<void, {values: Float64Array, rows: Uint32Array}>} The steps,
+ *   returning the distinct numbers, ascending, and each one's rows
  */
-function distinctNumbers(codeCount, takes, numberOf, counts) {
+function* numberGroups(codeCount, takes, numberOf, counts, groupOf) {
   let n = 0;
   for (let code = 0; code < codeCount; code++) {
     if (takes(code)) {
       n++;
     }
+    if ((code & (STEP - 1)) === STEP - 1) {
+      yield;
+    }
   }
-  const sorted = new Float64Array(n);
-  let next = 0;
-  for (let code = 0; code < codeCount; code++) {
+  const numbers = new Float64Array(n);
+  const codes = new Uint32Array(n);
+  for (let code = 0, next = 0; code < codeCount; code++) {
     if (takes(code)) {
-      sorted[next++] = numberOf(code);
+      numbers[next] = numberOf(code);
+      codes[next++] = code;
+    }
+    if ((code & (STEP - 1)) === STEP - 1) {
+      yield;
     }
   }
-  sorted.sort();
-  let distinct = 0;
-  for (let i = 0; i < n; i++) {
-    if (distinct === 0 || sorted[i] !== sorted[distinct - 1]) {
-      sorted[distinct++] = sorted[i];
-    }
-  }
-  const values = sorted.slice(0, distinct);
-  const rows = new Float64Array(distinct);
-  for (let code = 0; code < codeCount; code++) {
-    if (takes(code)) {
-      rows[indexOfNumber(values, numberOf(code))] += counts[code];
-    }
-  }
-  return { values, rows };
+  return yield* groupNumbers(numbers, codes, counts, groupOf);
 }
 
 /**
@@ -265,6 +261,8 @@ export class FieldSummarizer {
   #seeds;
   #hashText;
   #pass = 0;
+  #sights = 0;
+  #sliceStart = 0;
 
   // Per code
   #counts;
@@ -296,8 +294,9 @@ export class FieldSummarizer {
   #negativeZeros = 0;
   #positiveZeros = 0;
 
-  // The distinct numbers
+  // The distinct numbers, and for a field of numbers alone each code's
   #distinct = null;
+  #groupOf = null;
   #numberSeen = null;
 
   // Pass 2: the distinct values, in the order they first occur
@@ -316,6 +315,9 @@ export class FieldSummarizer {
   #stdDev = null;
   #skewSum = 0;
   #kurtSum = 0;
+  #positions = null;
+  #modes = null;
+  #histogram = null;
   #zeroRanks = null;
   #zeroSigns = null;
   #zeroRow = 0;
@@ -325,6 +327,8 @@ export class FieldSummarizer {
   #times = null;
   #validDates = 0;
   #invalidDates = 0;
+  #dateDistribution = null;
+  #distinctTimes = null;
 
   // Strings
   #strings = null;
@@ -367,14 +371,36 @@ export class FieldSummarizer {
   }
 
   /**
-   * Move on to the next pass
+   * Move on to the next pass, at once
    * @returns {number} The pass to read the rows for, from 1, or 0 when there is none
    */
   nextPass() {
+    return drain(this.#advance());
+  }
+
+  /**
+   * Move on to the next pass, letting the event loop run between the steps of the
+   * work between passes
+   * @param {AbortSignal} [signal] - Gives it up between steps
+   * @returns {Promise<number>} The pass to read the rows for, from 1, or 0 when there is none
+   */
+  async nextPassAsync(signal) {
+    const steps = this.#advance();
+    for (;;) {
+      const step = steps.next();
+      if (step.done) {
+        return step.value;
+      }
+      await nextTurn();
+      signal?.throwIfAborted();
+    }
+  }
+
+  *#advance() {
     if (this.#pass === 1) {
-      this.#endPass1();
+      yield* this.#endPass1();
     } else if (this.#pass === 2) {
-      this.#endPass2();
+      yield* this.#endPass2();
     }
     if (this.#pass === 0) {
       this.#pass = 1;
@@ -412,16 +438,47 @@ export class FieldSummarizer {
    * @param {number} offset - The chunk's first row
    */
   take(codes, symbols, offset) {
+    drain(this.#takeSteps(codes, symbols, offset));
+  }
+
+  /**
+   * As take(), letting the event loop run every SLICE_MS or so, as values' first
+   * rows take their time
+   * @param {ArrayLike<number>} codes - One code per row, negative for null
+   * @param {ArrayLike<*>} symbols - The values the codes stand for, by code
+   * @param {number} offset - The chunk's first row
+   * @param {AbortSignal} [signal] - Gives the chunk up between slices
+   * @returns {Promise<void>} Resolves once the chunk is taken
+   */
+  async takeAsync(codes, symbols, offset, signal) {
+    const steps = this.#takeSteps(codes, symbols, offset);
+    while (!steps.next().done) {
+      await nextTurn();
+      signal?.throwIfAborted();
+    }
+  }
+
+  *#takeSteps(codes, symbols, offset) {
+    this.#sliceStart = performance.now();
     if (this.#pass === 1) {
-      this.#take1(codes, symbols, offset);
+      yield* this.#take1(codes, symbols, offset);
     } else if (this.#pass === 2) {
-      this.#take2(codes, symbols);
+      yield* this.#take2(codes, symbols);
     } else if (this.#pass === 3) {
       this.#take3(codes);
     }
   }
 
-  #take1(codes, symbols, offset) {
+  // Whether a slice of a chunk's work has run long enough to let the event loop run
+  #sliceDone() {
+    if (++this.#sights % SIGHTS_PER_LOOK !== 0 || performance.now() - this.#sliceStart < SLICE_MS) {
+      return false;
+    }
+    this.#sliceStart = performance.now();
+    return true;
+  }
+
+  *#take1(codes, symbols, offset) {
     const counts = this.#counts;
     const tags = this.#tags;
     const step = this.#step;
@@ -434,6 +491,9 @@ export class FieldSummarizer {
         }
         if (counts[code]++ === 0) {
           this.#firstSight(code, symbols[code]);
+          if (this.#sliceDone()) {
+            yield;
+          }
         }
         tag = tags[code];
       }
@@ -536,7 +596,7 @@ export class FieldSummarizer {
     }
   }
 
-  #endPass1() {
+  *#endPass1() {
     const kinds = this.#kinds ?? this.#decideKinds?.(this.#sample) ?? { numeric: false, date: false, string: false };
     this.#kinds = kinds;
 
@@ -551,18 +611,20 @@ export class FieldSummarizer {
 
     // The distinct numbers: the distribution's values when the field holds nothing
     // else, and statistics' when it is numeric
-    const numberGroups = !this.#hashing && this.#valueCodes > 0;
+    const byNumber = !this.#hashing && this.#valueCodes > 0;
     const counts = this.#counts;
     const tags = this.#tags;
-    if (numberGroups || kinds.numeric) {
-      this.#distinct = distinctNumbers(
+    if (byNumber || kinds.numeric) {
+      this.#groupOf = byNumber ? new Uint32Array(this.#symbolCount) : null;
+      this.#distinct = yield* numberGroups(
         this.#symbolCount,
         (code) => counts[code] > 0 && (tags[code] & NUMERIC) !== 0,
         (code) => this.#numbers[code],
-        counts
+        counts,
+        this.#groupOf
       );
     }
-    if (numberGroups) {
+    if (byNumber) {
       this.#numberSeen = new Uint8Array(this.#distinct.values.length);
     }
 
@@ -572,12 +634,13 @@ export class FieldSummarizer {
     this.#statistics = kinds.numeric && nonNull > 0 && this.#numericRows / nonNull >= 0.9;
     if (this.#statistics) {
       this.#mean = this.#sum / this.#numericRows;
-      this.#planZeroSigns();
+      yield* this.#readSorted(nonNull);
     }
 
     if (kinds.date) {
       this.#dates = true;
       this.#times = new Float64Array(this.#symbolCount);
+      this.#dateDistribution = new DateDistribution();
     }
     if (kinds.string) {
       this.#strings = new StringStats();
@@ -587,37 +650,37 @@ export class FieldSummarizer {
   }
 
   /**
+   * What statistics read from the sorted numbers: the numbers at the positions min,
+   * max and the percentiles read, the modes and the histogram
    * A sort keeps rows that compare equal in row order, so where a field holds both
-   * -0 and 0, which of them a position of the sorted numbers holds is the row
-   * order's. Pass 2 finds it for the positions statistics read.
+   * -0 and 0, which of them a position holds is the row order's. Pass 2 finds it
+   * for the positions in the zeros' rows.
+   * @param {number} nonNull - Rows with a value, numeric or not
    */
-  #planZeroSigns() {
-    if (this.#negativeZeros === 0 || this.#positiveZeros === 0) {
-      return;
-    }
+  *#readSorted(nonNull) {
     const { values, rows } = this.#distinct;
-    const zero = indexOfNumber(values, 0);
-    let start = 0;
-    for (let i = 0; i < zero; i++) {
-      start += rows[i];
-    }
     const n = this.#numericRows;
-    const positions = new Set([0, n - 1]);
+    const positions = [0, n - 1];
     for (const p of [0.1, 0.5, 0.9]) {
       const position = (n - 1) * p;
-      positions.add(Math.floor(position));
-      positions.add(Math.ceil(position));
+      positions.push(Math.floor(position), Math.ceil(position));
     }
-    this.#zeroRanks = new Set();
-    for (const position of positions) {
-      if (position >= start && position < start + rows[zero]) {
-        this.#zeroRanks.add(position - start);
+    this.#positions = yield* atPositions(values, rows, positions);
+    this.#modes = yield* modesOf(values, rows, MAX_MODES);
+    this.#histogram = yield* histogramOf(values, rows, n, nonNull);
+
+    if (this.#negativeZeros > 0 && this.#positiveZeros > 0) {
+      this.#zeroRanks = new Set();
+      for (const [position, { value, start }] of this.#positions) {
+        if (value === 0) {
+          this.#zeroRanks.add(position - start);
+        }
       }
+      this.#zeroSigns = new Map();
     }
-    this.#zeroSigns = new Map();
   }
 
-  #take2(codes, symbols) {
+  *#take2(codes, symbols) {
     const marks = this.#marks;
     const tags = this.#tags;
     const strings = this.#strings;
@@ -629,6 +692,9 @@ export class FieldSummarizer {
       if ((marks[code] & CODE_SEEN) === 0) {
         marks[code] |= CODE_SEEN;
         this.#firstSight2(code, symbols[code]);
+        if (this.#sliceDone()) {
+          yield;
+        }
       }
       if (strings?.sampling) {
         const formats = this.#formats[code];
@@ -662,8 +728,10 @@ export class FieldSummarizer {
     if (this.#dates) {
       const date = parseDate(value);
       if (date !== null) {
-        this.#times[code] = date.getTime();
+        const time = date.getTime();
+        this.#times[code] = time;
         this.#validDates += count;
+        this.#dateDistribution.add(time, count);
       } else {
         this.#times[code] = NaN;
         this.#invalidDates += count;
@@ -688,7 +756,7 @@ export class FieldSummarizer {
         this.#collided = true;
       }
     } else {
-      const index = indexOfNumber(this.#distinct.values, value);
+      const index = this.#groupOf[code];
       if (this.#numberSeen[index] === 0) {
         this.#numberSeen[index] = 1;
         this.#takeGroup(this.#distinct.rows[index], String(value));
@@ -711,7 +779,7 @@ export class FieldSummarizer {
     }
   }
 
-  #endPass2() {
+  *#endPass2() {
     if (this.#collided) {
       return;
     }
@@ -720,6 +788,18 @@ export class FieldSummarizer {
       // Sample variance, n - 1
       this.#variance = n === 1 ? 0 : this.#varianceSum / (n - 1);
       this.#stdDev = Math.sqrt(this.#variance);
+    }
+    if (this.#dates) {
+      const counts = this.#counts;
+      const tags = this.#tags;
+      const times = this.#times;
+      this.#distinctTimes = yield* numberGroups(
+        this.#symbolCount,
+        (code) => counts[code] > 0 && (tags[code] & VALUE) !== 0 && Number.isFinite(times[code]),
+        (code) => times[code],
+        counts,
+        null
+      );
     }
   }
 
@@ -748,8 +828,6 @@ export class FieldSummarizer {
       ? this.#valueCodes - this.#mergedInto.size
       : (this.#distinct?.values.length ?? 0);
     const kinds = this.#kinds;
-    const counts = this.#counts;
-    const tags = this.#tags;
 
     let numbers = null;
     if (kinds.numeric) {
@@ -769,29 +847,25 @@ export class FieldSummarizer {
           stdDev: this.#stdDev,
           skewSum: this.#skewSum,
           kurtSum: this.#kurtSum,
-          values: this.#distinct.values,
-          rows: this.#distinct.rows,
+          positions: this.#positions,
           zeroSigns: this.#zeroSigns,
+          modes: this.#modes.modes,
+          modeCount: this.#modes.modeCount,
+          histogram: this.#histogram,
         });
       }
     }
 
     let dates = null;
     if (kinds.date) {
-      const times = this.#times;
-      const distinct = distinctNumbers(
-        this.#symbolCount,
-        (code) => counts[code] > 0 && (tags[code] & VALUE) !== 0 && Number.isFinite(times[code]),
-        (code) => times[code],
-        counts
-      );
       dates = {
         validCount: this.#validDates,
         invalidCount: this.#invalidDates,
         nullCount: this.#nullRows + this.#emptyRows,
         totalRows,
-        times: distinct.values,
-        rows: distinct.rows,
+        times: this.#distinctTimes.values,
+        rows: this.#distinctTimes.rows,
+        distribution: this.#dateDistribution.result(),
         firstValues: this.#firstValues,
       };
     }
@@ -854,16 +928,18 @@ export function summarize(options, readPass) {
 }
 
 /**
- * As summarize(), for passes that read the rows asynchronously
+ * As summarize(), for passes that read the rows asynchronously. The work between
+ * passes lets the event loop run as it goes.
  * @param {object} options - FieldSummarizer's options
  * @param {function(FieldSummarizer, number): Promise<void>} readPass - As for summarize()
+ * @param {AbortSignal} [signal] - Gives the work between passes up
  * @returns {Promise<FieldSummary>} The summary
  */
-export async function summarizeAsync(options, readPass) {
+export async function summarizeAsync(options, readPass, signal) {
   let summarizer = new FieldSummarizer(options);
   for (;;) {
     let pass;
-    while ((pass = summarizer.nextPass()) !== 0) {
+    while ((pass = await summarizer.nextPassAsync(signal)) !== 0) {
       await readPass(summarizer, pass);
     }
     if (!summarizer.collided) {

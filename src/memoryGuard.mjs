@@ -565,10 +565,10 @@ export function describePageRefusal({ offset, rows, neededBytes, leftBytes }) {
  *   needs; leftBytes: what is left for it
  * @returns {string} The message
  */
-export function describeViewRefusal({ what, neededBytes, leftBytes }) {
+export function describeViewRefusal({ what, neededBytes, leftBytes }, { onComputer = false } = {}) {
   return (
-    `${what} needs about ${size(neededBytes)} of memory, and about ${size(leftBytes)} is left in ` +
-    "what VS Code gives its extensions."
+    `${what} needs about ${size(neededBytes)} of memory, and about ${size(leftBytes)} is left ` +
+    `${onComputer ? "on this computer" : "in what VS Code gives its extensions"}.`
   );
 }
 
