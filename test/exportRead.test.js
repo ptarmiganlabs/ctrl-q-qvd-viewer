@@ -158,8 +158,9 @@ suite("Export Read Test Suite", () => {
     }
   });
 
-  test("A SQLite export too large for the computer's memory is refused, saying so", async () => {
-    // The computer has 1 MiB more than the extension host uses: 20,000 rows of text need more
+  test("A SQLite export writes its database to the file, and isn't priced against the computer's memory", async () => {
+    // The computer has 1 MiB more than the extension host uses. A database built in
+    // memory from 20,000 rows of text would need more, and was refused while sql.js built it
     const os = (await import("os")).default;
     const { totalmem } = os;
     os.totalmem = () => process.memoryUsage().rss + 2 ** 20;
@@ -173,9 +174,8 @@ suite("Export Read Test Suite", () => {
     } finally {
       os.totalmem = totalmem;
     }
-    assert.deepStrictEqual(result.messages, []);
-    assert.strictEqual(result.errors.length, 1);
-    assert.match(result.errors[0].message, /^Export failed: Exporting 20,000 rows to SQLite needs about \d+ MiB of memory, and about 1 MiB is left on this computer\. Every other format writes as it goes, and needs much less\.$/);
+    assert.deepStrictEqual(result.errors, []);
+    assert.deepStrictEqual(result.messages, [`Data exported to ${result.filePath}`]);
   });
 
   test("An export refused for the time zone in the settings offers to open them", async () => {

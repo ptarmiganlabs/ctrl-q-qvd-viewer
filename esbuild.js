@@ -32,28 +32,6 @@ const esbuildProblemMatcherPlugin = {
 };
 
 /**
- * Copy sql.js's WebAssembly file next to the bundle, where the SQLite exporter
- * reads it from: node_modules is not packaged with the extension.
- * @type {import('esbuild').Plugin}
- */
-const copySqlWasmPlugin = {
-  name: "copy-sql-wasm",
-
-  setup(build) {
-    build.onEnd(() => {
-      const { outdir, outfile } = build.initialOptions;
-      const targetDir = outdir ?? path.dirname(outfile);
-      fs.mkdirSync(targetDir, { recursive: true });
-      // sql.js keeps the file next to its main script
-      fs.copyFileSync(
-        path.join(path.dirname(require.resolve("sql.js")), "sql-wasm.wasm"),
-        path.join(targetDir, "sql-wasm.wasm")
-      );
-    });
-  },
-};
-
-/**
  * Copy the libraries the webview inlines, Tabulator and Chart.js, into
  * dist/webview, where the webview templates read them from. Taking them from
  * their npm packages keeps their versions in package.json, where update tools
@@ -100,7 +78,7 @@ const copyWebviewLibsPlugin = {
 
 /**
  * Options for bundling the extension. The tests bundle the SQLite exporter with
- * them too, to check that it finds its WebAssembly file once bundled.
+ * them too, to check that it loads Node's node:sqlite once bundled.
  * @type {import('esbuild').BuildOptions}
  */
 const buildOptions = {
@@ -126,7 +104,7 @@ const buildOptions = {
   banner: {
     js: `const __importMetaUrl = require('url').pathToFileURL(__filename).href;`,
   },
-  plugins: [copySqlWasmPlugin, copyWebviewLibsPlugin],
+  plugins: [copyWebviewLibsPlugin],
 };
 
 async function main() {

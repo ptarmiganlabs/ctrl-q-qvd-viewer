@@ -7,7 +7,7 @@ const esbuild = require("esbuild");
 const ExcelJS = require("exceljs");
 const Papa = require("papaparse");
 const parquet = require("parquetjs");
-const initSqlJs = require("sql.js");
+const { DatabaseSync } = require("node:sqlite");
 // parquetjs's own Thrift, to read the logical types parquetjs reads past
 const thrift = require("thrift");
 const yaml = require("js-yaml");
@@ -25,6 +25,7 @@ let parquetExporter;
 let postgresExporter;
 let qlikInlineExporter;
 let sqliteExporter;
+let atomicWrite;
 let xmlExporter;
 let yamlExporter;
 let DataExporter;
@@ -81,16 +82,18 @@ function zoneDialogsTo(filePath, pick, timeZone = "") {
 }
 
 /**
- * Run a query on an exported SQLite database
+ * Run a query on an exported SQLite database, opened to read only, and closed again so
+ * that Windows lets the file be replaced or removed
  * @param {string} filePath - Database file path
  * @param {string} sql - The query
- * @returns {Promise<Array<Array>>} The rows it gives
+ * @returns {Array<Array>} The rows it gives, each an array of its values
  */
-async function querySqlite(filePath, sql) {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database(fs.readFileSync(filePath));
+function querySqlite(filePath, sql) {
+  const db = new DatabaseSync(filePath, { readOnly: true });
   try {
-    return db.exec(sql)[0].values;
+    const statement = db.prepare(sql);
+    statement.setReturnArrays(true);
+    return statement.all();
   } finally {
     db.close();
   }
@@ -435,23 +438,17 @@ function makeTextEdgeRows(count) {
 /**
  * Count the rows in the data table of an exported SQLite database
  * @param {string} filePath - Database file path
- * @returns {Promise<number>} Number of rows
+ * @returns {number} Number of rows
  */
-async function countSqliteRows(filePath) {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database(fs.readFileSync(filePath));
-  try {
-    return db.exec("SELECT COUNT(*) FROM data")[0].values[0][0];
-  } finally {
-    db.close();
-  }
+function countSqliteRows(filePath) {
+  return querySqlite(filePath, "SELECT COUNT(*) FROM data")[0][0];
 }
 
 /**
  * Bundle the SQLite exporter with esbuild.js's options, into a folder of its own
  * with no node_modules above it, as in the installed extension
  * @param {string} name - Folder name in the output directory
- * @returns {Promise<{exportToSQLite: Function, wasmPath: string}>} The bundled exporter, and the wasm file next to it
+ * @returns {Promise<{exportToSQLite: Function}>} The bundled exporter
  */
 async function bundleSqliteExporter(name) {
   const outfile = path.join(outputDir, name, "dist", "sqliteExporter.js");
@@ -464,10 +461,7 @@ async function bundleSqliteExporter(name) {
     sourcemap: false,
     logLevel: "silent",
   });
-  return {
-    exportToSQLite: require(outfile).exportToSQLite,
-    wasmPath: path.join(path.dirname(outfile), "sql-wasm.wasm"),
-  };
+  return { exportToSQLite: require(outfile).exportToSQLite };
 }
 
 suite("Exporter Test Suite", () => {
@@ -484,6 +478,7 @@ suite("Exporter Test Suite", () => {
     postgresExporter = await import("../src/exporters/postgresExporter.mjs");
     qlikInlineExporter = await import("../src/exporters/qlikInlineExporter.mjs");
     sqliteExporter = await import("../src/exporters/sqliteExporter.mjs");
+    atomicWrite = await import("../src/exporters/atomicWrite.mjs");
     xmlExporter = await import("../src/exporters/xmlExporter.mjs");
     yamlExporter = await import("../src/exporters/yamlExporter.mjs");
     ({ default: DataExporter } = await import("../src/exporters/index.mjs"));
@@ -1708,23 +1703,12 @@ suite("Exporter Test Suite", () => {
 
     await sqliteExporter.exportToSQLite(rows, filePath);
 
-    const SQL = await initSqlJs();
-    const db = new SQL.Database(fs.readFileSync(filePath));
-    try {
-      const [count] = db.exec("SELECT COUNT(*) FROM data")[0].values[0];
-      assert.strictEqual(count, rows.length, "Every row should be in the table");
-
-      const [row] = db.exec(
-        "SELECT id, price, name, active, note, created FROM data WHERE id = 3"
-      )[0].values;
-      assert.deepStrictEqual(
-        row,
-        [3, 3.25, "Item 3", 0, null, "2024-01-01 00:03:00"],
-        "Row should round-trip, with booleans as 0/1 and dates as ISO text with no time zone"
-      );
-    } finally {
-      db.close();
-    }
+    assert.strictEqual(countSqliteRows(filePath), rows.length, "Every row should be in the table");
+    assert.deepStrictEqual(
+      querySqlite(filePath, "SELECT id, price, name, active, note, created FROM data WHERE id = 3"),
+      [[3, 3.25, "Item 3", 0, null, "2024-01-01 00:03:00"]],
+      "Row should round-trip, with booleans as 0/1 and dates as ISO text with no time zone"
+    );
   });
 
   test("SQLite export - blank text next to numbers or booleans is NULL, and text elsewhere", async () => {
@@ -1732,25 +1716,18 @@ suite("Exporter Test Suite", () => {
 
     await sqliteExporter.exportToSQLite(makeBlankRows(), filePath);
 
-    const SQL = await initSqlJs();
-    const db = new SQL.Database(fs.readFileSync(filePath));
-    try {
-      assert.strictEqual(
-        db.exec("SELECT sql FROM sqlite_master WHERE name = 'data'")[0].values[0][0],
-        'CREATE TABLE data ("parent_id" INTEGER, "flag" INTEGER, "code" TEXT, "note" TEXT)'
-      );
-      assert.deepStrictEqual(
-        db.exec("SELECT parent_id, flag, code, note FROM data")[0].values,
-        [
-          [3, 1, "a", ""],
-          [null, null, "", " "],
-          [null, 0, "c", null],
-        ],
-        "Booleans should be stored as 0/1"
-      );
-    } finally {
-      db.close();
-    }
+    assert.deepStrictEqual(querySqlite(filePath, "SELECT sql FROM sqlite_master WHERE name = 'data'"), [
+      ['CREATE TABLE data ("parent_id" INTEGER, "flag" INTEGER, "code" TEXT, "note" TEXT)'],
+    ]);
+    assert.deepStrictEqual(
+      querySqlite(filePath, "SELECT parent_id, flag, code, note FROM data"),
+      [
+        [3, 1, "a", ""],
+        [null, null, "", " "],
+        [null, 0, "c", null],
+      ],
+      "Booleans should be stored as 0/1"
+    );
   });
 
   test("SQLite export - integers beyond 2^53 go in a REAL column", async () => {
@@ -1758,20 +1735,51 @@ suite("Exporter Test Suite", () => {
 
     await sqliteExporter.exportToSQLite(makeBigIntegerRows(), filePath);
 
-    const SQL = await initSqlJs();
-    const db = new SQL.Database(fs.readFileSync(filePath));
-    try {
-      assert.strictEqual(
-        db.exec("SELECT sql FROM sqlite_master WHERE name = 'data'")[0].values[0][0],
-        'CREATE TABLE data ("id" INTEGER, "big" REAL)'
-      );
-      assert.deepStrictEqual(db.exec("SELECT id, big FROM data")[0].values, [
-        [1, 2 ** 53],
-        [2, 1e19],
-      ]);
-    } finally {
-      db.close();
-    }
+    assert.deepStrictEqual(querySqlite(filePath, "SELECT sql FROM sqlite_master WHERE name = 'data'"), [
+      ['CREATE TABLE data ("id" INTEGER, "big" REAL)'],
+    ]);
+    assert.deepStrictEqual(querySqlite(filePath, "SELECT typeof(id), id, typeof(big), big FROM data"), [
+      ["integer", 1, "real", 2 ** 53],
+      ["integer", 2, "real", 1e19],
+    ]);
+  });
+
+  test("SQLite export - numbers are stored as sql.js stored them, in every type of column", async () => {
+    const filePath = path.join(outputDir, "numbers.db");
+    const day = new Date(Date.UTC(2016, 0, 13, 6, 15));
+    // sql.js bound a whole number that fits in 32 bits as an INTEGER and any other as a
+    // REAL. An INTEGER or REAL column stores the same either way. A TEXT column keeps the
+    // text SQLite makes of it: a column of dates mixed with numbers is one, and takes the
+    // numbers as they are, and so is one of dates mixed with booleans, as 1 and 0
+    const rows = [
+      { int: 1, real: 1, mixed: 1, flag: day },
+      { int: 2 ** 31, real: 2 ** 31, mixed: 2 ** 31, flag: true },
+      { int: 2 ** 53 - 1, real: 2 ** 53 - 1, mixed: 2 ** 53 - 1, flag: false },
+      { int: -0, real: -0, mixed: -0, flag: day },
+      { int: 2, real: 2.5, mixed: day, flag: true },
+    ];
+
+    await sqliteExporter.exportToSQLite(rows, filePath);
+
+    assert.deepStrictEqual(querySqlite(filePath, "SELECT type FROM pragma_table_info('data')"), [
+      ["INTEGER"],
+      ["REAL"],
+      ["TEXT"],
+      ["TEXT"],
+    ]);
+    // This SQLite's text for that REAL: '9007199254740991.0', as sql.js's SQLite 3.54
+    // stored it, in Node 24's SQLite 3.53; in Node 22's SQLite 3.50, as VS Code 1.105
+    // has, '9.00719925474099e+15', with 15 significant digits
+    const [[realText]] = querySqlite(filePath, "SELECT CAST(9007199254740991.0 AS TEXT)");
+    const stored = querySqlite(filePath, "SELECT typeof(int), int, typeof(real), real, typeof(mixed), mixed, typeof(flag), flag FROM data");
+    assert.deepStrictEqual(stored, [
+      ["integer", 1, "real", 1, "text", "1", "text", "2016-01-13 06:15:00"],
+      ["integer", 2 ** 31, "real", 2 ** 31, "text", "2147483648.0", "text", "1"],
+      ["integer", 2 ** 53 - 1, "real", 2 ** 53 - 1, "text", realText, "text", "0"],
+      // -0 is 0, as sql.js bound it, not -0.0 or "0.0"
+      ["integer", 0, "real", 0, "text", "0", "text", "2016-01-13 06:15:00"],
+      ["integer", 2, "real", 2.5, "text", "2016-01-13 06:15:00", "text", "1"],
+    ]);
   });
 
   test("SQLite export - a failed export leaves the file it would replace as it was, and the next export works", async () => {
@@ -1798,14 +1806,117 @@ suite("Exporter Test Suite", () => {
     });
 
     assert.strictEqual(fs.readFileSync(filePath, "utf8"), "previous export");
+    // The failure came inside the transaction, with SQLite's journal next to the database
     assert.deepStrictEqual(
-      fs.readdirSync(outputDir).filter((name) => name.endsWith(".tmp")),
+      fs.readdirSync(outputDir).filter((name) => name.startsWith(".qvd-export-")),
       [],
-      "The temporary file should be removed"
+      "The temporary file and its journal should be removed"
     );
-    // sql.js is still there for the next export
+    // The next export works
     await sqliteExporter.exportToSQLite(makeRows(100), filePath);
-    assert.strictEqual(await countSqliteRows(filePath), 100);
+    assert.strictEqual(countSqliteRows(filePath), 100);
+  });
+
+  test("SQLite export - replacing a file keeps its permissions and symlinks", async function () {
+    // Windows has no permission bits for chmod to set, only a read-only attribute, so
+    // there the test is of the link alone
+    const permissions = process.platform !== "win32";
+    const real = path.join(outputDir, "real.db");
+    const link = path.join(outputDir, "link.db");
+    fs.writeFileSync(real, "previous export");
+    if (permissions) {
+      fs.chmodSync(real, 0o600);
+    }
+    try {
+      fs.symlinkSync(real, link);
+    } catch (error) {
+      // Creating a symlink needs extra rights on Windows
+      if (error.code === "EPERM") {
+        this.skip();
+      }
+      throw error;
+    }
+
+    await sqliteExporter.exportToSQLite(makeRows(10), link);
+
+    assert.ok(fs.lstatSync(link).isSymbolicLink(), "The link should still be a link");
+    assert.strictEqual(countSqliteRows(real), 10);
+    if (permissions) {
+      assert.strictEqual(fs.statSync(real).mode & 0o777, 0o600);
+    }
+  });
+
+  test("SQLite export - no rows is an empty database, with its header page", async () => {
+    const filePath = path.join(outputDir, "empty.db");
+    fs.writeFileSync(filePath, "previous export");
+
+    await sqliteExporter.exportToSQLite([], filePath);
+
+    // A page of 4,096 bytes, as sql.js wrote it, rather than a file of none
+    const bytes = fs.readFileSync(filePath);
+    assert.strictEqual(bytes.length, 4096);
+    assert.strictEqual(bytes.subarray(0, 16).toString("latin1"), "SQLite format 3\0");
+    assert.deepStrictEqual(querySqlite(filePath, "SELECT COUNT(*) FROM sqlite_master"), [[0]]);
+  });
+
+  test("SQLite export - a folder and file named with letters outside ASCII", async () => {
+    const folder = path.join(outputDir, "Göran åäö 😀");
+    fs.mkdirSync(folder, { recursive: true });
+    const filePath = path.join(folder, "räksmörgås.db");
+
+    await sqliteExporter.exportToSQLite(makeRows(10), filePath);
+
+    assert.strictEqual(countSqliteRows(filePath), 10);
+    assert.deepStrictEqual(fs.readdirSync(folder), ["räksmörgås.db"]);
+  });
+
+  test("Writing by path replaces the file, and removes what the writer kept next to its own", async () => {
+    const folder = path.join(outputDir, "by-path");
+    fs.mkdirSync(folder, { recursive: true });
+    const filePath = path.join(folder, "target.txt");
+    fs.writeFileSync(filePath, "previous");
+    let handed;
+
+    await atomicWrite.writeFileAtomicallyByPath(
+      filePath,
+      async (tempPath) => {
+        handed = tempPath;
+        // Created empty, next to the target's real path, for the writer to open itself.
+        // On macOS the system's temporary folder is reached through a symlink
+        assert.strictEqual(fs.statSync(tempPath).size, 0);
+        assert.strictEqual(path.dirname(tempPath), fs.realpathSync(folder));
+        fs.writeFileSync(tempPath, "written");
+        fs.writeFileSync(`${tempPath}-journal`, "journal");
+      },
+      { sidecarSuffixes: ["-journal"] }
+    );
+
+    assert.ok(handed);
+    assert.strictEqual(fs.readFileSync(filePath, "utf8"), "written");
+    assert.deepStrictEqual(fs.readdirSync(folder), ["target.txt"]);
+  });
+
+  test("Writing by path that fails leaves the file as it was, and nothing next to it", async () => {
+    const folder = path.join(outputDir, "by-path-failing");
+    fs.mkdirSync(folder, { recursive: true });
+    const filePath = path.join(folder, "target.txt");
+    fs.writeFileSync(filePath, "previous");
+
+    await assert.rejects(
+      atomicWrite.writeFileAtomicallyByPath(
+        filePath,
+        async (tempPath) => {
+          fs.writeFileSync(tempPath, "half written");
+          fs.writeFileSync(`${tempPath}-journal`, "journal");
+          throw new Error("disk full");
+        },
+        { sidecarSuffixes: ["-journal"] }
+      ),
+      /^Error: disk full$/
+    );
+
+    assert.strictEqual(fs.readFileSync(filePath, "utf8"), "previous");
+    assert.deepStrictEqual(fs.readdirSync(folder), ["target.txt"]);
   });
 
   test("SQLite export - a column of numbers and booleans is text as the other formats write it, and objects JSON", async () => {
@@ -1813,8 +1924,8 @@ suite("Exporter Test Suite", () => {
 
     await sqliteExporter.exportToSQLite([{ a: 1, o: { x: 1 } }, { a: true, o: { y: [2] } }, { a: 2.5, o: null }], filePath);
 
-    assert.deepStrictEqual(await querySqlite(filePath, "SELECT type FROM pragma_table_info('data')"), [["TEXT"], ["TEXT"]]);
-    assert.deepStrictEqual(await querySqlite(filePath, "SELECT a, o FROM data"), [
+    assert.deepStrictEqual(querySqlite(filePath, "SELECT type FROM pragma_table_info('data')"), [["TEXT"], ["TEXT"]]);
+    assert.deepStrictEqual(querySqlite(filePath, "SELECT a, o FROM data"), [
       ["1", '{"x":1}'],
       ["true", '{"y":[2]}'],
       ["2.5", null],
@@ -1864,35 +1975,18 @@ suite("Exporter Test Suite", () => {
     }
     const perTurn = Math.floor(sqliteExporter.CHUNK_CELLS / fields.length);
     assert.deepStrictEqual(inserted, [perTurn, perTurn, count - 2 * perTurn]);
-    assert.strictEqual(await countSqliteRows(filePath), count);
+    assert.strictEqual(countSqliteRows(filePath), count);
   });
 
-  test("SQLite export - bundled exporter finds its wasm file without node_modules", async () => {
+  test("SQLite export - the bundled exporter writes a database without node_modules", async () => {
+    // node:sqlite is part of Node, which the bundle leaves for VS Code's Node to load
     const { exportToSQLite } = await bundleSqliteExporter("bundled");
     const rows = makeRows(100);
     const filePath = path.join(outputDir, "bundled.db");
 
     await exportToSQLite(rows, filePath);
 
-    assert.strictEqual(await countSqliteRows(filePath), rows.length);
-  });
-
-  test("SQLite export - a missing wasm file fails one export, not the session", async () => {
-    const { exportToSQLite, wasmPath } = await bundleSqliteExporter("missing-wasm");
-    const rows = makeRows(100);
-    const filePath = path.join(outputDir, "missing-wasm.db");
-    const wasm = fs.readFileSync(wasmPath);
-
-    fs.rmSync(wasmPath);
-    await assert.rejects(
-      exportToSQLite(rows, filePath),
-      /SQLite export failed: .*sql-wasm\.wasm is missing/
-    );
-
-    // Once the file is back, the next export should work
-    fs.writeFileSync(wasmPath, wasm);
-    await exportToSQLite(rows, filePath);
-    assert.strictEqual(await countSqliteRows(filePath), rows.length);
+    assert.strictEqual(countSqliteRows(filePath), rows.length);
   });
 
   test("XML export - the file is what js2xml gives for the whole document", async () => {
@@ -2121,17 +2215,11 @@ suite("Exporter Test Suite", () => {
     ]);
 
     await sqliteExporter.exportToSQLite(rows, file("db"));
-    const SQL = await initSqlJs();
-    const db = new SQL.Database(fs.readFileSync(file("db")));
-    try {
-      assert.deepStrictEqual(db.exec('SELECT "when" FROM data')[0].values, [
-        ["2024-01-02 03:04:05"],
-        [null],
-        [null],
-      ]);
-    } finally {
-      db.close();
-    }
+    assert.deepStrictEqual(querySqlite(file("db"), 'SELECT "when" FROM data'), [
+      ["2024-01-02 03:04:05"],
+      [null],
+      [null],
+    ]);
 
     await postgresExporter.exportToPostgres(rows, file("sql"), 0, {});
     const lines = fs.readFileSync(file("sql"), "utf8").split("\n");
@@ -2199,16 +2287,10 @@ suite("Exporter Test Suite", () => {
     );
 
     await sqliteExporter.exportToSQLite(rows, file("db"));
-    const SQL = await initSqlJs();
-    const db = new SQL.Database(fs.readFileSync(file("db")));
-    try {
-      assert.deepStrictEqual(db.exec("SELECT day, at FROM data")[0].values, [
-        ["1756-01-01", "2016-01-13 06:15:00"],
-        ["2016-01-14", "2016-01-14 00:00:00"],
-      ]);
-    } finally {
-      db.close();
-    }
+    assert.deepStrictEqual(querySqlite(file("db"), "SELECT day, at FROM data"), [
+      ["1756-01-01", "2016-01-13 06:15:00"],
+      ["2016-01-14", "2016-01-14 00:00:00"],
+    ]);
 
     await postgresExporter.exportToPostgres(rows, file("sql"), 0, {});
     const lines = fs.readFileSync(file("sql"), "utf8").split("\n");
@@ -2390,7 +2472,7 @@ suite("Exporter Test Suite", () => {
 
     // SQLite keeps text, in UTC so that it sorts in time order
     await sqliteExporter.exportToSQLite(rows, file("db"), options);
-    assert.deepStrictEqual(await querySqlite(file("db"), "SELECT day, at FROM data"), [
+    assert.deepStrictEqual(querySqlite(file("db"), "SELECT day, at FROM data"), [
       ["2016-03-13", "2016-03-13 07:45:00Z"],
       ["2016-03-14", "2016-03-13 08:00:00Z"],
     ]);
@@ -2527,7 +2609,7 @@ suite("Exporter Test Suite", () => {
     const sqlitePath = path.join(outputDir, "dst.db");
     const sqliteShifts = await sqliteExporter.exportToSQLite(read.data, sqlitePath, options);
     assert.deepStrictEqual(
-      await querySqlite(sqlitePath, "SELECT at FROM data"),
+      querySqlite(sqlitePath, "SELECT at FROM data"),
       utc.map((text) => [text])
     );
     assert.deepStrictEqual(sqliteShifts, shifts);
@@ -2556,7 +2638,7 @@ suite("Exporter Test Suite", () => {
     ];
     const filePath = path.join(outputDir, "members.db");
     const shifts = await sqliteExporter.exportToSQLite(rows, filePath, { timeZone: "America/Chicago" });
-    assert.deepStrictEqual(await querySqlite(filePath, 'SELECT "constructor", "toString" FROM data'), [
+    assert.deepStrictEqual(querySqlite(filePath, 'SELECT "constructor", "toString" FROM data'), [
       ["2016-03-13 08:30:00Z", "2016-11-06 06:30:00Z"],
     ]);
     assert.deepStrictEqual(shifts, {
@@ -2697,7 +2779,7 @@ suite("Exporter Test Suite", () => {
     const listed = dialogs.picks[1].items;
     assert.ok(listed.length > 400 && listed.includes("UTC") && listed.includes("America/Chicago"));
     // Tokyo is 9 hours ahead of UTC
-    assert.deepStrictEqual(await querySqlite(filePath, "SELECT at FROM data"), [
+    assert.deepStrictEqual(querySqlite(filePath, "SELECT at FROM data"), [
       ["2016-01-12 21:15:00Z"],
       ["2016-01-13 15:00:00Z"],
     ]);

@@ -156,12 +156,14 @@ suite("Memory Guard Test Suite", () => {
     // Its dictionaries' text took at most 97% of its fields' symbols' bytes
     assert.ok(arrowCost.bytesPerSymbolByte >= 0.97);
     assert.ok(arrowCost.chunkRows > 0 && arrowCost.chunkCells > 0);
-    // A SQLite export needed 0.42 per cell on the heap: its database is outside it, where
-    // the process's footprint grew by 53 per cell and 14 per character
+    // A SQLite export, which writes its database to the file a chunk at a time, needed
+    // nothing measurable beyond the rows: under 0.4 per cell and 0.1 per character
     const sqliteCost = DataExporter.memoryCost("sqlite");
-    assert.ok(sqliteCost.bytesPerCell >= 0.42 * 1.5);
-    assert.ok(sqliteCost.outsideHeapBytesPerCell >= 53 * 1.5);
-    assert.ok(sqliteCost.outsideHeapBytesPerTextChar >= 14 * 2);
+    assert.ok(sqliteCost.bytesPerCell >= 0.4 * 1.5);
+    assert.ok(sqliteCost.bytesPerTextChar >= 0.1 * 2);
+    assert.ok(sqliteCost.chunkRows > 0 && sqliteCost.chunkCells > 0 && sqliteCost.writesAsItGoes);
+    assert.strictEqual(sqliteCost.outsideHeapBytesPerCell, undefined);
+    assert.strictEqual(sqliteCost.outsideHeapBytesPerTextChar, undefined);
   });
 
   test("Every export format's exporter declares what it costs", () => {
@@ -177,7 +179,7 @@ suite("Memory Guard Test Suite", () => {
         assert.ok(Number.isInteger(cost.chunkCells) && cost.chunkCells > 0 && cost.chunkRows > 0, name);
       }
     }
-    assert.deepStrictEqual(DataExporter.leanFormatLabels(), ["Arrow", "Avro", "CSV", "Excel", "JSON", "Parquet", "PostgreSQL", "Qlik Inline Script", "XML", "YAML"]);
+    assert.deepStrictEqual(DataExporter.leanFormatLabels(), ["Arrow", "Avro", "CSV", "Excel", "JSON", "Parquet", "PostgreSQL", "Qlik Inline Script", "SQLite", "XML", "YAML"]);
   });
 
   test("A name that isn't a format has no cost, not a function", () => {
@@ -288,8 +290,8 @@ suite("Memory Guard Test Suite", () => {
       rows: rows.length,
       bytes: chunk * 2 * csv.bytesPerCell + chunk * 10 * csv.bytesPerTextChar,
     });
-    // A format that builds its whole output at once has no chunks
-    assert.strictEqual(DataExporter.memoryCost("sqlite").chunkRows, undefined);
+    // A format priced for every row at once has no chunks
+    assert.strictEqual(DataExporter.memoryCost("parquet").chunkRows, undefined);
   });
 
   test("A chunk of a QVD with many fields has fewer rows, and is priced so", async () => {
@@ -383,16 +385,26 @@ suite("Memory Guard Test Suite", () => {
   });
 
   test("An export that builds outside the heap is priced for that too, for every row", async () => {
-    const sqliteCost = DataExporter.memoryCost("sqlite");
+    // As SQLite's was while sql.js built its database in memory. No format's is now
+    const outsideCost = { bytesPerCell: 16, bytesPerTextChar: 0, outsideHeapBytesPerCell: 80, outsideHeapBytesPerTextChar: 28 };
+    for (const { name } of DataExporter.getExportFormats()) {
+      const cost = DataExporter.memoryCost(name);
+      assert.ok(!(cost.outsideHeapBytesPerCell > 0) && !(cost.outsideHeapBytesPerTextChar > 0), name);
+    }
     const rows = [
       { id: 1, note: "x".repeat(1000) },
       { id: 2, note: "y".repeat(3000) },
       { id: 3, note: null },
     ];
-    assert.deepStrictEqual(await guard.exportHeapBytes(sqliteCost, rows, 2), {
+    assert.deepStrictEqual(await guard.exportHeapBytes(outsideCost, rows, 2), {
       rows: 3,
-      bytes: 3 * 2 * sqliteCost.bytesPerCell,
-      outsideBytes: 3 * 2 * sqliteCost.outsideHeapBytesPerCell + 4000 * sqliteCost.outsideHeapBytesPerTextChar,
+      bytes: 3 * 2 * outsideCost.bytesPerCell,
+      outsideBytes: 3 * 2 * outsideCost.outsideHeapBytesPerCell + 4000 * outsideCost.outsideHeapBytesPerTextChar,
+    });
+    // SQLite's is priced by its largest chunk, on the heap alone
+    assert.deepStrictEqual(await guard.exportHeapBytes(DataExporter.memoryCost("sqlite"), rows, 2), {
+      rows: 3,
+      bytes: 3 * 2 * DataExporter.memoryCost("sqlite").bytesPerCell + 4000 * DataExporter.memoryCost("sqlite").bytesPerTextChar,
     });
     // What is left for it is the computer's memory, less what the extension host uses
     const left = guard.memoryLeftOutsideHeap();
@@ -482,14 +494,11 @@ suite("Memory Guard Test Suite", () => {
   });
 
   test("Only a refused export that builds its whole file has formats to suggest", () => {
-    // One that writes as it goes is offered none: the others need about as much
-    assert.deepStrictEqual(DataExporter.leanerFormats("csv"), { labels: [], everyOther: false });
-    assert.deepStrictEqual(DataExporter.leanerFormats("json"), { labels: [], everyOther: false });
-    // SQLite builds its whole database
-    const sqlite = DataExporter.leanerFormats("sqlite");
-    assert.deepStrictEqual(sqlite.labels, DataExporter.leanFormatLabels());
-    const others = DataExporter.getExportFormats().length - 1;
-    assert.strictEqual(sqlite.everyOther, sqlite.labels.length === others);
+    // One that writes as it goes is offered none: the others need about as much. Every
+    // format writes as it goes, SQLite too since it writes its database to the file
+    for (const { name } of DataExporter.getExportFormats()) {
+      assert.deepStrictEqual(DataExporter.leanerFormats(name), { labels: [], everyOther: false }, name);
+    }
   });
 
   test("A refused profile says what it needs, and to profile fewer fields", () => {
@@ -532,16 +541,13 @@ suite("Memory Guard Test Suite", () => {
     const forCaller = { ...refusal, forCaller: true, neededBytes: 40 * 2 ** 30, leftBytes: 2 * 2 ** 30 };
     const sqlite = exportReadFailure({ error: "x", refusal: forCaller }, "sqlite", false);
     assert.ok(sqlite.startsWith(`Exporting ${(1975108).toLocaleString()} rows to SQLite needs about 40.0 GiB`));
-    // The formats that write as they go are suggested for one that builds its whole file
-    const suggested = sqlite.slice(sqlite.indexOf("extensions.") + "extensions.".length);
-    assert.ok(suggested.endsWith(" need much less.") || suggested.endsWith(" needs much less."));
-    for (const label of DataExporter.leanFormatLabels()) {
-      assert.ok(suggested.includes(label) || suggested.includes("Every other format"), label);
+    // A format that writes as it goes is offered no other, SQLite among them
+    for (const format of ["sqlite", "csv"]) {
+      assert.ok(
+        exportReadFailure({ error: "x", refusal: forCaller }, format, false).endsWith("left in what VS Code gives its extensions."),
+        format
+      );
     }
-    // and none for one that writes as it goes
-    assert.ok(
-      exportReadFailure({ error: "x", refusal: forCaller }, "csv", false).endsWith("left in what VS Code gives its extensions.")
-    );
     assert.ok(profileReadFailure({ error: "x", refusal: forCaller }, 3).startsWith("Profiling 3 fields"));
 
     // Any other failure keeps the reader's message
