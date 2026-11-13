@@ -1,21 +1,42 @@
 <h1 align="center">Ctrl-Q QVD Viewer</h1>
 
-<h2 align="center">A Visual Studio Code extension for viewing and exporting Qlik Sense and QlikView QVD files.<br><br>
-View data, metadata, schema, lineage and data profiles directly within VS Code.</h2>
-
-<h4 align="center">Designed for Qlik developers, admins and data engineers.<br>
-Open source with a permissive MIT license.</h4>
+<p align="center"><strong>View and export Qlik Sense and QlikView QVD files in VS Code</strong></p>
 
 <p align="center">
 <a href="https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer"><img src="https://img.shields.io/badge/VS%20Code%20Marketplace-Ctrl--Q%20QVD%20Viewer-blue" alt="VS Code Marketplace"></a>
 <a href="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer"><img src="https://img.shields.io/badge/Source-GitHub-lightgrey" alt="Source"></a>
 <a href="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer"><img src="https://img.shields.io/badge/Project%20Status-Active-brightgreen" alt="Project Status: Active"></a>
 <a href="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT"></a>
+<a href="https://github.com/sponsors/ptarmiganlabs"><img src="https://img.shields.io/badge/Sponsor-%E2%9D%A4-db61a2?logo=githubsponsors" alt="Sponsor Ptarmigan Labs on GitHub"></a>
 </p>
 
----
+<p align="center">
+<a href="https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer">VS Code Marketplace</a> ·
+<a href="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/discussions">Questions</a> ·
+<a href="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues">Report a bug</a> ·
+<a href="https://github.com/sponsors/ptarmiganlabs">❤️ Sponsor</a>
+</p>
 
-**Sponsored by [Ptarmigan Labs](https://ptarmiganlabs.com)**, which also sponsors the open source Butler and Ctrl-Q tools and the .qs library of Qlik Sense extensions. See [Part of the Ptarmigan Labs tools](#part-of-the-ptarmigan-labs-tools).
+A Visual Studio Code extension for viewing and exporting Qlik Sense and QlikView QVD files. View
+data, metadata, schema, lineage and data profiles directly within VS Code. Designed for Qlik
+developers, admins and data engineers.
+
+## ❤️ Support the project
+
+Ctrl-Q QVD Viewer is free and open source, under the MIT licence. If you use it, please consider sponsoring its development: sponsorships pay for maintenance, bug fixes and new features, and keep the project going.
+
+**[❤️ Sponsor Ptarmigan Labs on GitHub](https://github.com/sponsors/ptarmiganlabs)**
+
+Other ways to help:
+
+- ⭐ **Star the repository**: it helps others find the project.
+- 💬 **Share your feedback** in [Discussions](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/discussions): tell us how you use it.
+- 🐛 **Report issues** in [Issues](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues).
+- 🍴 **Contribute**: pull requests are welcome.
+
+_Maintained by [Göran Sander](https://github.com/mountaindude) and supported by [Ptarmigan Labs](https://ptarmiganlabs.com)._
+
+---
 
 ## Features
 
@@ -387,10 +408,6 @@ For more details on building, testing, and packaging, see **[BUILD.md](docs/BUIL
 ## Contributing
 
 Contributions are welcome! Report bugs in [GitHub Issues](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues), ask questions in [GitHub Discussions](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/discussions), and send pull requests.
-
-## Sponsorship
-
-This extension is sponsored by [Ptarmigan Labs](https://ptarmiganlabs.com), which also sponsors the open source Butler and Ctrl-Q tools and the .qs library of Qlik Sense extensions. See [Part of the Ptarmigan Labs tools](#part-of-the-ptarmigan-labs-tools).
 
 ## License
 
