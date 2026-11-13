@@ -1,5 +1,6 @@
 import { QvdDual, qlikSerialToDate } from "qvdjs";
 import { CalendarDate, isBlank } from "./cellValue.mjs";
+import { nextTurn } from "./memoryGuard.mjs";
 
 /**
  * A QVD's dates and timestamps, as a read for an export makes them Dates
@@ -151,7 +152,7 @@ export async function findDateColumns(rows, tags, signal) {
       }
     }
     if ((i + 1) % rowsPerChunk === 0 && i + 1 < rows.length) {
-      await new Promise((resolve) => setImmediate(resolve));
+      await nextTurn();
       signal?.throwIfAborted();
     }
   }

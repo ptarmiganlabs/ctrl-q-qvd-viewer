@@ -82,6 +82,14 @@ const SAMPLED_ROWS = 1000;
 // Cells an export's pricing looks at between yields to the event loop: a few milliseconds
 export const CELLS_PER_YIELD = 1000000;
 
+/**
+ * Give the event loop a turn, as work over every row does between its slices
+ * @returns {Promise<void>} Resolves on the next turn
+ */
+export function nextTurn() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 // Heap booked by rows callers still hold
 let booked = 0;
 // Rows a caller drops without releasing them are let go when they are collected
@@ -235,8 +243,12 @@ export function heldTextBytes(fields, rows, shares) {
  * @property {number} [chunkCells] - Cells it builds from at a time, at most, so that a chunk of a QVD
  *   with many fields has fewer rows
  * @property {boolean} [writesAsItGoes] - Whether it writes as it goes, and so needs little
- * @property {number} [bytesPerDistinctText] - Heap per distinct value of a column holding
- *   text, held from before its first chunk to the end, as a dictionary of them is
+ * @property {function(Array<Object>, Array<string>): Promise<Array<string>>} [dictionaryColumns] -
+ *   The columns of these rows whose distinct values it holds from before its first chunk to
+ *   the end, as a dictionary of them
+ * @property {number} [bytesPerDistinctText] - Heap per distinct value of such a column
+ * @property {number} [bytesPerSymbolByte] - Memory per byte of such a field's symbols in the
+ *   QVD: the text of its distinct values, which is held to the end too, if outside the heap
  */
 
 /**
@@ -275,29 +287,48 @@ export function rowsPerChunk(cost, columnCount, chunkRows) {
 }
 
 /**
+ * Memory an export's dictionaries hold to the end
+ * For each field whose distinct values it holds, as many as the QVD has symbols in
+ * it, at most one a row, and their text, at most the bytes of its symbols: a text
+ * symbol holds its text and two bytes besides.
+ * @param {ExportCost} cost - What the export builds, as its exporter declares it
+ * @param {Array<{symbols: number, bytes: number}>} fields - Each such field's symbols
+ *   and the bytes they take, from the QVD's header
+ * @param {number} rows - Rows exported
+ * @returns {number} Bytes
+ */
+export function dictionaryBytes(cost, fields, rows) {
+  let bytes = 0;
+  for (const field of fields) {
+    bytes += Math.min(rows, field.symbols) * (cost.bytesPerDistinctText ?? 0) + field.bytes * (cost.bytesPerSymbolByte ?? 0);
+  }
+  return bytes;
+}
+
+/**
  * Heap an export of these rows builds: per cell, and per character of their text
  * An export that writes a chunk of rows at a time holds one chunk's work at a
- * time, so it is priced by its largest chunk. One that holds each text column's
- * distinct values to the end is priced for those too, for the whole export: each
- * column with text in it, as every column a QVD's read gives text is, is priced
- * for as many as the QVD has symbols in that field, at most one a row. Every value
- * is looked at, so this yields to the event loop as it goes.
+ * time, so it is priced by its largest chunk. One that holds some columns' distinct
+ * values to the end, as its exporter finds them, is priced for those too, for the
+ * whole export, as dictionaryBytes() gives it. Every value is looked at, so this
+ * yields to the event loop as it goes.
  * @param {ExportCost} cost - What the export builds, as its exporter declares it
  * @param {Array<Object>} rows - The rows read
  * @param {number} columnCount - Fields per row
  * @param {number} [limit] - Rows to export, from the first; 0 or none for every row
  * @param {object} [options]
- * @param {Map<string, number>} [options.symbols] - Each field's symbols in the QVD: its
- *   distinct values. A field left out counts one a row
+ * @param {Map<string, {symbols: number, bytes: number}>} [options.fields] - Each field's
+ *   symbols in the QVD, its distinct values, and the bytes they take. A field left out
+ *   counts one value a row, and every character of the rows' text at three bytes, as
+ *   UTF-8 takes at most
  * @returns {Promise<{bytes: number, rows: number}>} The heap, and the rows it is for
  */
-export async function exportHeapBytes(cost, rows, columnCount, limit = 0, { symbols } = {}) {
+export async function exportHeapBytes(cost, rows, columnCount, limit = 0, { fields } = {}) {
   const count = limit > 0 ? Math.min(limit, rows.length) : rows.length;
   const chunkRows = cost.chunkRows > 0 ? rowsPerChunk(cost, columnCount) : count;
   const rowsPerYield = Math.max(1, Math.floor(CELLS_PER_YIELD / Math.max(1, columnCount)));
-  // The columns with text in them, when the export holds their distinct values
-  const textColumns = cost.bytesPerDistinctText > 0 ? new Set() : null;
   let bytes = 0;
+  let allChars = 0;
   for (let start = 0; start < count; start += chunkRows) {
     const end = Math.min(start + chunkRows, count);
     let chars = 0;
@@ -307,21 +338,20 @@ export async function exportHeapBytes(cost, rows, columnCount, limit = 0, { symb
         const value = row[key];
         if (typeof value === "string") {
           chars += value.length;
-          textColumns?.add(key);
         }
       }
       if ((i + 1) % rowsPerYield === 0) {
-        await new Promise((resolve) => setImmediate(resolve));
+        await nextTurn();
       }
     }
     bytes = Math.max(bytes, (end - start) * columnCount * cost.bytesPerCell + chars * cost.bytesPerTextChar);
+    allChars += chars;
   }
-  if (textColumns) {
-    let distinct = 0;
-    for (const key of textColumns) {
-      distinct += Math.min(count, symbols?.get(key) ?? count);
-    }
-    bytes += distinct * cost.bytesPerDistinctText;
+  if (cost.dictionaryColumns && count > 0) {
+    const exported = count < rows.length ? rows.slice(0, count) : rows;
+    const held = await cost.dictionaryColumns(exported, Object.keys(rows[0]));
+    const described = held.map((key) => fields?.get(key) ?? { symbols: count, bytes: 3 * allChars });
+    bytes += dictionaryBytes(cost, described, count);
   }
   return { bytes, rows: count };
 }

@@ -2,7 +2,7 @@ import avro from 'avsc';
 import { createWriteStream, existsSync, unlinkSync } from 'fs';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
-import { isMissing, scanColumnTypes } from './columnTypes.mjs';
+import { isMissing, isTextColumn, scanColumnTypes } from './columnTypes.mjs';
 import { DAY_MS, naiveDateText } from './naiveDates.mjs';
 import { zonedTimestampsFor } from './zonedTimestamps.mjs';
 
@@ -91,7 +91,7 @@ export async function exportToAvro(data, filePath, options = {}) {
       let avroType;
 
       // If column has mixed types or strings, use string as most compatible
-      if (typeInfo.hasString || (typeInfo.hasNumber && typeInfo.hasBoolean)) {
+      if (isTextColumn(typeInfo)) {
         avroType = "string";
       } else if (typeInfo.hasDate) {
         // Days since 1970 for a date, or milliseconds for a timestamp: of its wall clock,

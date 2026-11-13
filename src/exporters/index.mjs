@@ -1,5 +1,6 @@
 import { join } from 'path';
 import { CalendarDate } from '../cellValue.mjs';
+import { nextTurn } from '../memoryGuard.mjs';
 import { exportToCSV, memoryCost as csvCost } from './csvExporter.mjs';
 import { exportToJSON, memoryCost as jsonCost } from './jsonExporter.mjs';
 import { exportToExcel, memoryCost as excelCost } from './excelExporter.mjs';
@@ -158,7 +159,7 @@ async function holdsTimestamps(rows, count) {
       }
     }
     if ((i + 1) % rowsPerYield === 0) {
-      await new Promise((resolve) => setImmediate(resolve));
+      await nextTurn();
     }
   }
   return false;

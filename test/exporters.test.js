@@ -767,6 +767,22 @@ suite("Exporter Test Suite", () => {
     );
   });
 
+  test("Arrow export - a value that changes after its dictionary is made fails the export", async () => {
+    const filePath = path.join(outputDir, "changed.arrow");
+    // Read by the type scan and the dictionary as one value, and by its batch as another
+    let reads = 0;
+    const changing = Object.defineProperty({}, "a", {
+      enumerable: true,
+      get: () => (++reads > 2 ? "changed" : "x"),
+    });
+
+    await assert.rejects(
+      arrowExporter.exportToArrow([{ a: "first" }, changing], filePath),
+      /^Error: Arrow export failed: row 2's "a" changed during the export$/
+    );
+    assert.strictEqual(fs.existsSync(filePath), false);
+  });
+
   test("Avro export - file is complete when the export resolves", async () => {
     // Enough rows for the file to span several 64 KB blocks
     const rows = makeRows(20000);
