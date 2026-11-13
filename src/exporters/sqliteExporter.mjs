@@ -4,7 +4,8 @@ import { createRequire } from 'module';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { writeFileAtomically } from './atomicWrite.mjs';
-import { isMissing, scanColumnTypes } from './columnTypes.mjs';
+import { isMissing, isTextColumn, scanColumnTypes } from './columnTypes.mjs';
+import { nextTurn } from '../memoryGuard.mjs';
 import { naiveDateText } from './naiveDates.mjs';
 import { utcText, zonedTimestampsFor } from './zonedTimestamps.mjs';
 
@@ -90,7 +91,7 @@ export async function exportToSQLite(data, filePath, options = {}) {
         let sqlType = "TEXT"; // Default to TEXT
 
         // If column has mixed types, use TEXT as most compatible
-        if (typeInfo.hasString || (typeInfo.hasNumber && typeInfo.hasBoolean)) {
+        if (isTextColumn(typeInfo)) {
           sqlType = "TEXT";
         } else if (typeInfo.hasDate) {
           // Dates as ISO text, which SQLite's date functions read: with no time zone, or
@@ -129,7 +130,7 @@ export async function exportToSQLite(data, filePath, options = {}) {
         for (let i = 0; i < data.length; i++) {
           // sql.js works synchronously: let the event loop run between chunks of rows
           if (i > 0 && i % CHUNK_ROWS === 0) {
-            await new Promise((resolve) => setImmediate(resolve));
+            await nextTurn();
           }
           const row = data[i];
           const values = columnNames.map((col) => {

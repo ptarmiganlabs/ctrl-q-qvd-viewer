@@ -1,7 +1,7 @@
 import * as arrow from 'apache-arrow';
 import { writeFileAtomically } from './atomicWrite.mjs';
-import { isMissing, scanColumnTypes } from './columnTypes.mjs';
-import { rowsPerChunk } from '../memoryGuard.mjs';
+import { isMissing, isTextColumn, scanColumnTypes } from './columnTypes.mjs';
+import { nextTurn, rowsPerChunk } from '../memoryGuard.mjs';
 import { naiveDateText } from './naiveDates.mjs';
 import { zonedTimestampsFor } from './zonedTimestamps.mjs';
 
@@ -28,17 +28,44 @@ export const DICTIONARY_CELLS_PER_YIELD = 100000;
  * heap that let a million rows of five such columns export, every value distinct,
  * against reading them alone. 50,000 rows of four unique 400-character values
  * needed 47 a value, to the 8 MiB the measurement resolves, and nothing a
- * character. Its buffers and dictionaries' text, outside the V8 heap, aren't
- * counted. See DataExporter.memoryCost() for the margins.
+ * character. Each dictionary's text, outside the heap, is priced too, at a byte for
+ * each byte of its field's symbols in the QVD: a text symbol holds its UTF-8 and
+ * two bytes besides. A number's text can take 15 bytes more than its symbol, and
+ * the 4 bytes of its offset, within the margin on the 55. The batches' buffers,
+ * outside the heap, aren't counted. See DataExporter.memoryCost() for the margins.
  */
 export const memoryCost = {
   bytesPerCell: 1,
   bytesPerTextChar: 1,
+  dictionaryColumns,
   bytesPerDistinctText: 84,
+  bytesPerSymbolByte: 1,
   chunkRows: CHUNK_ROWS,
   chunkCells: CHUNK_CELLS,
   writesAsItGoes: true,
 };
+
+/**
+ * Whether Arrow writes a column as text, and so as a dictionary: as the other typed
+ * exporters do, and a column with objects in it too, as their JSON
+ * @param {import('./columnTypes.mjs').ColumnType} typeInfo - The column's type information
+ * @returns {boolean} True for a column written as text
+ */
+function writesAsText(typeInfo) {
+  return isTextColumn(typeInfo) || typeInfo.hasObject;
+}
+
+/**
+ * The columns an Arrow export of these rows makes dictionaries of, for the memory guard
+ * Every value is looked at, as the export's own type scan does, yielding as it goes.
+ * @param {Array<Object>} rows - The rows to export
+ * @param {Array<string>} columnNames - Their columns
+ * @returns {Promise<Array<string>>} The columns written as text
+ */
+async function dictionaryColumns(rows, columnNames) {
+  const columnTypes = await scanColumnTypes(rows, columnNames);
+  return columnNames.filter((key) => writesAsText(columnTypes[key]));
+}
 
 /**
  * Where a file writer puts what it writes, until it is taken to the file
@@ -61,14 +88,6 @@ class WrittenBytes extends arrow.AsyncByteQueue {
     this.pieces = [];
     return Buffer.concat(pieces);
   }
-}
-
-/**
- * Give the event loop a turn
- * @returns {Promise<void>} Resolves on the next turn
- */
-function nextTurn() {
-  return new Promise((resolve) => setImmediate(resolve));
 }
 
 /**
@@ -158,8 +177,6 @@ export async function exportToArrow(data, filePath, options = {}) {
 
     // Determine the most compatible type for each column, from all rows
     const columnTypes = await scanColumnTypes(data, columnNames);
-    const isTextColumn = (typeInfo) =>
-      typeInfo.hasString || typeInfo.hasObject || (typeInfo.hasNumber && typeInfo.hasBoolean);
 
     // Each column's type, as Arrow inferred it from every value when it built the whole
     // table at once. A column of timestamps read in a time zone holds their instants,
@@ -167,7 +184,7 @@ export async function exportToArrow(data, filePath, options = {}) {
     // zone, as a QVD's are. One of text, or of mixed types, holds text, one of numbers
     // doubles, one of booleans booleans, and one with nothing but missing values doubles
     const typeOf = (typeInfo) => {
-      if (isTextColumn(typeInfo)) {
+      if (writesAsText(typeInfo)) {
         return textType();
       } else if (typeInfo.hasDate) {
         if (typeInfo.calendarDates) {
@@ -187,7 +204,7 @@ export async function exportToArrow(data, filePath, options = {}) {
     // as Arrow's dictionary builder made it
     const columns = schema.fields.map((field) => {
       const typeInfo = columnTypes[field.name];
-      const text = isTextColumn(typeInfo);
+      const text = writesAsText(typeInfo);
       return {
         key: field.name,
         field,
@@ -258,7 +275,13 @@ export async function exportToArrow(data, filePath, options = {}) {
           } else if (cell === null) {
             values.nulls++;
           } else {
-            values.data[i] = column.indices.get(cell);
+            // A value the dictionary hasn't got changed after it was made: an index of
+            // 0 would write the dictionary's first value instead
+            const index = column.indices.get(cell);
+            if (index === undefined) {
+              throw new Error(`row ${start + i + 1}'s ${JSON.stringify(column.key)} changed during the export`);
+            }
+            values.data[i] = index;
             values.valid[i >> 3] |= 1 << (i & 7);
           }
         }

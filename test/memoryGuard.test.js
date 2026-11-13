@@ -153,6 +153,8 @@ suite("Memory Guard Test Suite", () => {
     const arrowCost = DataExporter.memoryCost("arrow");
     assert.ok(arrowCost.bytesPerCell >= 0.4 * 1.5);
     assert.ok(arrowCost.bytesPerDistinctText >= 55 * 1.5);
+    // Its dictionaries' text took at most 97% of its fields' symbols' bytes
+    assert.ok(arrowCost.bytesPerSymbolByte >= 0.97);
     assert.ok(arrowCost.chunkRows > 0 && arrowCost.chunkCells > 0);
     // A SQLite export needed 0.42 per cell on the heap: its database is outside it
     assert.ok(DataExporter.memoryCost("sqlite").bytesPerCell >= 0.42 * 1.5);
@@ -308,32 +310,72 @@ suite("Memory Guard Test Suite", () => {
     });
   });
 
-  test("An export that holds each text column's distinct values is priced for them, as many as the QVD has", async () => {
+  test("An export that holds some columns' distinct values is priced for them and their text, as the QVD has them", async () => {
     const arrowCost = DataExporter.memoryCost("arrow");
-    // Five rows, one chunk: code has two distinct texts, note five; id and at hold no text
-    const rows = Array.from({ length: 5 }, (_, i) => ({ id: i, code: `c${i % 2}`, note: `n${i}`, at: new Date(i) }));
-    const chunk = 5 * 4 * arrowCost.bytesPerCell + 20 * arrowCost.bytesPerTextChar;
-    const symbols = new Map([["id", 5], ["code", 2], ["note", 5], ["at", 5]]);
-    assert.deepStrictEqual(await guard.exportHeapBytes(arrowCost, rows, 4, 0, { symbols }), {
+    const { bytesPerCell, bytesPerTextChar, bytesPerDistinctText, bytesPerSymbolByte } = arrowCost;
+    // Five rows, one chunk: code has two distinct texts and note five. blank's numbers
+    // with blank text, and at's timestamps, Arrow writes as they are, not as text
+    const rows = Array.from({ length: 5 }, (_, i) => ({
+      id: i,
+      code: `c${i % 2}`,
+      note: `n${i}`,
+      blank: i % 2 ? "" : i,
+      at: new Date(i),
+    }));
+    assert.deepStrictEqual(await arrowCost.dictionaryColumns(rows, Object.keys(rows[0])), ["code", "note"]);
+    // Objects, as JSON, and numbers next to booleans are text to Arrow too
+    assert.deepStrictEqual(
+      await arrowCost.dictionaryColumns([{ object: { a: 1 }, mixed: 1 }, { object: null, mixed: true }], ["object", "mixed"]),
+      ["object", "mixed"]
+    );
+
+    const chunk = 5 * 5 * bytesPerCell + 20 * bytesPerTextChar;
+    const fields = new Map([
+      ["id", { symbols: 5, bytes: 25 }],
+      ["code", { symbols: 2, bytes: 8 }],
+      ["note", { symbols: 5, bytes: 20 }],
+      ["blank", { symbols: 4, bytes: 20 }],
+      ["at", { symbols: 5, bytes: 45 }],
+    ]);
+    assert.deepStrictEqual(await guard.exportHeapBytes(arrowCost, rows, 5, 0, { fields }), {
       rows: 5,
-      bytes: chunk + (2 + 5) * arrowCost.bytesPerDistinctText,
+      bytes: chunk + (2 + 5) * bytesPerDistinctText + (8 + 20) * bytesPerSymbolByte,
     });
-    // A field without its symbols counts one a row
-    assert.deepStrictEqual(await guard.exportHeapBytes(arrowCost, rows, 4), {
+    // A field the header doesn't describe counts one value a row, and the rows' text at
+    // three bytes a character
+    assert.deepStrictEqual(await guard.exportHeapBytes(arrowCost, rows, 5), {
       rows: 5,
-      bytes: chunk + (5 + 5) * arrowCost.bytesPerDistinctText,
+      bytes: chunk + (5 + 5) * bytesPerDistinctText + 2 * 3 * 20 * bytesPerSymbolByte,
     });
     // A row limit counts at most one a row exported
-    assert.deepStrictEqual(await guard.exportHeapBytes(arrowCost, rows, 4, 3, { symbols }), {
+    assert.deepStrictEqual(await guard.exportHeapBytes(arrowCost, rows, 5, 3, { fields }), {
       rows: 3,
-      bytes: 3 * 4 * arrowCost.bytesPerCell + 12 * arrowCost.bytesPerTextChar + (2 + 3) * arrowCost.bytesPerDistinctText,
+      bytes: 3 * 5 * bytesPerCell + 12 * bytesPerTextChar + (2 + 3) * bytesPerDistinctText + (8 + 20) * bytesPerSymbolByte,
     });
     // A format that holds no dictionary isn't priced for one
     const csv = DataExporter.memoryCost("csv");
-    assert.deepStrictEqual(await guard.exportHeapBytes(csv, rows, 4, 0, { symbols }), {
+    assert.deepStrictEqual(await guard.exportHeapBytes(csv, rows, 5, 0, { fields }), {
       rows: 5,
-      bytes: 5 * 4 * csv.bytesPerCell + 20 * csv.bytesPerTextChar,
+      bytes: 5 * 5 * csv.bytesPerCell + 20 * csv.bytesPerTextChar,
     });
+  });
+
+  test("A read for an export that holds its text fields' distinct values prices them from the header", async () => {
+    // sets.qvd's name is tagged $text: 10,368 distinct values, taking 269,715 bytes
+    const header = await new QvdReader().readHeader(sets);
+    const name = header.metadata.fields.find((field) => field.name === "name");
+    assert.deepStrictEqual([name.noOfSymbols, name.length, name.tags.includes("$text")], [10368, 269715, true]);
+    const perValue = await new QvdReader().read(sets, 0, { bytesPerDistinctText: 1e6 });
+    assert.strictEqual(perValue.errorReason, "memory");
+    assert.strictEqual(perValue.refusal.forCaller, true);
+    assert.ok(perValue.refusal.neededBytes >= 10368 * 1e6);
+    const perByte = await new QvdReader().read(sets, 0, { bytesPerSymbolByte: 1e5 });
+    assert.strictEqual(perByte.errorReason, "memory");
+    assert.ok(perByte.refusal.neededBytes >= 269715 * 1e5);
+    // set_num, not tagged $text, is text too, but is priced once the rows are read
+    const read = await new QvdReader().read(sets, 0, { bytesPerDistinctText: 84, bytesPerSymbolByte: 1 });
+    assert.strictEqual(read.error, null);
+    read.release();
   });
 
   test("A chunk size that isn't a whole number of 1 or more is refused", () => {

@@ -13,10 +13,12 @@ import {
   dateValueBytes,
   describeCallerRefusal,
   describeReadRefusal,
+  dictionaryBytes,
   heldTextBytes,
   knownBudget,
   memoryRefusalOf,
   memorySafetyFactorFor,
+  nextTurn,
   pricingOfRefusal,
   rememberBudget,
   textShares,
@@ -97,7 +99,7 @@ export async function toRowObjects(rows, columns, signal, dates = null) {
     );
     rows[i] = undefined;
     if ((i + 1) % rowsPerChunk === 0 && i + 1 < rows.length) {
-      await new Promise((resolve) => setImmediate(resolve));
+      await nextTurn();
       signal?.throwIfAborted();
     }
   }
@@ -382,6 +384,11 @@ class QvdReader {
    * @param {number} [options.bytesPerRow=0] - Heap the caller builds from the rows per row, such as profiling's
    * @param {number} [options.chunkRows=0] - Rows the caller builds from at a time, such as
    *   a CSV export's; 0 for every row at once
+   * @param {number} [options.bytesPerDistinctText=0] - Heap the caller holds to the end per
+   *   distinct value of a text field, as an Arrow export's dictionaries do
+   * @param {number} [options.bytesPerSymbolByte=0] - Memory it holds to the end per byte of
+   *   a text field's symbols, their text. Only fields tagged $text are priced so, whose
+   *   values are all text: what else the caller holds is priced once the rows are read
    * @param {boolean} [options.holdCallerBytes=true] - Whether the rows' booking includes
    *   the caller's work from the start. A caller that waits on the user first, as Export
    *   does for its dialogs, books its work itself when it begins.
@@ -406,6 +413,8 @@ class QvdReader {
       bytesPerCell = 0,
       bytesPerRow = 0,
       chunkRows = 0,
+      bytesPerDistinctText = 0,
+      bytesPerSymbolByte = 0,
       holdCallerBytes = true,
       dates = false,
     } = {}
@@ -418,6 +427,8 @@ class QvdReader {
       requireCount(bytesPerCell, "bytesPerCell");
       requireCount(bytesPerRow, "bytesPerRow");
       requireCount(chunkRows, "chunkRows", true);
+      requireCount(bytesPerDistinctText, "bytesPerDistinctText");
+      requireCount(bytesPerSymbolByte, "bytesPerSymbolByte");
       // Configure allowedDir to the parent directory of the file being opened
       // This allows qvdjs to read files from anywhere while still maintaining
       // path traversal protection within that directory.
@@ -436,7 +447,11 @@ class QvdReader {
         const cells = rows * header.columnCount;
         // What the caller builds, for as many rows as it builds from at once
         const callerRows = chunkRows > 0 ? Math.min(chunkRows, rows) : rows;
-        const callerBytes = callerRows * (header.columnCount * bytesPerCell + bytesPerRow);
+        // and what it holds of its text fields' distinct values for every row
+        const textFields = header.fields.filter((field) => field.tags.includes("$text"));
+        const callerBytes =
+          callerRows * (header.columnCount * bytesPerCell + bytesPerRow) +
+          dictionaryBytes({ bytesPerDistinctText, bytesPerSymbolByte }, textFields, rows);
         // A read for dates also finds a Date for each distinct value of its date fields
         const dateBytes = dates ? dateValueBytes(header.fields, rows) : 0;
         const costBound = readCostBound(header, cells, callerBytes) + dateBytes;

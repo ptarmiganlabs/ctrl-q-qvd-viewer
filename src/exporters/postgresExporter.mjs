@@ -1,6 +1,6 @@
 import { rowsPerChunk } from "../memoryGuard.mjs";
 import { writeChunks, writeFileAtomically } from "./atomicWrite.mjs";
-import { isMissing, scanColumnTypes } from "./columnTypes.mjs";
+import { isMissing, isTextColumn, scanColumnTypes } from "./columnTypes.mjs";
 import { naiveDateText } from "./naiveDates.mjs";
 import { offsetText, zonedTimestampsFor } from "./zonedTimestamps.mjs";
 
@@ -136,7 +136,7 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
         let pgType = "TEXT"; // Default to TEXT
 
         // Determine PostgreSQL type based on collected type information
-        if (typeInfo.hasString || (typeInfo.hasNumber && typeInfo.hasBoolean)) {
+        if (isTextColumn(typeInfo)) {
           // Mixed types or strings - use TEXT
           pgType = "TEXT";
         } else if (typeInfo.hasDate) {

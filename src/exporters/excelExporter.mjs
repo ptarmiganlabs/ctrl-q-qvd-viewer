@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 import { once } from "events";
 import { isBlank } from "../cellValue.mjs";
 import { fileWriter, writeFileAtomically } from "./atomicWrite.mjs";
-import { rowsPerChunk } from "../memoryGuard.mjs";
+import { nextTurn, rowsPerChunk } from "../memoryGuard.mjs";
 import { scanColumnTypes } from "./columnTypes.mjs";
 import { naiveDateText } from "./naiveDates.mjs";
 
@@ -68,7 +68,7 @@ async function sheetTaken(worksheet, signal) {
   const state = entry?._writableState;
   if (!state) {
     // ExcelJS's or archiver's insides have changed: give the zip a turn, at least
-    await new Promise((resolve) => setImmediate(resolve));
+    await nextTurn();
     signal.throwIfAborted();
     return false;
   }
