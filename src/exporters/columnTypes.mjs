@@ -1,5 +1,5 @@
 import { CalendarDate, isBlank } from "../cellValue.mjs";
-import { CELLS_PER_YIELD } from "../memoryGuard.mjs";
+import { CELLS_PER_YIELD, nextTurn } from "../memoryGuard.mjs";
 
 /**
  * What a column holds, from which a typed exporter picks the column's type
@@ -17,6 +17,17 @@ import { CELLS_PER_YIELD } from "../memoryGuard.mjs";
  * @property {boolean} hasObject - Some value is an object other than a Date
  * @property {boolean} blanksAreNull - The column's blank text is a missing value
  */
+
+/**
+ * Whether a typed exporter writes a column as text: one with text in it, or with
+ * numbers and booleans both. Arrow also writes a column with objects in it as text,
+ * their JSON, where the others take an object as its column's type takes it
+ * @param {ColumnType} typeInfo - The column's type information, from scanColumnTypes()
+ * @returns {boolean} True for a column written as text
+ */
+export function isTextColumn(typeInfo) {
+  return typeInfo.hasString || (typeInfo.hasNumber && typeInfo.hasBoolean);
+}
 
 /**
  * Scan every row for what each column holds
@@ -51,7 +62,7 @@ export async function scanColumnTypes(rows, columnNames) {
   const rowsPerYield = Math.max(1, Math.floor(CELLS_PER_YIELD / Math.max(1, columnNames.length)));
   for (let i = 0; i < rows.length; i++) {
     if (i > 0 && i % rowsPerYield === 0) {
-      await new Promise((resolve) => setImmediate(resolve));
+      await nextTurn();
     }
     const row = rows[i];
     for (const key of columnNames) {
@@ -94,9 +105,8 @@ export async function scanColumnTypes(rows, columnNames) {
     const typeInfo = columnTypes[key];
     if (typeInfo.hasBlank) {
       typeInfo.blanksAreNull =
-        !typeInfo.hasString &&
+        !isTextColumn(typeInfo) &&
         !typeInfo.hasObject &&
-        !(typeInfo.hasNumber && typeInfo.hasBoolean) &&
         (typeInfo.hasNumber || typeInfo.hasBoolean || typeInfo.hasDate);
       if (typeInfo.blanksAreNull) {
         typeInfo.hasNull = true;

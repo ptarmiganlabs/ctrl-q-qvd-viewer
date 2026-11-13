@@ -1,6 +1,6 @@
 import parquet from 'parquetjs';
 import { existsSync, unlinkSync } from 'fs';
-import { isMissing, scanColumnTypes } from './columnTypes.mjs';
+import { isMissing, isTextColumn, scanColumnTypes } from './columnTypes.mjs';
 import { markTimestamps } from './parquetTimestamps.mjs';
 import { zonedTimestampsFor } from './zonedTimestamps.mjs';
 
@@ -56,7 +56,7 @@ export async function exportToParquet(data, filePath, options = {}) {
       let optional = typeInfo.hasNull;
 
       // If column has mixed types or strings, use UTF8 as most compatible
-      if (typeInfo.hasString || (typeInfo.hasNumber && typeInfo.hasBoolean)) {
+      if (isTextColumn(typeInfo)) {
         type = "UTF8";
       } else if (typeInfo.hasDate && typeInfo.calendarDates) {
         type = "DATE";
