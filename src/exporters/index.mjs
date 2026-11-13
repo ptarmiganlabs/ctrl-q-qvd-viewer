@@ -263,9 +263,9 @@ class DataExporter {
   /**
    * What a format's export builds on the heap from the rows, for the memory guard
    * Each exporter declares its own, next to the code that builds it. Each is
-   * about one and a half times what the export needed per cell, and twice what
-   * it needed per character of text, since text outside Latin-1 takes two bytes
-   * a character.
+   * about one and a half times what the export needed per cell, or per distinct
+   * value it holds, and twice what it needed per character of text, since text
+   * outside Latin-1 takes two bytes a character.
    * @param {string} format - The export format
    * @returns {import('../memoryGuard.mjs').ExportCost|null} The cost, or null for a name that isn't a format
    */

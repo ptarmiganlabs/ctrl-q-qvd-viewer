@@ -1,26 +1,44 @@
 import * as arrow from 'apache-arrow';
 import { writeFileAtomically } from './atomicWrite.mjs';
 import { isMissing, scanColumnTypes } from './columnTypes.mjs';
+import { rowsPerChunk } from '../memoryGuard.mjs';
 import { naiveDateText } from './naiveDates.mjs';
 import { zonedTimestampsFor } from './zonedTimestamps.mjs';
 
 // Rows in each record batch, written to the file before the next is made
 export const CHUNK_ROWS = 10000;
 
+// Cells in each record batch at most: a QVD with many fields gets fewer rows in a batch
+export const CHUNK_CELLS = CHUNK_ROWS * 20;
+
+// Text cells the dictionaries look at, and distinct values their vectors take, between
+// yields to the event loop. A value new to a dictionary takes it up to half a
+// microsecond, so this is a few tens of milliseconds at most
+export const DICTIONARY_CELLS_PER_YIELD = 100000;
+
 /**
  * Heap an Arrow export builds from the rows, for the memory guard. It writes a
- * record batch at a time, but holds each text column's distinct values from
- * before the first batch to the end, for its dictionary, so the whole export is
- * priced rather than a batch. In its own batches, a million rows of
- * chicago_taxi_rides_2016_03.qvd needed nothing measurable beyond reading them,
- * with timestamps read in America/Chicago too, and 0.42 bytes per cell in one
- * batch. 50,000 rows of four unique 400-character values needed 0.31 per
- * character of all their text. Measured by the smallest heap that let them
- * export, against reading them alone. Its buffers and dictionaries' text,
- * outside the V8 heap, aren't counted. See DataExporter.memoryCost() for the
- * margins.
+ * record batch at a time, of CHUNK_ROWS rows or CHUNK_CELLS cells, whichever is
+ * fewer rows, so only its largest batch is priced per cell and per character: a
+ * million rows of 20 fields in one batch needed nothing measurable beyond reading
+ * them, under 0.4 bytes a cell. But each text column's distinct values are held
+ * from before the first batch to the end, for its dictionary, so they are priced
+ * for the whole export: 33 bytes a value for short text already in the rows, and
+ * 55 for numbers that a column of text turns into text. Measured by the smallest
+ * heap that let a million rows of five such columns export, every value distinct,
+ * against reading them alone. 50,000 rows of four unique 400-character values
+ * needed 47 a value, to the 8 MiB the measurement resolves, and nothing a
+ * character. Its buffers and dictionaries' text, outside the V8 heap, aren't
+ * counted. See DataExporter.memoryCost() for the margins.
  */
-export const memoryCost = { bytesPerCell: 1, bytesPerTextChar: 1, writesAsItGoes: true };
+export const memoryCost = {
+  bytesPerCell: 1,
+  bytesPerTextChar: 1,
+  bytesPerDistinctText: 84,
+  chunkRows: CHUNK_ROWS,
+  chunkCells: CHUNK_CELLS,
+  writesAsItGoes: true,
+};
 
 /**
  * Where a file writer puts what it writes, until it is taken to the file
@@ -46,6 +64,66 @@ class WrittenBytes extends arrow.AsyncByteQueue {
 }
 
 /**
+ * Give the event loop a turn
+ * @returns {Promise<void>} Resolves on the next turn
+ */
+function nextTurn() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+/**
+ * A value of a column of text, or of mixed types, as text
+ * @param {*} value - A value that isn't missing
+ * @returns {string} The text
+ */
+function textOf(value) {
+  if (value instanceof Date) {
+    return naiveDateText(value, false);
+  } else if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+/**
+ * A dictionary's vector of its distinct values, in one piece, as the writer writes it once
+ * Their UTF-8 is written into one buffer: Arrow's own builder holds each value as a
+ * Uint8Array of its own until it is done, about 50 bytes a value more of the heap.
+ * Every value is looked at twice, so this yields to the event loop as it goes.
+ * @param {Map<string, number>} indices - The distinct values, in the order of their indices
+ * @returns {Promise<arrow.Vector>} The vector
+ * @throws {RangeError} For more text than Arrow's 32-bit offsets reach
+ */
+async function textVectorOf(indices) {
+  let byteLength = 0;
+  let seen = 0;
+  for (const value of indices.keys()) {
+    byteLength += Buffer.byteLength(value, "utf8");
+    if (++seen % DICTIONARY_CELLS_PER_YIELD === 0) {
+      await nextTurn();
+    }
+  }
+  if (byteLength > 2 ** 31 - 1) {
+    throw new RangeError(`a text column's distinct values take ${byteLength} bytes, more than Arrow's text holds`);
+  }
+  const bytes = Buffer.alloc(byteLength);
+  const valueOffsets = new Int32Array(indices.size + 1);
+  let offset = 0;
+  let index = 0;
+  for (const value of indices.keys()) {
+    offset += bytes.write(value, offset, "utf8");
+    valueOffsets[++index] = offset;
+    if (index % DICTIONARY_CELLS_PER_YIELD === 0) {
+      await nextTurn();
+    }
+  }
+  const data = new Uint8Array(bytes.buffer, bytes.byteOffset, byteLength);
+  return arrow.makeVector(
+    arrow.makeData({ type: new arrow.Utf8(), length: indices.size, nullCount: 0, valueOffsets, data })
+  );
+}
+
+/**
  * Export data to Apache Arrow format
  * @param {Array<Object>} data - Array of row objects
  * @param {string} filePath - Destination file path
@@ -57,22 +135,26 @@ class WrittenBytes extends arrow.AsyncByteQueue {
  *   zone and rows, what reading their timestamps in it did
  */
 export async function exportToArrow(data, filePath, options = {}) {
-  const { chunkRows = CHUNK_ROWS } = options;
   // Before anything is written, so that a time zone Intl doesn't know leaves the file alone
   const zoned = zonedTimestampsFor(options);
   try {
+    const columnNames = data.length > 0 ? Object.keys(data[0]) : [];
+    const chunkRows = rowsPerChunk(memoryCost, columnNames.length, options.chunkRows);
+    const textType = () => new arrow.Dictionary(new arrow.Utf8(), new arrow.Int32());
+
     if (data.length === 0) {
-      // Create empty Arrow file
-      const emptyTable = arrow.tableFromJSON([{ empty: "" }]);
-      const writer = arrow.RecordBatchFileWriter.writeAll(emptyTable);
-      const buffer = Buffer.from(await writer.toUint8Array());
-      await writeFileAtomically(filePath, (file) => file.writeFile(buffer));
+      // No rows, and so no columns to type: a column of text named empty, with no
+      // rows, as Parquet and Avro write
+      const schema = new arrow.Schema([new arrow.Field("empty", textType(), true)]);
+      await writeFileAtomically(filePath, async (file) => {
+        const written = new WrittenBytes();
+        const writer = new arrow.RecordBatchFileWriter();
+        writer.reset(written, schema);
+        writer.close();
+        await file.writeFile(written.take());
+      });
       return;
     }
-
-    // First, analyze all columns to detect mixed types
-    const firstRow = data[0];
-    const columnNames = Object.keys(firstRow);
 
     // Determine the most compatible type for each column, from all rows
     const columnTypes = await scanColumnTypes(data, columnNames);
@@ -86,7 +168,7 @@ export async function exportToArrow(data, filePath, options = {}) {
     // doubles, one of booleans booleans, and one with nothing but missing values doubles
     const typeOf = (typeInfo) => {
       if (isTextColumn(typeInfo)) {
-        return new arrow.Dictionary(new arrow.Utf8(), new arrow.Int32());
+        return textType();
       } else if (typeInfo.hasDate) {
         if (typeInfo.calendarDates) {
           return new arrow.DateDay();
@@ -99,51 +181,57 @@ export async function exportToArrow(data, filePath, options = {}) {
     };
     // Every field nullable, as a table made of vectors makes them
     const schema = new arrow.Schema(columnNames.map((key) => new arrow.Field(key, typeOf(columnTypes[key]), true)));
-    const instants = new Set(
-      columnNames.filter((key) => schema.fields[columnNames.indexOf(key)].type.timezone)
-    );
+
+    // Each column, and how its cells are written, worked out once. A text column holds
+    // indices into a dictionary of its distinct values, in the order they first appear,
+    // as Arrow's dictionary builder made it
+    const columns = schema.fields.map((field) => {
+      const typeInfo = columnTypes[field.name];
+      const text = isTextColumn(typeInfo);
+      return {
+        key: field.name,
+        field,
+        typeInfo,
+        text,
+        instants: Boolean(field.type.timezone),
+        indices: text ? new Map() : null,
+        dictionary: null,
+      };
+    });
+    const textColumns = columns.filter((column) => column.text);
 
     // A cell's value, normalized so that a column holds one type
-    const cellOf = (value, key) => {
-      const typeInfo = columnTypes[key];
-      if (isMissing(value, typeInfo)) {
+    const cellOf = (value, column) => {
+      if (isMissing(value, column.typeInfo)) {
         return null;
-      } else if (isTextColumn(typeInfo)) {
+      } else if (column.text) {
         // If column has mixed types or strings, convert everything to string
-        if (value instanceof Date) {
-          return naiveDateText(value, false);
-        } else if (typeof value === "object") {
-          return JSON.stringify(value);
-        }
-        return String(value);
-      } else if (instants.has(key)) {
-        return zoned.instant(value, key);
+        return textOf(value);
+      } else if (column.instants) {
+        return zoned.instant(value, column.key);
       }
       // Keep primitives (string, number, boolean) and dates as they are
       return value;
     };
 
-    // A text column holds indices into a dictionary of its distinct values, in the
-    // order they first appear, as Arrow's dictionary builder made it. The dictionary is
-    // made whole before the first batch, so that the file holds it once, as it did when
-    // the table was one batch: polars, for one, can't read a dictionary that grows from
-    // batch to batch
-    const dictionaries = new Map(
-      columnNames.filter((key) => isTextColumn(columnTypes[key])).map((key) => [key, new Map()])
-    );
-    if (dictionaries.size > 0) {
-      for (const row of data) {
-        for (const [key, indices] of dictionaries) {
-          const cell = cellOf(row[key], key);
-          if (cell !== null && !indices.has(cell)) {
-            indices.set(cell, indices.size);
-          }
+    // The dictionaries are made whole before the first batch, so that the file holds
+    // each once, as it did when the table was one batch: polars, for one, can't read a
+    // dictionary that grows from batch to batch. Every text cell is looked at, so this
+    // yields to the event loop as it goes. A column at a time: a map growing past a
+    // million values takes 10 ms, and the columns' maps would grow at the same row
+    let cells = 0;
+    for (const column of textColumns) {
+      for (let i = 0; i < data.length; i++) {
+        const cell = cellOf(data[i][column.key], column);
+        if (cell !== null && !column.indices.has(cell)) {
+          column.indices.set(cell, column.indices.size);
+        }
+        if (++cells % DICTIONARY_CELLS_PER_YIELD === 0) {
+          await nextTurn();
         }
       }
+      column.dictionary = await textVectorOf(column.indices);
     }
-    const dictionaryValues = new Map(
-      [...dictionaries].map(([key, indices]) => [key, arrow.vectorFromArray([...indices.keys()], new arrow.Utf8())])
-    );
     const batchType = new arrow.Struct(schema.fields);
 
     /**
@@ -154,39 +242,39 @@ export async function exportToArrow(data, filePath, options = {}) {
      */
     const batchOf = (start, end) => {
       const length = end - start;
-      const columns = schema.fields.map((field) => {
-        const indices = dictionaries.get(field.name);
-        if (indices) {
-          return { indices, data: new Int32Array(length), valid: new Uint8Array((length + 7) >> 3), nulls: 0 };
-        }
-        return { builder: arrow.makeBuilder({ type: field.type, nullValues: [null] }) };
-      });
+      const built = columns.map((column) =>
+        column.text
+          ? { data: new Int32Array(length), valid: new Uint8Array((length + 7) >> 3), nulls: 0 }
+          : { builder: arrow.makeBuilder({ type: column.field.type, nullValues: [null] }) }
+      );
       for (let i = 0; i < length; i++) {
         const row = data[start + i];
-        columnNames.forEach((key, c) => {
-          const cell = cellOf(row[key], key);
+        for (let c = 0; c < columns.length; c++) {
           const column = columns[c];
-          if (!column.indices) {
-            column.builder.append(cell);
+          const cell = cellOf(row[column.key], column);
+          const values = built[c];
+          if (!column.text) {
+            values.builder.append(cell);
           } else if (cell === null) {
-            column.nulls++;
+            values.nulls++;
           } else {
-            column.data[i] = column.indices.get(cell);
-            column.valid[i >> 3] |= 1 << (i & 7);
+            values.data[i] = column.indices.get(cell);
+            values.valid[i >> 3] |= 1 << (i & 7);
           }
-        });
+        }
       }
       const children = columns.map((column, c) => {
-        if (!column.indices) {
-          return column.builder.finish().flush();
+        const values = built[c];
+        if (!column.text) {
+          return values.builder.finish().flush();
         }
         return arrow.makeData({
-          type: schema.fields[c].type,
+          type: column.field.type,
           length,
-          nullCount: column.nulls,
-          nullBitmap: column.nulls > 0 ? column.valid : undefined,
-          data: column.data,
-          dictionary: dictionaryValues.get(columnNames[c]),
+          nullCount: values.nulls,
+          nullBitmap: values.nulls > 0 ? values.valid : undefined,
+          data: values.data,
+          dictionary: column.dictionary,
         });
       });
       return new arrow.RecordBatch(schema, arrow.makeData({ type: batchType, length, children }));

@@ -244,6 +244,8 @@ export function setupMessageHandler(
           const workspaceFolder =
             vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
           const columnCount = result.columns.length;
+          // Each field's distinct values, which bound what an export holding them needs
+          const symbols = new Map((result.metadata?.fields ?? []).map((field) => [field.name, field.noOfSymbols]));
           // What reading the timestamps in a time zone did, when the export named one
           let timeShifts = null;
           const savedPath = await DataExporter.exportData(
@@ -261,7 +263,7 @@ export function setupMessageHandler(
               reserve: async (rows, limit) => {
                 // A read already running was priced without this export: it goes first
                 await qvdReader.afterLargeReads({ signal });
-                const needed = await exportHeapBytes(cost, rows, columnCount, limit);
+                const needed = await exportHeapBytes(cost, rows, columnCount, limit, { symbols });
                 const booking = tryBookHeap(needed.bytes);
                 if (!booking.release) {
                   throw new Error(exportRefusal(format, needed.rows, needed.bytes, booking.leftBytes));
