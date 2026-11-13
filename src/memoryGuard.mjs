@@ -1,3 +1,5 @@
+import os from "os";
+
 /**
  * Keeps QVD reads, and what their callers do with the rows, inside the
  * extension host's memory, which every extension shares.
@@ -249,6 +251,9 @@ export function heldTextBytes(fields, rows, shares) {
  * @property {number} [bytesPerDistinctText] - Heap per distinct value of such a column
  * @property {number} [bytesPerSymbolByte] - Memory per byte of such a field's symbols in the
  *   QVD: the text of its distinct values, which is held to the end too, if outside the heap
+ * @property {number} [outsideHeapBytesPerCell] - Memory outside the heap per cell of the whole
+ *   export, which the heap's budget doesn't bound, such as a database built in memory
+ * @property {number} [outsideHeapBytesPerTextChar] - The same per character of the rows' text
  */
 
 /**
@@ -321,7 +326,9 @@ export function dictionaryBytes(cost, fields, rows) {
  *   symbols in the QVD, its distinct values, and the bytes they take. A field left out
  *   counts one value a row, and every character of the rows' text at three bytes, as
  *   UTF-8 takes at most
- * @returns {Promise<{bytes: number, rows: number}>} The heap, and the rows it is for
+ * @returns {Promise<{bytes: number, rows: number, outsideBytes?: number}>} The heap, and
+ *   the rows it is for. outsideBytes, for an export that declares memory outside the heap:
+ *   that memory, for the whole export, to be checked against memoryLeftOutsideHeap()
  */
 export async function exportHeapBytes(cost, rows, columnCount, limit = 0, { fields } = {}) {
   const count = limit > 0 ? Math.min(limit, rows.length) : rows.length;
@@ -353,7 +360,25 @@ export async function exportHeapBytes(cost, rows, columnCount, limit = 0, { fiel
     const described = held.map((key) => fields?.get(key) ?? { symbols: count, bytes: 3 * allChars });
     bytes += dictionaryBytes(cost, described, count);
   }
+  if (cost.outsideHeapBytesPerCell > 0 || cost.outsideHeapBytesPerTextChar > 0) {
+    const outsideBytes =
+      count * columnCount * (cost.outsideHeapBytesPerCell ?? 0) + allChars * (cost.outsideHeapBytesPerTextChar ?? 0);
+    return { bytes, rows: count, outsideBytes };
+  }
   return { bytes, rows: count };
+}
+
+/**
+ * Memory left on this computer for work outside the heap, such as a database built in
+ * memory: the computer's memory, or a container's limit where it is less, less what
+ * the extension host already uses
+ * @returns {number} Bytes, 0 at least
+ */
+export function memoryLeftOutsideHeap() {
+  const total = os.totalmem();
+  const constrained = typeof process.constrainedMemory === "function" ? process.constrainedMemory() : 0;
+  const limit = constrained > 0 && constrained < total ? constrained : total;
+  return Math.max(0, limit - process.memoryUsage().rss);
 }
 
 /**
@@ -383,8 +408,9 @@ function listed(names) {
  * @param {number} leftBytes - Heap left for it
  * @param {Array<string>} [leaner] - The formats to suggest, which write as they go, as
  *   the user sees them: never the format refused
- * @param {{everyOther?: boolean}} [options] - everyOther: whether they are every other
- *   format, which is then said instead of naming them
+ * @param {{everyOther?: boolean, onComputer?: boolean}} [options] - everyOther: whether
+ *   they are every other format, which is then said instead of naming them; onComputer:
+ *   whether what is left is the computer's memory, outside the heap, not VS Code's heap
  * @returns {string} The message
  */
 export function describeExportRefusal(
@@ -393,7 +419,7 @@ export function describeExportRefusal(
   neededBytes,
   leftBytes,
   leaner = [],
-  { everyOther = false } = {}
+  { everyOther = false, onComputer = false } = {}
 ) {
   const others = leaner.filter((label) => label !== formatLabel);
   const suggestion =
@@ -406,7 +432,8 @@ export function describeExportRefusal(
           : ` ${listed(others)} write as they go, and need much less.`;
   return (
     `Exporting ${rows.toLocaleString()} rows to ${formatLabel} needs about ${size(neededBytes)} ` +
-    `of memory, and about ${size(leftBytes)} is left in what VS Code gives its extensions.${suggestion}`
+    `of memory, and about ${size(leftBytes)} is left ` +
+    `${onComputer ? "on this computer" : "in what VS Code gives its extensions"}.${suggestion}`
   );
 }
 

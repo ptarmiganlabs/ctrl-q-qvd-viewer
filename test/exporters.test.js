@@ -1808,6 +1808,65 @@ suite("Exporter Test Suite", () => {
     assert.strictEqual(await countSqliteRows(filePath), 100);
   });
 
+  test("SQLite export - a column of numbers and booleans is text as the other formats write it, and objects JSON", async () => {
+    const filePath = path.join(outputDir, "mixed.db");
+
+    await sqliteExporter.exportToSQLite([{ a: 1, o: { x: 1 } }, { a: true, o: { y: [2] } }, { a: 2.5, o: null }], filePath);
+
+    assert.deepStrictEqual(await querySqlite(filePath, "SELECT type FROM pragma_table_info('data')"), [["TEXT"], ["TEXT"]]);
+    assert.deepStrictEqual(await querySqlite(filePath, "SELECT a, o FROM data"), [
+      ["1", '{"x":1}'],
+      ["true", '{"y":[2]}'],
+      ["2.5", null],
+    ]);
+  });
+
+  test("SQLite export - inserting lets the event loop run, a QVD with many fields in fewer rows at a time", async () => {
+    const fields = Array.from({ length: 300 }, (_, i) => `field${i}`);
+    const count = 1500;
+    const filePath = path.join(outputDir, "wide.db");
+    // The turn of the event loop each read of a row's first field is in
+    let turn = 0;
+    let ticking = true;
+    const tick = () => {
+      turn++;
+      if (ticking) {
+        setImmediate(tick);
+      }
+    };
+    setImmediate(tick);
+    const readTurns = [];
+    const rows = Array.from({ length: count }, (_, i) => {
+      const row = Object.fromEntries(fields.map((field, j) => [field, j % 2 ? `${field} ${i % 7}` : i * j]));
+      return Object.defineProperty(row, "field0", {
+        enumerable: true,
+        get() {
+          readTurns.push(turn);
+          return i;
+        },
+      });
+    });
+    try {
+      await sqliteExporter.exportToSQLite(rows, filePath);
+    } finally {
+      ticking = false;
+    }
+
+    // The type scan reads every row, in one turn for these 450,000 cells, then the
+    // inserts, 200,000 cells a turn: 666 rows of 300 fields, not 10,000
+    assert.strictEqual(readTurns.length, 2 * count);
+    const inserted = [];
+    for (let i = count; i < readTurns.length; i++) {
+      if (i === count || readTurns[i] !== readTurns[i - 1]) {
+        inserted.push(0);
+      }
+      inserted[inserted.length - 1]++;
+    }
+    const perTurn = Math.floor(sqliteExporter.CHUNK_CELLS / fields.length);
+    assert.deepStrictEqual(inserted, [perTurn, perTurn, count - 2 * perTurn]);
+    assert.strictEqual(await countSqliteRows(filePath), count);
+  });
+
   test("SQLite export - bundled exporter finds its wasm file without node_modules", async () => {
     const { exportToSQLite } = await bundleSqliteExporter("bundled");
     const rows = makeRows(100);

@@ -12,6 +12,7 @@ import {
   describeProfileRefusal,
   describeReadRefusal,
   exportHeapBytes,
+  memoryLeftOutsideHeap,
   tryBookHeap,
 } from "../memoryGuard.mjs";
 import logger from "../logger.mjs";
@@ -22,12 +23,15 @@ import logger from "../logger.mjs";
  * @param {number} rows - Rows to export
  * @param {number} neededBytes - Heap the export needs
  * @param {number} leftBytes - Heap left for it
+ * @param {{onComputer?: boolean}} [options] - onComputer: whether these are the memory
+ *   outside the heap it needs, and what is left of the computer's
  * @returns {string} The message
  */
-function exportRefusal(format, rows, neededBytes, leftBytes) {
+function exportRefusal(format, rows, neededBytes, leftBytes, { onComputer = false } = {}) {
   const { labels, everyOther } = DataExporter.leanerFormats(format);
   return describeExportRefusal(DataExporter.formatLabel(format), rows, neededBytes, leftBytes, labels, {
     everyOther,
+    onComputer,
   });
 }
 
@@ -270,6 +274,13 @@ export function setupMessageHandler(
                 // A read already running was priced without this export: it goes first
                 await qvdReader.afterLargeReads({ signal });
                 const needed = await exportHeapBytes(cost, rows, columnCount, limit, { fields });
+                // A SQLite export builds its database in memory, outside the heap
+                if (needed.outsideBytes > 0) {
+                  const left = memoryLeftOutsideHeap();
+                  if (needed.outsideBytes > left) {
+                    throw new Error(exportRefusal(format, needed.rows, needed.outsideBytes, left, { onComputer: true }));
+                  }
+                }
                 const booking = tryBookHeap(needed.bytes);
                 if (!booking.release) {
                   throw new Error(exportRefusal(format, needed.rows, needed.bytes, booking.leftBytes));

@@ -158,6 +158,26 @@ suite("Export Read Test Suite", () => {
     }
   });
 
+  test("A SQLite export too large for the computer's memory is refused, saying so", async () => {
+    // The computer has 1 MiB more than the extension host uses: 20,000 rows of text need more
+    const os = (await import("os")).default;
+    const { totalmem } = os;
+    os.totalmem = () => process.memoryUsage().rss + 2 ** 20;
+    let result;
+    try {
+      const rows = Array.from({ length: 20000 }, (_, i) => ({ code: `c${i % 3}` }));
+      result = await exportThroughHandler(rows, {
+        format: "sqlite",
+        pick: () => assert.fail("An export without timestamps shouldn't ask anything"),
+      });
+    } finally {
+      os.totalmem = totalmem;
+    }
+    assert.deepStrictEqual(result.messages, []);
+    assert.strictEqual(result.errors.length, 1);
+    assert.match(result.errors[0].message, /^Export failed: Exporting 20,000 rows to SQLite needs about \d+ MiB of memory, and about 1 MiB is left on this computer\. Every other format writes as it goes, and needs much less\.$/);
+  });
+
   test("An export refused for the time zone in the settings offers to open them", async () => {
     const rows = [{ at: new Date(Date.UTC(2016, 0, 13, 6, 15)) }];
     const { messages, errors } = await exportThroughHandler(rows, {
