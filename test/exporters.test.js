@@ -1882,9 +1882,11 @@ suite("Exporter Test Suite", () => {
       async (tempPath) => {
         handed = tempPath;
         // Created empty, next to the target's real path, for the writer to open itself.
-        // On macOS the system's temporary folder is reached through a symlink
+        // On macOS the system's temporary folder is reached through a symlink, and on
+        // Windows it can be named with a short name such as RUNNER~1, which the system's
+        // own realpath, as fs.promises.realpath() is, gives in full
         assert.strictEqual(fs.statSync(tempPath).size, 0);
-        assert.strictEqual(path.dirname(tempPath), fs.realpathSync(folder));
+        assert.strictEqual(path.dirname(tempPath), fs.realpathSync.native(folder));
         fs.writeFileSync(tempPath, "written");
         fs.writeFileSync(`${tempPath}-journal`, "journal");
       },
