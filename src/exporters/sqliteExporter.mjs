@@ -3,7 +3,7 @@ import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { createRequire } from 'module';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { isMissing, scanColumnTypes } from './columnTypes.mjs';
+import { isMissing, isTextColumn, scanColumnTypes } from './columnTypes.mjs';
 import { naiveDateText } from './naiveDates.mjs';
 import { utcText, zonedTimestampsFor } from './zonedTimestamps.mjs';
 
@@ -87,7 +87,7 @@ export async function exportToSQLite(data, filePath, options = {}) {
         let sqlType = "TEXT"; // Default to TEXT
 
         // If column has mixed types, use TEXT as most compatible
-        if (typeInfo.hasString || (typeInfo.hasNumber && typeInfo.hasBoolean)) {
+        if (isTextColumn(typeInfo)) {
           sqlType = "TEXT";
         } else if (typeInfo.hasDate) {
           // Dates as ISO text, which SQLite's date functions read: with no time zone, or

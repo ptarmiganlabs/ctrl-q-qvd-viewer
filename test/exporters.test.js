@@ -557,6 +557,232 @@ suite("Exporter Test Suite", () => {
     assert.deepStrictEqual(rows, BLANK_ROWS_STORED);
   });
 
+  test("Arrow export - writing in batches gives the same table as in one go", async () => {
+    for (const [name, rows] of [
+      ["rows", makeRows(25)],
+      ["dates", makeDateRows()],
+      ["blanks", makeBlankRows()],
+      ["big", makeBigIntegerRows()],
+      ["awkward", makeAwkwardRows()],
+    ]) {
+      for (const timeZone of [null, "America/Chicago"]) {
+        const label = `${name}, ${timeZone ?? "no time zone"}`;
+        const batches = path.join(outputDir, `batches-${name}.arrow`);
+        const oneBatch = path.join(outputDir, `one-batch-${name}.arrow`);
+        const shifts = await arrowExporter.exportToArrow(rows, batches, { timeZone, chunkRows: 2 });
+
+        assert.deepStrictEqual(
+          shifts,
+          await arrowExporter.exportToArrow(rows, oneBatch, { timeZone, chunkRows: rows.length }),
+          label
+        );
+        assert.deepStrictEqual(readArrow(batches), readArrow(oneBatch), label);
+        assert.strictEqual(arrow.tableFromIPC(fs.readFileSync(batches)).batches.length, Math.ceil(rows.length / 2), label);
+      }
+    }
+  });
+
+  test("Arrow export - every field is typed and nullable as when Arrow built the table at once", async () => {
+    const filePath = path.join(outputDir, "fields.arrow");
+
+    await arrowExporter.exportToArrow(makeRows(5), filePath, { chunkRows: 2 });
+    const { schema } = arrow.tableFromIPC(fs.readFileSync(filePath));
+
+    // Nullable whether a column has a null or not, as a table made of vectors makes them
+    assert.deepStrictEqual(
+      schema.fields.map((field) => [field.name, String(field.type), field.nullable]),
+      [
+        ["id", "Float64", true],
+        ["price", "Float64", true],
+        ["name", "Dictionary<Int32, Utf8>", true],
+        ["active", "Bool", true],
+        ["note", "Dictionary<Int32, Utf8>", true],
+        ["created", "Timestamp<MILLISECOND>", true],
+      ]
+    );
+  });
+
+  test("Arrow export - a text column's dictionary is written once and whole, for every batch", async () => {
+    const filePath = path.join(outputDir, "dictionaries.arrow");
+    const rows = makeRows(25);
+
+    await arrowExporter.exportToArrow(rows, filePath, { chunkRows: 2 });
+    const bytes = fs.readFileSync(filePath);
+    const reader = arrow.RecordBatchReader.from(bytes);
+    reader.open();
+
+    // One dictionary for each text column, name and note: a dictionary that grew from
+    // batch to batch would add a delta of it for each batch, which polars can't read
+    assert.strictEqual(reader.footer.numDictionaries, 2);
+    assert.strictEqual(reader.footer.numRecordBatches, 13);
+    for (const batch of arrow.tableFromIPC(bytes).batches) {
+      assert.strictEqual(batch.getChild("name").data[0].dictionary.length, rows.length);
+    }
+  });
+
+  test("Arrow export - a QVD with many fields is written in smaller batches, the same table", async () => {
+    const fields = Array.from({ length: 300 }, (_, i) => `field${i}`);
+    const rows = Array.from({ length: 1500 }, (_, i) =>
+      Object.fromEntries(fields.map((field, j) => [field, j % 2 ? `${field} ${i % 7}` : i * j]))
+    );
+    const wide = path.join(outputDir, "wide.arrow");
+    const oneBatch = path.join(outputDir, "wide-one-batch.arrow");
+
+    await arrowExporter.exportToArrow(rows, wide);
+    await arrowExporter.exportToArrow(rows, oneBatch, { chunkRows: rows.length });
+
+    // 200,000 cells a batch: 666 rows of 300 fields, not 10,000
+    const batchRows = Math.floor(arrowExporter.memoryCost.chunkCells / fields.length);
+    assert.deepStrictEqual(
+      arrow.tableFromIPC(fs.readFileSync(wide)).batches.map((batch) => batch.numRows),
+      [batchRows, batchRows, rows.length - 2 * batchRows]
+    );
+    assert.deepStrictEqual(readArrow(wide), readArrow(oneBatch));
+  });
+
+  test("Arrow export - a batch size it can't use fails before writing", async () => {
+    const filePath = path.join(outputDir, "bad-sizes.arrow");
+    fs.writeFileSync(filePath, "previous export");
+    for (const [rows, chunkRows] of [[makeRows(5), 0], [makeRows(5), -1], [makeRows(5), 2.5], [makeRows(5), NaN], [[], 0]]) {
+      await assert.rejects(
+        arrowExporter.exportToArrow(rows, filePath, { chunkRows }),
+        /^Error: Arrow export failed: chunkRows must be a whole number of 1 or more/,
+        `${rows.length} rows, ${chunkRows}`
+      );
+    }
+    assert.strictEqual(fs.readFileSync(filePath, "utf8"), "previous export");
+  });
+
+  test("Arrow export - making the dictionaries lets the event loop run", async () => {
+    const count = 250000;
+    const perYield = arrowExporter.DICTIONARY_CELLS_PER_YIELD;
+    const filePath = path.join(outputDir, "dictionary-turns.arrow");
+    // The turn of the event loop each read of a row's text is in
+    let turn = 0;
+    let ticking = true;
+    const tick = () => {
+      turn++;
+      if (ticking) {
+        setImmediate(tick);
+      }
+    };
+    setImmediate(tick);
+    const readTurns = [];
+    const rows = Array.from({ length: count }, (_, i) =>
+      Object.defineProperty({}, "note", {
+        enumerable: true,
+        get() {
+          readTurns.push(turn);
+          return `note ${i}`;
+        },
+      })
+    );
+    // The turn each of the dictionary vector's values is sized in, then written in
+    const sizedTurns = [];
+    const writtenTurns = [];
+    const { byteLength } = Buffer;
+    const { write } = Buffer.prototype;
+    Buffer.byteLength = function (value, ...rest) {
+      if (typeof value === "string" && value.startsWith("note ")) {
+        sizedTurns.push(turn);
+      }
+      return byteLength.call(this, value, ...rest);
+    };
+    Buffer.prototype.write = function (value, ...rest) {
+      if (typeof value === "string" && value.startsWith("note ")) {
+        writtenTurns.push(turn);
+      }
+      return write.call(this, value, ...rest);
+    };
+    try {
+      await arrowExporter.exportToArrow(rows, filePath);
+    } finally {
+      ticking = false;
+      Buffer.byteLength = byteLength;
+      Buffer.prototype.write = write;
+    }
+
+    // The type scan reads every row, then the dictionary, then the batches
+    assert.strictEqual(readTurns.length, 3 * count);
+    const readsPerTurn = (turns) => {
+      const reads = [];
+      for (let i = 0; i < turns.length; i++) {
+        if (i === 0 || turns[i] !== turns[i - 1]) {
+          reads.push(0);
+        }
+        reads[reads.length - 1]++;
+      }
+      return reads;
+    };
+    const slices = [perYield, perYield, count - 2 * perYield];
+    assert.deepStrictEqual(readsPerTurn(readTurns.slice(count, 2 * count)), slices);
+    // Its vector looks at each of its values twice, a slice a turn
+    assert.deepStrictEqual(readsPerTurn(sizedTurns), slices);
+    assert.deepStrictEqual(readsPerTurn(writtenTurns), slices);
+    const { rows: written } = readArrow(filePath);
+    assert.deepStrictEqual([written.length, written[0], written.at(-1)], [count, { note: "note 0" }, { note: `note ${count - 1}` }]);
+  });
+
+  test("Arrow export - no rows give a column of text with no rows, as Parquet and Avro write", async () => {
+    const filePath = path.join(outputDir, "empty.arrow");
+
+    await arrowExporter.exportToArrow([], filePath);
+    const { schema, rows } = readArrow(filePath);
+
+    assert.deepStrictEqual(schema, { empty: "Dictionary<Int32, Utf8>" });
+    assert.deepStrictEqual(rows, []);
+  });
+
+  test("Arrow export - a failed export leaves the file it would replace as it was", async () => {
+    const filePath = path.join(outputDir, "keep.arrow");
+    fs.writeFileSync(filePath, "previous export");
+    // A value that reads for the type scan and the dictionary, and fails in the second
+    // batch, once the first is in the file
+    let reads = 0;
+    const failing = Object.defineProperty({}, "a", {
+      enumerable: true,
+      get() {
+        reads++;
+        if (reads > 2) {
+          throw new Error("value can't be read");
+        }
+        return "x";
+      },
+    });
+
+    await assert.rejects(
+      arrowExporter.exportToArrow([{ a: "first" }, failing], filePath, { chunkRows: 1 }),
+      (error) => {
+        assert.strictEqual(error.message, "Arrow export failed: value can't be read");
+        assert.strictEqual(error.cause.message, "value can't be read");
+        return true;
+      }
+    );
+
+    assert.strictEqual(fs.readFileSync(filePath, "utf8"), "previous export");
+    assert.deepStrictEqual(
+      fs.readdirSync(outputDir).filter((name) => name.endsWith(".tmp")),
+      [],
+      "The temporary file should be removed"
+    );
+  });
+
+  test("Arrow export - a value that changes after its dictionary is made fails the export", async () => {
+    const filePath = path.join(outputDir, "changed.arrow");
+    // Read by the type scan and the dictionary as one value, and by its batch as another
+    let reads = 0;
+    const changing = Object.defineProperty({}, "a", {
+      enumerable: true,
+      get: () => (++reads > 2 ? "changed" : "x"),
+    });
+
+    await assert.rejects(
+      arrowExporter.exportToArrow([{ a: "first" }, changing], filePath),
+      /^Error: Arrow export failed: row 2's "a" changed during the export$/
+    );
+    assert.strictEqual(fs.existsSync(filePath), false);
+  });
+
   test("Avro export - file is complete when the export resolves", async () => {
     // Enough rows for the file to span several 64 KB blocks
     const rows = makeRows(20000);
