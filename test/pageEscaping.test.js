@@ -365,6 +365,9 @@ suite("Page Escaping Test Suite", () => {
     crafted = path.join(dir, "crafted.qvd");
     const df = new QvdDataFrame(ROWS, [FIELD, "Id"]);
     df.setFieldMetadata(FIELD, { comment: COMMENT });
+    df.setFieldMetadata("Id", {
+      numberFormat: { Type: "INTEGER", nDec: 0, UseThou: 0, Fmt: "###0", Dec: ".", Thou: "," },
+    });
     df.setFileMetadata({
       tableName: TABLE_NAME,
       comment: `${ESCAPE}${LS}${PS}`,
@@ -499,9 +502,11 @@ suite("Page Escaping Test Suite", () => {
     // The page's script reads the header as the file says it
     const page = fakePage();
     page.load(html);
-    const [field] = page.read("schemaData");
+    const [field, id] = page.read("schemaData");
     assert.strictEqual(field.name, FIELD);
     assert.strictEqual(field.comment, COMMENT);
+    // The Schema tab shows a field's number format, the only type a QVD field has
+    assert.deepStrictEqual([id.name, id.numberFormat, id.format], ["Id", "INTEGER", "###0"]);
     const metadata = Object.fromEntries(page.read("metadataData").map(({ key, value }) => [key, value]));
     assert.strictEqual(metadata["Table Name"], TABLE_NAME);
     assert.strictEqual(metadata["Comment"], `${ESCAPE}${LS}${PS}`);
