@@ -1,5 +1,6 @@
 import { writeFileAtomicallyByPath } from './atomicWrite.mjs';
-import { isMissing, isTextColumn, scanColumnTypes } from './columnTypes.mjs';
+import { isMissing, isTextColumn } from './columnTypes.mjs';
+import { sourceOf } from '../exportSource.mjs';
 import { nextTurn, rowsPerChunk } from '../memoryGuard.mjs';
 import { naiveDateText } from './naiveDates.mjs';
 import { utcText, zonedTimestampsFor } from './zonedTimestamps.mjs';
@@ -55,25 +56,27 @@ function boundAsSqlJs(number) {
 
 /**
  * Export data to SQLite database format
- * @param {Array<Object>} data - Array of row objects
+ * @param {Array<Object>|import("../exportSource.mjs").ExportSource} data - Row objects, or a source of them
  * @param {string} filePath - Destination file path
  * @param {object} [options]
  * @param {string|null} [options.timeZone] - The time zone the timestamps were read in,
  *   to write each as the instant it was, in UTC; without one they are wall clocks with
  *   no time zone
+ * @param {number} [options.chunkRows] - Rows inserted between turns of the event loop
  * @returns {Promise<import('./zonedTimestamps.mjs').TimeShifts|undefined>} With a time
  *   zone and rows, what reading their timestamps in it did
  */
 export async function exportToSQLite(data, filePath, options = {}) {
   // Before anything is written, so that a time zone Intl doesn't know leaves the file alone
   const zoned = zonedTimestampsFor(options);
+  const source = sourceOf(data);
   try {
     // Node's SQLite, loaded with the first SQLite export rather than with the extension:
     // the Node of VS Code 1.105 prints a warning that it is experimental as it loads it,
     // and a Node without it fails this export, not the extension
     const { DatabaseSync } = await import("node:sqlite");
 
-    if (data.length === 0) {
+    if (source.length === 0) {
       // An empty database, with the header page sql.js wrote too: a file of no bytes
       // is one as well, but isn't recognisable as one
       await writeFileAtomicallyByPath(
@@ -92,11 +95,10 @@ export async function exportToSQLite(data, filePath, options = {}) {
     }
 
     // Get column names from first row
-    const firstRow = data[0];
-    const columnNames = Object.keys(firstRow);
+    const columnNames = source.columns;
 
     // Determine the most compatible type for each column, from all rows
-    const columnTypes = await scanColumnTypes(data, columnNames);
+    const columnTypes = await source.columnTypes();
 
     // Each column, its SQLite type and how its values are written, worked out once.
     // Text, and a column of mixed types, is TEXT; so are dates, as ISO text, which
@@ -163,21 +165,20 @@ export async function exportToSQLite(data, filePath, options = {}) {
           db.exec("BEGIN");
           // node:sqlite works synchronously: let the event loop run between chunks of
           // rows, of fewer rows for a QVD with many fields
-          const rowsPerYield = rowsPerChunk(memoryCost, columns.length);
+          const rowsPerYield = rowsPerChunk(memoryCost, columns.length, options.chunkRows);
           // One array for every row's values, which run() binds before it returns
           const values = new Array(columns.length);
-          for (let i = 0; i < data.length; i++) {
-            if (i > 0 && i % rowsPerYield === 0) {
-              await nextTurn();
+          for await (const rows of source.chunks(rowsPerYield)) {
+            for (const row of rows) {
+              for (let c = 0; c < columns.length; c++) {
+                values[c] = valueOf(row[columns[c].key], columns[c]);
+              }
+              // node:sqlite takes positional values only as arguments of their own. There
+              // is one a field, and SQLite takes at most 2,000 fields in a table
+              // eslint-disable-next-line no-restricted-syntax
+              insert.run(...values);
             }
-            const row = data[i];
-            for (let c = 0; c < columns.length; c++) {
-              values[c] = valueOf(row[columns[c].key], columns[c]);
-            }
-            // node:sqlite takes positional values only as arguments of their own. There
-            // is one a field, and SQLite takes at most 2,000 fields in a table
-            // eslint-disable-next-line no-restricted-syntax
-            insert.run(...values);
+            await nextTurn();
           }
           db.exec("COMMIT");
         } finally {

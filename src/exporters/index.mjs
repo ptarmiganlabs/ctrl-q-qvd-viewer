@@ -1,6 +1,5 @@
 import { join } from 'path';
-import { CalendarDate } from '../cellValue.mjs';
-import { nextTurn } from '../memoryGuard.mjs';
+import { sourceOf } from '../exportSource.mjs';
 import { exportToCSV, memoryCost as csvCost } from './csvExporter.mjs';
 import { exportToJSON, memoryCost as jsonCost } from './jsonExporter.mjs';
 import { exportToExcel, memoryCost as excelCost } from './excelExporter.mjs';
@@ -16,9 +15,6 @@ import { resolveTimeZone, timeZoneNames } from './zonedTimestamps.mjs';
 
 // The setting that names the time zone a QVD's timestamps were read in
 const TIME_ZONE_SETTING = "exportTimeZone";
-
-// Cells the search for a timestamp looks at between yields to the event loop
-const CELLS_PER_YIELD = 1000000;
 
 // Each export format: its name as the user sees it, its file's extension and the save
 // dialog's filter, whether it is in beta, its exporter, what its export builds on the
@@ -137,33 +133,6 @@ const FORMATS = {
     zones: false,
   },
 };
-
-/**
- * Whether the rows to export hold a timestamp: a Date with its time of day, rather than
- * a CalendarDate, a date alone. A column with one is a column of timestamps, as every
- * typed exporter types it, whatever its other values. Without one, every cell is
- * looked at, so this yields to the event loop as it goes.
- * @param {Array<Object>} rows - Array of row objects
- * @param {number} count - Rows to export, from the first
- * @returns {Promise<boolean>} True at the first timestamp found
- */
-async function holdsTimestamps(rows, count) {
-  const columns = count > 0 ? Object.keys(rows[0]) : [];
-  const rowsPerYield = Math.max(1, Math.floor(CELLS_PER_YIELD / Math.max(1, columns.length)));
-  for (let i = 0; i < count; i++) {
-    const row = rows[i];
-    for (const key of columns) {
-      const value = row[key];
-      if (value instanceof Date && !(value instanceof CalendarDate)) {
-        return true;
-      }
-    }
-    if ((i + 1) % rowsPerYield === 0) {
-      await nextTurn();
-    }
-  }
-  return false;
-}
 
 /**
  * The time zone the settings name for a QVD's timestamps
@@ -285,37 +254,11 @@ class DataExporter {
   }
 
   /**
-   * The formats whose export writes as it goes, and so needs little memory, as the user sees them
-   * @returns {Array<string>} Such as "CSV"
-   */
-  static leanFormatLabels() {
-    return DataExporter.getExportFormats()
-      .filter((entry) => FORMATS[entry.name].cost.writesAsItGoes)
-      .map((entry) => DataExporter.formatLabel(entry.name));
-  }
-
-  /**
-   * The formats to suggest when an export to this one is refused for memory
-   * A format that builds its whole file is offered those that write as they go, which
-   * need much less. One that writes as it goes is offered none: the others need about
-   * as much.
-   * @param {string} format - The export format refused
-   * @returns {{labels: Array<string>, everyOther: boolean}} labels: the formats to
-   *   suggest, as the user sees them; everyOther: whether they are every other format
-   */
-  static leanerFormats(format) {
-    if (Object.hasOwn(FORMATS, format) && FORMATS[format].cost.writesAsItGoes) {
-      return { labels: [], everyOther: false };
-    }
-    const label = DataExporter.formatLabel(format);
-    const labels = DataExporter.leanFormatLabels().filter((lean) => lean !== label);
-    const others = DataExporter.getExportFormats().length - (Object.hasOwn(FORMATS, format) ? 1 : 0);
-    return { labels, everyOther: labels.length > 0 && labels.length === others };
-  }
-
-  /**
    * Show save dialog and export data to the selected format
-   * @param {Array<Object>} data - Array of row objects
+   * The questions come first, then the save dialog. A format that can write instants
+   * then asks which time zone the timestamps were read in, once it is known that the
+   * rows hold timestamps: from a source of a QVD, that takes a pass over the file.
+   * @param {Array<Object>|import('../exportSource.mjs').ExportSource} data - Row objects, or a source of them
    * @param {string} format - Export format ('csv', 'json', 'excel', 'parquet', 'yaml', 'avro', 'arrow', 'sqlite', 'xml', 'qlik', 'postgres')
    * @param {string} suggestedFileName - Suggested file name without extension
    * @param {object} vscode - VS Code API object
@@ -323,8 +266,8 @@ class DataExporter {
    * @param {number} maxRows - Maximum number of rows (for Qlik and PostgreSQL formats)
    * @param {Array<string>} [fields] - The QVD's field names in order (for CSV's header row)
    * @param {object} [options]
-   * @param {function(Array<Object>, number): (function(): void|Promise<function(): void>)} [options.reserve] -
-   *   Called with the rows and the row limit once every question is answered, just before
+   * @param {function(import('../exportSource.mjs').ExportSource, number): (function(): void|Promise<function(): void>)} [options.reserve] -
+   *   Called with the source and the row limit once every question is answered, just before
    *   the export is written. It returns a release, or a promise of one, called when the
    *   export ends, or throws to refuse the export.
    * @param {function(import('./zonedTimestamps.mjs').TimeShifts): void} [options.report] -
@@ -351,15 +294,10 @@ class DataExporter {
       throw new Error(`Unsupported export format: ${format}`);
     }
 
+    const source = sourceOf(data);
     // Qlik inline and PostgreSQL export as many rows as the user chose, from the first
     const limited = format === "qlik" || format === "postgres";
-    const exportedRows = limited && maxRows > 0 ? Math.min(maxRows, data.length) : data.length;
-
-    // A format that can write instants asks which time zone the timestamps were read
-    // in, when the rows it exports hold timestamps: dates have no time zone. The zone
-    // the settings name is offered first, once it is known to be one
-    const asksTimeZone = config.zones && (await holdsTimestamps(data, exportedRows));
-    const defaultTimeZone = asksTimeZone ? settingsTimeZone(vscode) : null;
+    const exported = limited && maxRows > 0 ? source.first(maxRows) : source;
 
     // Handle Qlik inline format with delimiter selection BEFORE file dialog
     let selectedDelimiter = null;
@@ -499,15 +437,6 @@ class DataExporter {
       };
     }
 
-    // Without a time zone the timestamps are written as wall clocks, as the QVD holds them
-    let timeZone = null;
-    if (asksTimeZone) {
-      timeZone = await askTimeZone(vscode, defaultTimeZone);
-      if (timeZone === undefined) {
-        return null; // User cancelled
-      }
-    }
-
     // Show save dialog
     const defaultFileName = `${suggestedFileName}.${config.extension}`;
     // Need to use require for os.homedir() since it's not exported as ESM
@@ -528,8 +457,20 @@ class DataExporter {
       return null; // User cancelled
     }
 
+    // A format that can write instants asks which time zone the timestamps were read
+    // in, when the rows it exports hold timestamps: dates have no time zone. The zone
+    // the settings name is offered first, once it is known to be one. Without a time
+    // zone the timestamps are written as wall clocks, as the QVD holds them
+    let timeZone = null;
+    if (config.zones && (await exported.holdsTimestamps())) {
+      timeZone = await askTimeZone(vscode, settingsTimeZone(vscode));
+      if (timeZone === undefined) {
+        return null; // User cancelled
+      }
+    }
+
     // The heap the export needs, booked now the questions are answered
-    const release = reserve ? await reserve(data, limited ? maxRows : 0) : () => {};
+    const release = reserve ? await reserve(source, limited ? maxRows : 0) : () => {};
 
     try {
       // Perform export
@@ -537,32 +478,32 @@ class DataExporter {
       if (format === "qlik") {
         // Pass delimiter to Qlik exporter
         await config.exporter(
-          data,
+          source,
           fileUri.fsPath,
           maxRows,
           selectedDelimiter.value
         );
       } else if (format === "postgres") {
         // Pass options to PostgreSQL exporter
-        timeShifts = await config.exporter(data, fileUri.fsPath, maxRows, { ...postgresOptions, timeZone });
+        timeShifts = await config.exporter(source, fileUri.fsPath, maxRows, { ...postgresOptions, timeZone });
       } else if (config.zones) {
-        timeShifts = await config.exporter(data, fileUri.fsPath, { timeZone });
+        timeShifts = await config.exporter(source, fileUri.fsPath, { timeZone });
       } else if (format === "excel") {
         // What it works around goes to the extension's log
-        await config.exporter(data, fileUri.fsPath, { warn });
+        await config.exporter(source, fileUri.fsPath, { warn });
       } else if (format === "csv") {
         // The header row comes from the QVD's fields, so it has every field, in QVD order,
         // even when there are no rows
         const vscodeConfig =
           vscode.workspace.getConfiguration("ctrl-q-qvd-viewer");
-        await config.exporter(data, fileUri.fsPath, {
+        await config.exporter(source, fileUri.fsPath, {
           fields,
           escapeFormulas: vscodeConfig.get("csvEscapeFormulas", true),
           byteOrderMark: vscodeConfig.get("csvByteOrderMark", false),
         });
       } else {
         // Other formats don't need delimiter or maxRows
-        await config.exporter(data, fileUri.fsPath);
+        await config.exporter(source, fileUri.fsPath);
       }
       if (timeZone !== null && timeShifts) {
         report?.(timeShifts);

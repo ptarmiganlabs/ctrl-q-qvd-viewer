@@ -1,6 +1,7 @@
 import Papa from "papaparse";
 import { rowsPerChunk } from "../memoryGuard.mjs";
 import { writeChunks, writeFileAtomically } from "./atomicWrite.mjs";
+import { sourceOf } from "../exportSource.mjs";
 
 // Rows turned into CSV text at a time, so a large export never holds the whole
 // file as one string
@@ -70,18 +71,19 @@ function toCell(value, escapeFormulas) {
  * The file starts with the header row, as readers that take column names from the
  * first line expect. CSV has no comment syntax, so nothing but an optional byte
  * order mark comes before it. With no field names and no rows, the file is empty.
- * @param {Array<Object>} data - Array of row objects
+ * @param {Array<Object>|import("../exportSource.mjs").ExportSource} data - Row objects, or a source of them
  * @param {string} filePath - Destination file path
  * @param {object} [options] - CSV options
- * @param {Array<string>} [options.fields] - Column names in order, such as the QVD's fields. Defaults to every row's keys, in the order they first appear
+ * @param {Array<string>} [options.fields] - Column names in order, such as the QVD's fields. Defaults to every row's keys, in the order they first appear, or a source's columns
  * @param {boolean} [options.escapeFormulas=true] - Put an apostrophe before text that a spreadsheet would run as a formula
  * @param {boolean} [options.byteOrderMark=false] - Start with a UTF-8 byte order mark, which Excel needs to read non-ASCII text
  * @param {number} [options.chunkRows] - Rows turned into text at a time: a whole number of 1 or more
  * @returns {Promise<void>}
  */
 export async function exportToCSV(data, filePath, options = {}) {
+  const source = sourceOf(data);
   const {
-    fields = fieldsOf(data),
+    fields = Array.isArray(data) ? fieldsOf(data) : source.columns,
     escapeFormulas = true,
     byteOrderMark = false,
     chunkRows: rowsOption,
@@ -102,8 +104,8 @@ export async function exportToCSV(data, filePath, options = {}) {
         return;
       }
       await file.writeFile(unparse([toLine(fields)]));
-      await writeChunks(file, data.length, chunkRows, (start, end) => {
-        const lines = data.slice(start, end).map((row) => toLine(fields.map((field) => row[field])));
+      await writeChunks(file, source, chunkRows, (rows) => {
+        const lines = rows.map((row) => toLine(fields.map((field) => row[field])));
         return `\n${unparse(lines)}`;
       });
     });

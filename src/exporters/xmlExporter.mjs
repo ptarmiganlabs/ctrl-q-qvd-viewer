@@ -1,6 +1,7 @@
 import xmljs from "xml-js";
 import { rowsPerChunk } from "../memoryGuard.mjs";
 import { writeChunks, writeFileAtomically } from "./atomicWrite.mjs";
+import { sourceOf } from "../exportSource.mjs";
 
 // Rows turned into XML text at a time, so a large export never holds the whole
 // file as one string
@@ -63,7 +64,7 @@ function toRecord(row) {
  *
  * The file is what xml-js writes for the declaration, a comment and a data element
  * of one record per row, written a chunk of rows at a time.
- * @param {Array<Object>} data - Array of row objects
+ * @param {Array<Object>|import("../exportSource.mjs").ExportSource} data - Row objects, or a source of them
  * @param {string} filePath - Destination file path
  * @param {object} [options]
  * @param {number} [options.chunkRows] - Rows turned into text at a time: a whole number
@@ -71,8 +72,9 @@ function toRecord(row) {
  * @returns {Promise<void>}
  */
 export async function exportToXML(data, filePath, { chunkRows: rowsOption } = {}) {
+  const source = sourceOf(data);
   try {
-    const chunkRows = rowsPerChunk(memoryCost, data.length > 0 ? Object.keys(data[0]).length : 0, rowsOption);
+    const chunkRows = rowsPerChunk(memoryCost, source.length > 0 ? source.columns.length : 0, rowsOption);
     // The file with no records, up to the data element's closing tag
     const head = xmljs.js2xml(
       {
@@ -88,7 +90,7 @@ export async function exportToXML(data, filePath, { chunkRows: rowsOption } = {}
           "VS Code Extension: https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer",
           "GitHub: https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer",
           `Generated: ${new Date().toISOString()}`,
-          `Rows: ${data.length}`,
+          `Rows: ${source.length}`,
         ].join("\n"),
         data: { record: [] },
       },
@@ -97,10 +99,10 @@ export async function exportToXML(data, filePath, { chunkRows: rowsOption } = {}
 
     await writeFileAtomically(filePath, async (file) => {
       await file.writeFile(head.slice(0, -DATA_CLOSE.length));
-      await writeChunks(file, data.length, chunkRows, (start, end) => {
+      await writeChunks(file, source, chunkRows, (rows) => {
         // The chunk's records inside a data element of their own, at the depth the
         // file has them, without that element's tags
-        const xml = xmljs.js2xml({ data: { record: data.slice(start, end).map(toRecord) } }, XML_OPTIONS);
+        const xml = xmljs.js2xml({ data: { record: rows.map(toRecord) } }, XML_OPTIONS);
         return xml.slice(DATA_OPEN.length, -DATA_CLOSE.length);
       });
       await file.writeFile(DATA_CLOSE);

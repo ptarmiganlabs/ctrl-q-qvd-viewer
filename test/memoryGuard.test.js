@@ -10,8 +10,9 @@ let readLanes;
 let QvdReader;
 let DataExporter;
 let QvdDataFrame;
-let exportReadFailure;
 let profileReadFailure;
+let exportRun;
+let arraySource;
 
 const root = path.join(__dirname, "..");
 const colors = path.join(root, "test-data", "lego", "colors.qvd");
@@ -79,7 +80,9 @@ suite("Memory Guard Test Suite", () => {
     ({ toRowObjects, readLanes, default: QvdReader } = await import("../src/qvdReader.mjs"));
     ({ default: DataExporter } = await import("../src/exporters/index.mjs"));
     ({ QvdDataFrame } = await import("qvdjs"));
-    ({ exportReadFailure, profileReadFailure } = await import("../src/webview/messageHandler.mjs"));
+    ({ profileReadFailure } = await import("../src/webview/messageHandler.mjs"));
+    exportRun = await import("../src/exportRun.mjs");
+    ({ arraySource } = await import("../src/exportSource.mjs"));
   });
 
   test("With nothing held and nothing added, qvdjs keeps its own factor", () => {
@@ -158,8 +161,6 @@ suite("Memory Guard Test Suite", () => {
     assert.ok(sqliteCost.bytesPerCell >= 0.4 * 1.5);
     assert.ok(sqliteCost.bytesPerTextChar >= 0.1 * 2);
     assert.ok(sqliteCost.chunkRows > 0 && sqliteCost.chunkCells > 0 && sqliteCost.writesAsItGoes);
-    assert.strictEqual(sqliteCost.outsideHeapBytesPerCell, undefined);
-    assert.strictEqual(sqliteCost.outsideHeapBytesPerTextChar, undefined);
   });
 
   test("Every export format's exporter declares what it costs", () => {
@@ -175,7 +176,11 @@ suite("Memory Guard Test Suite", () => {
         assert.ok(Number.isInteger(cost.chunkCells) && cost.chunkCells > 0 && cost.chunkRows > 0, name);
       }
     }
-    assert.deepStrictEqual(DataExporter.leanFormatLabels(), ["Arrow", "Avro", "CSV", "Excel", "JSON", "Parquet", "PostgreSQL", "Qlik Inline Script", "SQLite", "XML", "YAML"]);
+    // Every format takes its rows a chunk at a time, and writes them as it goes
+    for (const { name } of DataExporter.getExportFormats()) {
+      const cost = DataExporter.memoryCost(name);
+      assert.ok(cost.writesAsItGoes && cost.chunkRows > 0, name);
+    }
   });
 
   test("A name that isn't a format has no cost, not a function", () => {
@@ -254,43 +259,30 @@ suite("Memory Guard Test Suite", () => {
     assert.strictEqual(shares.get("empty"), 0);
   });
 
-  test("An export is priced by its rows' cells and text", async () => {
-    const rows = [
-      { id: 1, note: "x".repeat(1000) },
-      { id: 2, note: "y".repeat(3000) },
-      { id: 3, note: null },
-    ];
+  test("An export is priced by a chunk's cells and text, and what its reader holds", () => {
     const excel = DataExporter.memoryCost("excel");
-    assert.deepStrictEqual(await guard.exportHeapBytes(excel, rows, 2), {
-      rows: 3,
-      bytes: 3 * 2 * excel.bytesPerCell + 4000 * excel.bytesPerTextChar,
-    });
-    // A row limit prices only the rows exported
-    const qlik = DataExporter.memoryCost("qlik");
-    assert.deepStrictEqual(await guard.exportHeapBytes(qlik, rows, 2, 1), {
-      rows: 1,
-      bytes: 2 * qlik.bytesPerCell + 1000 * qlik.bytesPerTextChar,
-    });
+    const fields = [
+      { name: "id", symbols: 3, bytes: 12 },
+      { name: "note", symbols: 3, bytes: 4006 },
+    ];
+    const heap = exportRun.exportHeapOf({ cost: excel, fields, rows: 3 });
+    // Every row is one chunk, whose text the header puts at a third of the symbols' bytes a row
+    assert.strictEqual(heap.chunkRows, 3);
+    assert.strictEqual(heap.estimatedChars, Math.ceil(3 * (12 / 3 + 4006 / 3)));
+    // A chunk costs its cells and text, as the row objects hold them and the exporter
+    // builds from them, and more text costs more
+    const cells = 3 * 2;
+    assert.ok(heap.chunkBytes(3, 4000) >= cells * excel.bytesPerCell + 4000 * excel.bytesPerTextChar);
+    assert.ok(heap.chunkBytes(3, 8000) > heap.chunkBytes(3, 4000));
+    // The reader holds no more than every distinct value decoded
+    assert.ok(heap.fixedBytes > 0 && heap.fixedBytes < 64 * 1024);
+    // A large file's reader is held to what its open file may hold
+    const big = exportRun.exportHeapOf({ cost: excel, fields: [{ name: "id", symbols: 1e8, bytes: 9e8 }], rows: 1e8 });
+    assert.ok(big.fixedBytes <= 640 * 2 ** 20, `${big.fixedBytes}`);
+    assert.strictEqual(big.chunkRows, guard.rowsPerChunk(excel, 1));
   });
 
-  test("A CSV export is priced by its largest chunk, as it writes one at a time", async () => {
-    const csv = DataExporter.memoryCost("csv");
-    const chunk = csv.chunkRows;
-    assert.ok(chunk > 0);
-    // Two chunks and a row, the second chunk with the most text
-    const rows = Array.from({ length: 2 * chunk + 1 }, (_, i) => ({
-      id: i,
-      note: i >= chunk && i < 2 * chunk ? "x".repeat(10) : "y",
-    }));
-    assert.deepStrictEqual(await guard.exportHeapBytes(csv, rows, 2), {
-      rows: rows.length,
-      bytes: chunk * 2 * csv.bytesPerCell + chunk * 10 * csv.bytesPerTextChar,
-    });
-    // A format priced for every row at once has no chunks
-    assert.strictEqual(DataExporter.memoryCost("parquet").chunkRows, undefined);
-  });
-
-  test("A chunk of a QVD with many fields has fewer rows, and is priced so", async () => {
+  test("A chunk of a QVD with many fields has fewer rows", () => {
     const yamlCost = DataExporter.memoryCost("yaml");
     assert.strictEqual(guard.rowsPerChunk(yamlCost, 2), yamlCost.chunkRows);
     assert.strictEqual(guard.rowsPerChunk(yamlCost, 20), yamlCost.chunkRows);
@@ -299,24 +291,16 @@ suite("Memory Guard Test Suite", () => {
     // Without chunkCells a chunk is chunkRows, whatever the fields
     const csv = DataExporter.memoryCost("csv");
     assert.strictEqual(guard.rowsPerChunk(csv, 300), csv.chunkRows);
-
-    // Two chunks of 300 fields: the second, with text, is priced
-    const chunk = guard.rowsPerChunk(yamlCost, 300);
-    const fields = Array.from({ length: 300 }, (_, i) => `f${i}`);
-    const rows = Array.from({ length: 2 * chunk }, (_, i) =>
-      Object.fromEntries(fields.map((field) => [field, i >= chunk && field === "f0" ? "x" : 0]))
-    );
-    assert.deepStrictEqual(await guard.exportHeapBytes(yamlCost, rows, 300), {
-      rows: rows.length,
-      bytes: chunk * 300 * yamlCost.bytesPerCell + chunk * yamlCost.bytesPerTextChar,
-    });
+    // And an export is priced by its chunk
+    const fields = Array.from({ length: 300 }, (_, i) => ({ name: `f${i}`, symbols: 1, bytes: 2 }));
+    assert.strictEqual(exportRun.exportHeapOf({ cost: yamlCost, fields, rows: 1e6 }).chunkRows, Math.floor(yamlCost.chunkCells / 300));
   });
 
   test("An export that holds some columns' distinct values is priced for them and their text, as the QVD has them", async () => {
     const arrowCost = DataExporter.memoryCost("arrow");
-    const { bytesPerCell, bytesPerTextChar, bytesPerDistinctText, bytesPerSymbolByte } = arrowCost;
-    // Five rows, one chunk: code has two distinct texts and note five. blank's numbers
-    // with blank text, and at's timestamps, Arrow writes as they are, not as text
+    const { bytesPerDistinctText, bytesPerSymbolByte } = arrowCost;
+    // code has two distinct texts and note five. blank's numbers with blank text, and
+    // at's timestamps, Arrow writes as they are, not as text
     const rows = Array.from({ length: 5 }, (_, i) => ({
       id: i,
       code: `c${i % 2}`,
@@ -324,42 +308,34 @@ suite("Memory Guard Test Suite", () => {
       blank: i % 2 ? "" : i,
       at: new Date(i),
     }));
-    assert.deepStrictEqual(await arrowCost.dictionaryColumns(rows, Object.keys(rows[0])), ["code", "note"]);
+    const types = await arraySource(rows).columnTypes();
+    assert.deepStrictEqual(arrowCost.dictionaryColumns(types, Object.keys(rows[0])), ["code", "note"]);
     // Objects, as JSON, and numbers next to booleans are text to Arrow too
-    assert.deepStrictEqual(
-      await arrowCost.dictionaryColumns([{ object: { a: 1 }, mixed: 1 }, { object: null, mixed: true }], ["object", "mixed"]),
-      ["object", "mixed"]
-    );
-
-    const chunk = 5 * 5 * bytesPerCell + 20 * bytesPerTextChar;
-    const fields = new Map([
-      ["id", { symbols: 5, bytes: 25 }],
-      ["code", { symbols: 2, bytes: 8 }],
-      ["note", { symbols: 5, bytes: 20 }],
-      ["blank", { symbols: 4, bytes: 20 }],
-      ["at", { symbols: 5, bytes: 45 }],
+    const mixed = [{ object: { a: 1 }, mixed: 1 }, { object: null, mixed: true }];
+    assert.deepStrictEqual(arrowCost.dictionaryColumns(await arraySource(mixed).columnTypes(), ["object", "mixed"]), [
+      "object",
+      "mixed",
     ]);
-    assert.deepStrictEqual(await guard.exportHeapBytes(arrowCost, rows, 5, 0, { fields }), {
-      rows: 5,
-      bytes: chunk + (2 + 5) * bytesPerDistinctText + (8 + 20) * bytesPerSymbolByte,
-    });
-    // A field the header doesn't describe counts one value a row, and the rows' text at
-    // three bytes a character
-    assert.deepStrictEqual(await guard.exportHeapBytes(arrowCost, rows, 5), {
-      rows: 5,
-      bytes: chunk + (5 + 5) * bytesPerDistinctText + 2 * 3 * 20 * bytesPerSymbolByte,
-    });
+
+    const fields = [
+      { name: "id", symbols: 5, bytes: 25 },
+      { name: "code", symbols: 2, bytes: 8 },
+      { name: "note", symbols: 5, bytes: 20 },
+      { name: "blank", symbols: 4, bytes: 20 },
+      { name: "at", symbols: 5, bytes: 45 },
+    ];
+    const without = exportRun.exportHeapOf({ cost: arrowCost, fields, rows: 5 });
+    const priced = exportRun.exportHeapOf({ cost: arrowCost, fields, rows: 5, dictionaryKeys: ["code", "note"] });
+    assert.strictEqual(priced.fixedBytes - without.fixedBytes, (2 + 5) * bytesPerDistinctText + (8 + 20) * bytesPerSymbolByte);
     // A row limit counts at most one a row exported
-    assert.deepStrictEqual(await guard.exportHeapBytes(arrowCost, rows, 5, 3, { fields }), {
-      rows: 3,
-      bytes: 3 * 5 * bytesPerCell + 12 * bytesPerTextChar + (2 + 3) * bytesPerDistinctText + (8 + 20) * bytesPerSymbolByte,
-    });
-    // A format that holds no dictionary isn't priced for one
-    const csv = DataExporter.memoryCost("csv");
-    assert.deepStrictEqual(await guard.exportHeapBytes(csv, rows, 5, 0, { fields }), {
-      rows: 5,
-      bytes: 5 * 5 * csv.bytesPerCell + 20 * csv.bytesPerTextChar,
-    });
+    const limited = exportRun.exportHeapOf({ cost: arrowCost, fields, rows: 3, dictionaryKeys: ["code", "note"] });
+    const limitedWithout = exportRun.exportHeapOf({ cost: arrowCost, fields, rows: 3 });
+    assert.strictEqual(limited.fixedBytes - limitedWithout.fixedBytes, (2 + 3) * bytesPerDistinctText + (8 + 20) * bytesPerSymbolByte);
+    // Parquet is priced for its footer, a column chunk of each row group
+    const parquetCost = DataExporter.memoryCost("parquet");
+    const one = exportRun.exportHeapOf({ cost: parquetCost, fields, rows: parquetCost.rowGroupRows });
+    const two = exportRun.exportHeapOf({ cost: parquetCost, fields, rows: parquetCost.rowGroupRows + 1 });
+    assert.ok(two.fixedBytes - one.fixedBytes >= fields.length * exportRun.PARQUET_BYTES_PER_COLUMN_CHUNK);
   });
 
   test("A read for an export that holds its text fields' distinct values prices them from the header", async () => {
@@ -380,32 +356,13 @@ suite("Memory Guard Test Suite", () => {
     read.release();
   });
 
-  test("An export that builds outside the heap is priced for that too, for every row", async () => {
-    // As SQLite's was while sql.js built its database in memory. No format's is now
-    const outsideCost = { bytesPerCell: 16, bytesPerTextChar: 0, outsideHeapBytesPerCell: 80, outsideHeapBytesPerTextChar: 28 };
-    for (const { name } of DataExporter.getExportFormats()) {
-      const cost = DataExporter.memoryCost(name);
-      assert.ok(!(cost.outsideHeapBytesPerCell > 0) && !(cost.outsideHeapBytesPerTextChar > 0), name);
-    }
-    const rows = [
-      { id: 1, note: "x".repeat(1000) },
-      { id: 2, note: "y".repeat(3000) },
-      { id: 3, note: null },
-    ];
-    assert.deepStrictEqual(await guard.exportHeapBytes(outsideCost, rows, 2), {
-      rows: 3,
-      bytes: 3 * 2 * outsideCost.bytesPerCell,
-      outsideBytes: 3 * 2 * outsideCost.outsideHeapBytesPerCell + 4000 * outsideCost.outsideHeapBytesPerTextChar,
-    });
-    // SQLite's is priced by its largest chunk, on the heap alone
-    assert.deepStrictEqual(await guard.exportHeapBytes(DataExporter.memoryCost("sqlite"), rows, 2), {
-      rows: 3,
-      bytes: 3 * 2 * DataExporter.memoryCost("sqlite").bytesPerCell + 4000 * DataExporter.memoryCost("sqlite").bytesPerTextChar,
-    });
+  test("An export's passes are priced outside the heap, against the computer's memory", () => {
+    // A byte a distinct value of each field, for the census and for the reader
+    assert.strictEqual(exportRun.exportOutsideBytesOf([{ symbols: 10 }, { symbols: 5 }]), 30);
     // What is left for it is the computer's memory, less what the extension host uses
     const left = guard.memoryLeftOutsideHeap();
     assert.ok(left > 0 && left < os.totalmem());
-    const message = guard.describeExportRefusal("SQLite", 10, 2 ** 30, 2 ** 20, [], { onComputer: true });
+    const message = guard.describeExportRefusal("SQLite", 10, 2 ** 30, 2 ** 20, { onComputer: true });
     assert.ok(message.endsWith("needs about 1.0 GiB of memory, and about 1 MiB is left on this computer."));
   });
 
@@ -454,47 +411,22 @@ suite("Memory Guard Test Suite", () => {
     const { writeChunks } = await import("../src/exporters/atomicWrite.mjs");
     const written = [];
     const file = { writeFile: async (text) => written.push(text) };
-    await writeChunks(file, 5, 2, (start, end) => `${start}-${end}`);
+    const source = arraySource([1, 2, 3, 4, 5].map((n) => ({ n })));
+    await writeChunks(file, source, 2, (rows, start) => `${start}-${start + rows.length}`);
     assert.deepStrictEqual(written, ["0-2", "2-4", "4-5"]);
     for (const chunkRows of [0, -1, 2.5, NaN]) {
-      await assert.rejects(writeChunks(file, 5, chunkRows, () => ""), RangeError, String(chunkRows));
+      await assert.rejects(writeChunks(file, source, chunkRows, () => ""), RangeError, String(chunkRows));
     }
     assert.strictEqual(written.length, 3);
   });
 
-  test("Pricing an export lets the event loop run as it looks at the rows", async () => {
-    const rows = Array.from({ length: 300000 }, (_, i) => ({ a: i, b: "x", c: "y", d: i }));
-    let ran = false;
-    setImmediate(() => {
-      ran = true;
-    });
-    const priced = guard.exportHeapBytes(DataExporter.memoryCost("excel"), rows, 4);
-    assert.strictEqual(ran, false);
-    await priced;
-    assert.strictEqual(ran, true);
-  });
-
   test("A refused export says what it needs and what is left", () => {
-    const message = guard.describeExportRefusal("SQLite", 300000, 6.5 * 2 ** 30, 380 * 2 ** 20, ["Avro", "CSV", "Parquet"]);
-    assert.ok(message.startsWith(`Exporting ${(300000).toLocaleString()} rows to SQLite needs about 6.5 GiB`));
-    assert.ok(message.includes("about 380 MiB is left"));
-    assert.ok(message.endsWith(" Avro, CSV and Parquet write as they go, and need much less."));
-    assert.ok(guard.describeExportRefusal("SQLite", 10, 2 ** 20, 0, ["CSV"]).endsWith(" CSV writes as it goes, and needs much less."));
-    // Every other format, said rather than listed
-    const everyOther = guard.describeExportRefusal("SQLite", 10, 2 ** 20, 0, ["Arrow", "CSV"], { everyOther: true });
-    assert.ok(everyOther.endsWith(" Every other format writes as it goes, and needs much less."));
-    // With nothing to suggest, the message ends with what is left
-    assert.ok(guard.describeExportRefusal("CSV", 10, 2 ** 20, 0, []).endsWith("left in what VS Code gives its extensions."));
-    // A format isn't suggested for itself
-    assert.ok(guard.describeExportRefusal("CSV", 10, 2 ** 20, 0, ["CSV", "Avro"]).endsWith(" Avro writes as it goes, and needs much less."));
-  });
-
-  test("Only a refused export that builds its whole file has formats to suggest", () => {
-    // One that writes as it goes is offered none: the others need about as much. Every
-    // format writes as it goes, SQLite too since it writes its database to the file
-    for (const { name } of DataExporter.getExportFormats()) {
-      assert.deepStrictEqual(DataExporter.leanerFormats(name), { labels: [], everyOther: false }, name);
-    }
+    const message = guard.describeExportRefusal("SQLite", 300000, 6.5 * 2 ** 30, 380 * 2 ** 20);
+    assert.strictEqual(
+      message,
+      `Exporting ${(300000).toLocaleString()} rows to SQLite needs about 6.5 GiB of memory, and about 380 MiB ` +
+        "is left in what VS Code gives its extensions."
+    );
   });
 
   test("A refusal of what the caller builds is told apart from one of the rows", () => {
@@ -519,30 +451,10 @@ suite("Memory Guard Test Suite", () => {
     assert.strictEqual(guard.pricingOfRefusal(check, { leftBytes: 3e9, readBytes: 0, callerBytes: 0 }).forCaller, false);
   });
 
-  test("Export and Profile say what didn't fit, and offer rows only where they can be chosen", () => {
+  test("Profile says what didn't fit, and offers no rows", () => {
     const refusal = { rows: 1975108, totalRows: 1975108, fitRows: 800000, forCaller: false, neededBytes: 0, leftBytes: 0 };
-    const read = exportReadFailure({ error: "x", refusal }, "excel", false);
-    assert.ok(read.startsWith("Failed to read QVD for export: Reading all"));
-    assert.ok(!read.includes("would fit"));
-    assert.ok(exportReadFailure({ error: "x", refusal }, "qlik", true).includes("About 800,000 rows would fit."));
+    assert.ok(profileReadFailure({ error: "x", refusal }).startsWith("Failed to read QVD: Reading all"));
     assert.ok(!profileReadFailure({ error: "x", refusal }).includes("would fit"));
-
-    const forCaller = { ...refusal, forCaller: true, neededBytes: 40 * 2 ** 30, leftBytes: 2 * 2 ** 30 };
-    const sqlite = exportReadFailure({ error: "x", refusal: forCaller }, "sqlite", false);
-    assert.ok(sqlite.startsWith(`Exporting ${(1975108).toLocaleString()} rows to SQLite needs about 40.0 GiB`));
-    // A format that writes as it goes is offered no other, SQLite among them
-    for (const format of ["sqlite", "csv"]) {
-      assert.ok(
-        exportReadFailure({ error: "x", refusal: forCaller }, format, false).endsWith("left in what VS Code gives its extensions."),
-        format
-      );
-    }
-
-    // Any other failure keeps the reader's message
-    assert.strictEqual(
-      exportReadFailure({ error: "ENOENT: no such file", refusal: null }, "csv", false),
-      "Failed to read QVD for export: ENOENT: no such file"
-    );
   });
 
   test("A refused read of every row says how many rows would fit", () => {

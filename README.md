@@ -336,13 +336,14 @@ The Ctrl-Q QVD Viewer allows you to export QVD data to various formats for furth
    - Or choose **Custom...** and enter a number, from 1 up to the number of rows in the file
    - **Qlik Inline Script** then asks for the delimiter: tab, pipe, comma, semicolon, or auto-detect. The `qlikInlineDelimiter` setting picks the default
    - **PostgreSQL** then asks whether to include a `CREATE TABLE` statement. If so, it asks for the table name (default `qvd_data`) and whether to drop an existing table of that name first
-5. For **Parquet**, **Avro**, **Arrow**, **SQLite** and **PostgreSQL** exports of a QVD with timestamps, you'll be asked which time zone they were read in. Keep **No time zone** to export them as the wall clocks the QVD holds (see Export Details)
-6. Choose the destination folder and file name in the save dialog
-7. Click "Save" to complete the export
+5. Choose the destination folder and file name in the save dialog, and click "Save"
+6. For **Parquet**, **Avro**, **Arrow**, **SQLite** and **PostgreSQL** exports of a QVD with timestamps, you'll then be asked which time zone they were read in. Keep **No time zone** to export them as the wall clocks the QVD holds (see Export Details). Finding out whether a large QVD holds timestamps takes a pass over the file, so the question can take a while to appear
 
 #### Export Details
 
 - **All data is exported**: The export includes all rows from the QVD file, not just the preview data shown in the viewer (except for Qlik Inline Script and PostgreSQL where you can limit rows)
+- **Files of any size**: an export reads the QVD a chunk of rows at a time and writes each chunk before it reads the next, so a QVD far larger than VS Code's memory exports. A format with column types (Parquet, Excel, Avro, Arrow, SQLite and PostgreSQL) first reads the file once to work out each column's type, and Arrow reads its text fields once more for their dictionaries. What an export needs is worked out before anything is written. One that doesn't fit, such as Arrow with tens of millions of distinct texts, is refused with what it needs and what is left
+- **A failed export leaves no partial file**: every format writes to a temporary file next to the destination, which replaces the destination only once it is whole. A file that was there before stays as it was
 - **Automatic schema inference**: Data types are automatically detected and preserved in supported formats (Parquet, Excel, Avro, Arrow, SQLite, PostgreSQL)
 - **Codes stay as Qlik shows them**: text becomes a number only when it is a plain decimal such as `42`, `-7` or `3.14`, with at most 15 significant digits. Codes such as `0901`, `000000`, `1e3` and `8E5597` stay text. So do blank cells. Earlier versions read them as numbers, so `0901` came out as `901` and a blank cell as `0`. In Parquet, Avro, Arrow, SQLite and PostgreSQL, a blank cell in a column of numbers is written as NULL, and in Excel as an empty cell. A column holding an integer beyond 2^53 gets a floating-point type
 - **Dates and timestamps are dates in formats that have them**: Parquet, Avro, Arrow, SQLite, PostgreSQL and Excel write a field of dates or timestamps as such. That is a field tagged `$date` or `$timestamp`, or one in which every value is a date whose text Qlik shows. A field holds timestamps when it is tagged `$timestamp`, when its text shows a time of day, even at midnight, or when any value exported has one, even where Qlik shows only the day. Otherwise it holds dates. They are wall clocks with no time zone, as in the QVD: Parquet `DATE` or `TIMESTAMP` with `isAdjustedToUTC=false`, Avro `date` or `local-timestamp-millis`, Arrow `Date32` or a timestamp with no time zone, PostgreSQL `DATE` or `TIMESTAMP`, and text such as `2016-01-13 06:15:00` in SQLite. Excel formats them as `yyyy-mm-dd` or `yyyy-mm-dd hh:mm:ss`, with milliseconds where they have them, and writes a column with a date before 1900-03-01, which Excel can't show, as text. CSV, JSON, YAML, XML and Qlik inline write the text Qlik shows, as the viewer does. Earlier versions wrote every date as that text
@@ -402,7 +403,7 @@ For more details on building, testing, and packaging, see **[BUILD.md](docs/BUIL
 
 ## Known Issues
 
-- Exports still read the whole file. On very large QVDs they can be refused for memory, with a message that says so
+- An export or profiling of a very large QVD shows no progress while it runs, and stops only when its editor is closed
 - The extension currently provides read-only access to QVD files
 
 ## Contributing

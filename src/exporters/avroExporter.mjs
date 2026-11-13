@@ -1,8 +1,11 @@
 import avro from 'avsc';
-import { createWriteStream, existsSync, unlinkSync } from 'fs';
+import { createWriteStream } from 'fs';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
-import { isMissing, isTextColumn, scanColumnTypes } from './columnTypes.mjs';
+import { rowsPerChunk } from '../memoryGuard.mjs';
+import { sourceOf } from '../exportSource.mjs';
+import { writeFileAtomicallyByPath } from './atomicWrite.mjs';
+import { isMissing, isTextColumn } from './columnTypes.mjs';
 import { DAY_MS, naiveDateText } from './naiveDates.mjs';
 import { zonedTimestampsFor } from './zonedTimestamps.mjs';
 
@@ -24,6 +27,12 @@ const LOGICAL_TYPES = {
   "timestamp-millis": Annotation,
 };
 
+// Rows taken from the source at a time
+export const CHUNK_ROWS = 10000;
+
+// Cells taken at a time at most: a QVD with many fields gets fewer rows in a chunk
+export const CHUNK_CELLS = CHUNK_ROWS * 20;
+
 /**
  * Heap an Avro export builds from the rows, for the memory guard. It writes as
  * it goes, and added nothing measurable to the V8 heap. Measured by the
@@ -32,11 +41,19 @@ const LOGICAL_TYPES = {
  * rows of four unique 400-character values for the cost per character. See
  * DataExporter.memoryCost() for the margins.
  */
-export const memoryCost = { bytesPerCell: 16, bytesPerTextChar: 0, writesAsItGoes: true };
+export const memoryCost = {
+  bytesPerCell: 16,
+  bytesPerTextChar: 0,
+  chunkRows: CHUNK_ROWS,
+  chunkCells: CHUNK_CELLS,
+  writesAsItGoes: true,
+};
 
 /**
  * Write records to an Avro object container file
- * @param {Iterable<Object>} records - Records matching the type
+ * It is written next to its destination and takes its place once it is whole, so
+ * that an export that fails leaves the file that was there before as it was.
+ * @param {Iterable<Object>|AsyncIterable<Object>} records - Records matching the type
  * @param {import('avsc').Type} type - Avro record type
  * @param {string} filePath - Destination file path
  * @returns {Promise<void>} Resolves once the file has been written and closed
@@ -45,18 +62,21 @@ function writeAvroFile(records, type, filePath) {
   // Wait for the file stream to close: the encoder's own "finish" event fires
   // before it has flushed its last block. writeHeader: true writes the header
   // even when there are no records.
-  return pipeline(
-    Readable.from(records),
-    new avro.streams.BlockEncoder(type, { writeHeader: true }),
-    createWriteStream(filePath)
+  return writeFileAtomicallyByPath(filePath, (tempPath) =>
+    pipeline(
+      Readable.from(records),
+      new avro.streams.BlockEncoder(type, { writeHeader: true }),
+      createWriteStream(tempPath)
+    )
   );
 }
 
 /**
  * Export data to Avro format
- * @param {Array<Object>} data - Array of row objects
+ * @param {Array<Object>|import("../exportSource.mjs").ExportSource} data - Row objects, or a source of them
  * @param {string} filePath - Destination file path
  * @param {object} [options]
+ * @param {number} [options.chunkRows] - Rows taken from the source at a time: a whole number of 1 or more
  * @param {string|null} [options.timeZone] - The time zone the timestamps were read in,
  *   to write each as the instant it was; without one they are wall clocks with no time zone
  * @returns {Promise<import('./zonedTimestamps.mjs').TimeShifts|undefined>} With a time
@@ -65,8 +85,9 @@ function writeAvroFile(records, type, filePath) {
 export async function exportToAvro(data, filePath, options = {}) {
   // Before anything is written, so that a time zone Intl doesn't know leaves the file alone
   const zoned = zonedTimestampsFor(options);
+  const source = sourceOf(data);
   try {
-    if (data.length === 0) {
+    if (source.length === 0) {
       // Create empty Avro file with minimal schema
       const type = avro.Type.forSchema({
         type: "record",
@@ -79,11 +100,11 @@ export async function exportToAvro(data, filePath, options = {}) {
     }
 
     // Infer schema by scanning all rows to determine compatible types
-    const firstRow = data[0];
-    const columnNames = Object.keys(firstRow);
+    const columnNames = source.columns;
+    const chunkRows = rowsPerChunk(memoryCost, columnNames.length, options.chunkRows);
 
     // Determine the most compatible type for each column, from all rows
-    const columnTypes = await scanColumnTypes(data, columnNames);
+    const columnTypes = await source.columnTypes();
 
     // Determine Avro type for each field based on collected type information
     const fields = columnNames.map((key) => {
@@ -127,45 +148,39 @@ export async function exportToAvro(data, filePath, options = {}) {
     );
 
     // Rows as the schema expects them, produced as the encoder asks for them
-    function* processedRows() {
-      for (const row of data) {
-        // Convert dates to timestamps and ensure type compatibility. Use the
-        // schema's columns, so a missing value becomes null and an extra one is left out
-        const processedRow = {};
-        columnNames.forEach((key) => {
-          const value = row[key];
-          const typeInfo = columnTypes[key];
+    async function* processedRows() {
+      for await (const rows of source.chunks(chunkRows)) {
+        for (const row of rows) {
+          // Convert dates to timestamps and ensure type compatibility. Use the
+          // schema's columns, so a missing value becomes null and an extra one is left out
+          const processedRow = {};
+          columnNames.forEach((key) => {
+            const value = row[key];
+            const typeInfo = columnTypes[key];
 
-          if (isMissing(value, typeInfo)) {
-            processedRow[key] = null;
-          } else if (typeInfo.hasString) {
-            // If schema expects string, convert everything to string
-            processedRow[key] = value instanceof Date ? naiveDateText(value, false) : String(value);
-          } else if (value instanceof Date) {
-            if (typeInfo.calendarDates) {
-              processedRow[key] = Math.round(value.getTime() / DAY_MS);
+            if (isMissing(value, typeInfo)) {
+              processedRow[key] = null;
+            } else if (typeInfo.hasString) {
+              // If schema expects string, convert everything to string
+              processedRow[key] = value instanceof Date ? naiveDateText(value, false) : String(value);
+            } else if (value instanceof Date) {
+              if (typeInfo.calendarDates) {
+                processedRow[key] = Math.round(value.getTime() / DAY_MS);
+              } else {
+                processedRow[key] = zoned ? zoned.instant(value, key) : value.getTime();
+              }
             } else {
-              processedRow[key] = zoned ? zoned.instant(value, key) : value.getTime();
+              processedRow[key] = value;
             }
-          } else {
-            processedRow[key] = value;
-          }
-        });
-        yield processedRow;
+          });
+          yield processedRow;
+        }
       }
     }
 
     await writeAvroFile(processedRows(), type, filePath);
     return zoned?.summary();
   } catch (error) {
-    // Clean up the partially created file on error
-    try {
-      if (existsSync(filePath)) {
-        unlinkSync(filePath);
-      }
-    } catch {
-      // Ignore cleanup errors, throw original error
-    }
-    throw new Error(`Avro export failed: ${error.message}`);
+    throw new Error(`Avro export failed: ${error.message}`, { cause: error });
   }
 }

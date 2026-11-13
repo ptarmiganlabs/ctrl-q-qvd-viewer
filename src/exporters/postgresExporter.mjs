@@ -1,6 +1,7 @@
 import { rowsPerChunk } from "../memoryGuard.mjs";
 import { writeChunks, writeFileAtomically } from "./atomicWrite.mjs";
-import { isMissing, isTextColumn, scanColumnTypes } from "./columnTypes.mjs";
+import { isMissing, isTextColumn } from "./columnTypes.mjs";
+import { sourceOf } from "../exportSource.mjs";
 import { naiveDateText } from "./naiveDates.mjs";
 import { offsetText, zonedTimestampsFor } from "./zonedTimestamps.mjs";
 
@@ -45,7 +46,7 @@ function quoteIdentifier(name) {
 
 /**
  * Export data to PostgreSQL SQL format
- * @param {Array<Object>} data - Array of row objects
+ * @param {Array<Object>|import("../exportSource.mjs").ExportSource} data - Row objects, or a source of them
  * @param {string} filePath - Destination file path
  * @param {number} maxRows - Maximum number of rows to export (0 = unlimited)
  * @param {Object} options - Export options
@@ -62,6 +63,7 @@ function quoteIdentifier(name) {
 export async function exportToPostgres(data, filePath, maxRows, options) {
   // Before anything is written, so that a time zone Intl doesn't know leaves the file alone
   const zoned = zonedTimestampsFor(options);
+  const source = sourceOf(data);
   try {
     const {
       createTable = true,
@@ -71,8 +73,8 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
     } = options;
 
     // Limit rows if specified
-    const exportData = maxRows > 0 ? data.slice(0, maxRows) : data;
-    const columnCount = exportData.length > 0 ? Object.keys(exportData[0]).length : 0;
+    const exportData = maxRows > 0 ? source.first(maxRows) : source;
+    const columnCount = exportData.length > 0 ? exportData.columns.length : 0;
     const chunkRows = rowsPerChunk(memoryCost, columnCount, rowsOption);
 
     if (exportData.length === 0) {
@@ -83,11 +85,10 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
     }
 
     // Get column names from first row
-    const firstRow = exportData[0];
-    const columnNames = Object.keys(firstRow);
+    const columnNames = exportData.columns;
 
     // Determine the most compatible type for each column, from all rows
-    const columnTypes = await scanColumnTypes(exportData, columnNames);
+    const columnTypes = await exportData.columnTypes();
 
     // Build SQL content
     let sqlContent = [];
@@ -105,7 +106,7 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
     sqlContent.push(`-- Table: ${tableName}`);
     sqlContent.push(
       `-- Rows: ${exportData.length}${
-        maxRows > 0 ? ` (limited from ${data.length})` : ""
+        maxRows > 0 ? ` (limited from ${source.length})` : ""
       }`
     );
     // Timestamps read in a time zone are its wall clocks, with their offsets from UTC
@@ -208,16 +209,16 @@ export async function exportToPostgres(data, filePath, maxRows, options) {
     // multi-row INSERT for every INSERT_ROWS rows, wherever a chunk starts or ends
     await writeFileAtomically(filePath, async (file) => {
       await file.writeFile(sqlContent.join("\n"));
-      await writeChunks(file, exportData.length, chunkRows, (start, end) => {
+      await writeChunks(file, exportData, chunkRows, (rows, start) => {
         const lines = [];
-        for (let i = start; i < end; i++) {
+        for (let i = start; i < start + rows.length; i++) {
           if (i % INSERT_ROWS === 0) {
             lines.push(`-- Rows ${i + 1} to ${Math.min(i + INSERT_ROWS, exportData.length)}`);
             lines.push(`INSERT INTO ${quoteIdentifier(tableName)} (${columnList})`);
             lines.push(`VALUES`);
           }
           const isLast = i % INSERT_ROWS === INSERT_ROWS - 1 || i === exportData.length - 1;
-          lines.push(`  (${valuesOf(exportData[i]).join(", ")})${isLast ? ";" : ","}`);
+          lines.push(`  (${valuesOf(rows[i - start]).join(", ")})${isLast ? ";" : ","}`);
           if (isLast) {
             lines.push(``);
           }

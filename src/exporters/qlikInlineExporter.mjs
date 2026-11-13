@@ -1,5 +1,6 @@
-import { CELLS_PER_YIELD, nextTurn, rowsPerChunk } from "../memoryGuard.mjs";
+import { nextTurn, rowsPerChunk } from "../memoryGuard.mjs";
 import { writeChunks, writeFileAtomically } from "./atomicWrite.mjs";
+import { sourceOf } from "../exportSource.mjs";
 
 // Rows turned into script text at a time, so a large export never holds the whole
 // script as one string
@@ -66,10 +67,11 @@ function inlineField(text, char) {
 /**
  * Auto-detect the best delimiter for the data
  * Every value is looked at, so this yields to the event loop as it goes.
- * @param {Array<Object>} data - Array of row objects
+ * @param {import("../exportSource.mjs").ExportSource} source - The rows to export
+ * @param {number} chunkRows - Rows looked at between yields to the event loop
  * @returns {Promise<Object>} Delimiter object with char and escapeChar
  */
-async function autoDetectDelimiter(data) {
+async function autoDetectDelimiter(source, chunkRows) {
   const delimiters = [
     { name: "tab", char: "\t", escapeChar: "\\t", priority: 1 },
     { name: "pipe", char: "|", escapeChar: "|", priority: 2 },
@@ -82,19 +84,17 @@ async function autoDetectDelimiter(data) {
     ...d,
     count: 0,
   }));
-  const rowsPerYield = Math.max(1, Math.floor(CELLS_PER_YIELD / Math.max(1, Object.keys(data[0] ?? {}).length)));
-
-  for (let i = 0; i < data.length; i++) {
-    if (i > 0 && i % rowsPerYield === 0) {
-      await nextTurn();
-    }
-    for (const value of Object.values(data[i])) {
-      if (typeof value === "string") {
-        for (const d of counts) {
-          d.count += occurrences(value, d.char);
+  for await (const rows of source.chunks(chunkRows)) {
+    for (const row of rows) {
+      for (const value of Object.values(row)) {
+        if (typeof value === "string") {
+          for (const d of counts) {
+            d.count += occurrences(value, d.char);
+          }
         }
       }
     }
+    await nextTurn();
   }
 
   // Find delimiter with lowest occurrence (best option)
@@ -112,10 +112,11 @@ async function autoDetectDelimiter(data) {
 /**
  * Get delimiter configuration
  * @param {string} delimiterChoice - User's delimiter choice
- * @param {Array<Object>} data - Array of row objects (for auto-detect)
+ * @param {import("../exportSource.mjs").ExportSource} source - The rows to export (for auto-detect)
+ * @param {number} chunkRows - Rows auto-detect looks at between yields to the event loop
  * @returns {Promise<Object>} Delimiter object with char and escapeChar
  */
-async function getDelimiterConfig(delimiterChoice, data) {
+async function getDelimiterConfig(delimiterChoice, source, chunkRows) {
   const delimiters = {
     tab: { char: "\t", escapeChar: "\\t", description: "Tab" },
     pipe: { char: "|", escapeChar: "|", description: "Pipe (|)" },
@@ -124,7 +125,7 @@ async function getDelimiterConfig(delimiterChoice, data) {
   };
 
   if (delimiterChoice === "auto-detect") {
-    return autoDetectDelimiter(data);
+    return autoDetectDelimiter(source, chunkRows);
   }
 
   return delimiters[delimiterChoice] || delimiters.tab;
@@ -132,7 +133,7 @@ async function getDelimiterConfig(delimiterChoice, data) {
 
 /**
  * Export data to Qlik Sense inline load script format
- * @param {Array<Object>} data - Array of row objects
+ * @param {Array<Object>|import("../exportSource.mjs").ExportSource} data - Row objects, or a source of them
  * @param {string} filePath - Destination file path
  * @param {number} maxRows - Maximum number of rows to include (0 = all)
  * @param {string} delimiter - Delimiter choice ('tab', 'pipe', 'comma', 'semicolon', 'auto-detect')
@@ -148,21 +149,22 @@ export async function exportToQlikInline(
   delimiter = "tab",
   { chunkRows: rowsOption } = {}
 ) {
+  const source = sourceOf(data);
   try {
-    if (data.length === 0) {
+    if (source.length === 0) {
       await writeFileAtomically(filePath, (file) => file.writeFile("// No data to export"));
       return;
     }
 
     // Limit data if maxRows is specified
-    const exportData = maxRows > 0 ? data.slice(0, maxRows) : data;
+    const exportData = maxRows > 0 ? source.first(maxRows) : source;
 
     // Get delimiter configuration
     // Get column names from first row
-    const columns = Object.keys(exportData[0]);
+    const columns = exportData.columns;
     const chunkRows = rowsPerChunk(memoryCost, columns.length, rowsOption);
 
-    const delimiterConfig = await getDelimiterConfig(delimiter, exportData);
+    const delimiterConfig = await getDelimiterConfig(delimiter, exportData, chunkRows);
     const delimiterInValue = delimiterPattern(delimiterConfig.char);
 
     // Build the inline load script
@@ -218,13 +220,7 @@ export async function exportToQlikInline(
     // The script so far, then its rows a chunk at a time, a line apart as they are
     await writeFileAtomically(filePath, async (file) => {
       await file.writeFile(lines.join("\n"));
-      await writeChunks(file, exportData.length, chunkRows, (start, end) => {
-        const rowLines = [];
-        for (let i = start; i < end; i++) {
-          rowLines.push(rowLine(exportData[i]));
-        }
-        return `\n${rowLines.join("\n")}`;
-      });
+      await writeChunks(file, exportData, chunkRows, (rows) => `\n${rows.map(rowLine).join("\n")}`);
 
       // Close the inline load with proper delimiter syntax
       await file.writeFile(`\n] (Delimiter is '${delimiterConfig.escapeChar}');`);
