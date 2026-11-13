@@ -102,7 +102,21 @@ suite("About Panel Test Suite", () => {
       // An event handler in the markup is a script the CSP won't run
       assert.ok(!/\son[a-z]+\s*=/i.test(html), "no event handlers in the markup");
       const urls = [...html.matchAll(/data-url="([^"]*)"/g)].map(([, url]) => url);
-      assert.strictEqual(urls.length, 11);
+      assert.strictEqual(urls.length, 19);
+      // Each link, by exact address: how many of the page's links are it
+      const linksTo = (address) => urls.filter((url) => url === address).length;
+      // The page that listed the Butler family now redirects to the products page
+      assert.ok(!urls.some((url) => new URL(url).pathname === "/the-butler-family/"), urls.join(" "));
+      assert.ok(linksTo("https://ptarmiganlabs.com/products/") > 0, urls.join(" "));
+      // The help links: the user guide and the place for questions
+      assert.strictEqual(linksTo("https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer#readme"), 1, urls.join(" "));
+      assert.strictEqual(linksTo("https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/discussions"), 1, urls.join(" "));
+      // Its buttons that aren't links ask the extension to do something
+      const buttons = [...html.matchAll(/data-command="([^"]*)"/g)].map(([, command]) => command);
+      assert.deepStrictEqual(buttons, ["reportIssue", "showLogs"]);
+      // What the page says of the Data tab's rows is the page size, not the old preview limit
+      assert.ok(!html.includes("5,000"), "no word of the old 5,000-row preview");
+      assert.ok(html.includes("Page Size"));
       // The repository's web page, not its clone's .git address: one link is exactly it
       const repositoryUrl = repositoryPage("git+https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer.git");
       assert.strictEqual(urls.filter((url) => url === repositoryUrl).length, 1, urls.join(" "));
@@ -133,6 +147,25 @@ suite("About Panel Test Suite", () => {
       assert.strictEqual(warned.length, 2);
       assert.ok(warned[0].endsWith('"file:///etc/passwd"'), warned[0]);
       assert.ok(!warned[1].includes("\n"), warned[1]);
+
+      // Report Issue runs the extension's command, Show Logs shows the log, and the
+      // page can ask for nothing else
+      const commands = [];
+      let shown = 0;
+      const executeCommand = api.commands.executeCommand;
+      const show = logger.show;
+      try {
+        api.commands.executeCommand = async (...command) => commands.push(command);
+        logger.show = () => shown++;
+        for (const command of ["reportIssue", "showLogs", "workbench.action.terminal.new"]) {
+          panel.webview.listener({ command });
+        }
+      } finally {
+        api.commands.executeCommand = executeCommand;
+        logger.show = show;
+      }
+      assert.deepStrictEqual(commands, [["ctrl-q-qvd-viewer.reportIssue"]]);
+      assert.strictEqual(shown, 1);
     } finally {
       about.dispose();
     }

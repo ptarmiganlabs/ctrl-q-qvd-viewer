@@ -110,6 +110,12 @@ export function setupMessageHandler(
       case "openAbout":
         vscode.commands.executeCommand("ctrl-q-qvd-viewer.about");
         break;
+      case "openDocumentation":
+        vscode.commands.executeCommand("ctrl-q-qvd-viewer.openDocumentation");
+        break;
+      case "reportIssue":
+        vscode.commands.executeCommand("ctrl-q-qvd-viewer.reportIssue");
+        break;
       case "openSettings":
         // The one setting a page names, such as the rows a failed read was asked for,
         // as long as it is the extension's own; otherwise all of the extension's

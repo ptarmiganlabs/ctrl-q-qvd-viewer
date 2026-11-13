@@ -55,7 +55,7 @@ export const metricHelpContent = {
     link: "https://en.wikipedia.org/wiki/Entropy_(information_theory)",
   },
   totalRowsProfiling: {
-    text: "Total number of rows used for this profiling analysis. This reflects the data loaded into memory from the QVD file.\n\nFor performance, only the first 100,000 rows are loaded by default. This limit is configurable in VS Code settings (search for 'QVD Viewer: Max Preview Rows').\n\nTo profile all rows in a QVD file for maximum accuracy, you can temporarily increase this setting or use the 'Load All Data' option before running profiling.",
+    text: "Rows this profiling analyzed: all of the QVD file's rows.\n\nProfiling reads the whole file into memory, so on a very large QVD it can take a while, or be refused for memory with a message that says so.",
     link: "https://en.wikipedia.org/wiki/Data_profiling",
   },
   truncatedDistribution: {

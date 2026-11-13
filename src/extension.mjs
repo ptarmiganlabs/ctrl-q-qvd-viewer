@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import QvdEditorProvider from "./qvdEditorProvider.mjs";
 import AboutPanel from "./aboutPanel.mjs";
 import logger from "./logger.mjs";
+import { askQuestion, openDocumentation, reportIssue } from "./help.mjs";
 
 /**
  * Activate the extension
@@ -76,6 +77,13 @@ export async function activate(context) {
   );
 
   context.subscriptions.push(showLogsCommand);
+
+  // Help: the user guide, questions, and bug reports
+  context.subscriptions.push(
+    vscode.commands.registerCommand("ctrl-q-qvd-viewer.openDocumentation", openDocumentation),
+    vscode.commands.registerCommand("ctrl-q-qvd-viewer.askQuestion", askQuestion),
+    vscode.commands.registerCommand("ctrl-q-qvd-viewer.reportIssue", reportIssue)
+  );
 
   // Add logger to subscriptions for proper cleanup
   context.subscriptions.push({

@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import logger from "./logger.mjs";
 import { getNonce } from "./webview/assetLoader.mjs";
 import { html } from "./webview/templates/escaping.mjs";
+import { DISCUSSIONS_URL, DOCUMENTATION_URL } from "./help.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -102,6 +103,12 @@ class AboutPanel {
             }
             break;
           }
+          case "reportIssue":
+            vscode.commands.executeCommand("ctrl-q-qvd-viewer.reportIssue");
+            break;
+          case "showLogs":
+            logger.show();
+            break;
         }
       },
       null,
@@ -454,6 +461,18 @@ class AboutPanel {
                 </div>
                 
                 <div class="section">
+                    <h2>Get Help</h2>
+                    <p style="color: var(--vscode-descriptionForeground); margin-bottom: 15px;">The user guide covers opening QVD files, each of the viewer's tabs, profiling, exports and settings. Questions go to GitHub Discussions, and bugs to GitHub Issues.</p>
+                    <div class="link-section">
+                        <button class="link-button" data-url="${DOCUMENTATION_URL}">📖 User Guide</button>
+                        <button class="link-button" data-url="${DISCUSSIONS_URL}">💬 Ask a Question</button>
+                        <button class="link-button" data-command="reportIssue">🐛 Report Issue</button>
+                        <button class="link-button" data-command="showLogs">📄 Show Logs</button>
+                    </div>
+                    <p style="color: var(--vscode-descriptionForeground); margin-top: 10px; font-size: 0.9em;">The same are in the Command Palette (Ctrl+Shift+P / Cmd+Shift+P): QVD: Open Documentation, QVD: Ask a Question, QVD: Report Issue and QVD: Show Extension Logs.</p>
+                </div>
+                
+                <div class="section">
                     <h2>Key Features at a Glance</h2>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 20px 0;">
                         <div class="info-box">
@@ -470,7 +489,7 @@ class AboutPanel {
                         </div>
                         <div class="info-box">
                             <h3 style="margin: 0 0 10px 0; font-size: 1.1em;">⚡ High Performance</h3>
-                            <p style="margin: 5px 0;">Efficient pagination and configurable preview limits handle large datasets smoothly.</p>
+                            <p style="margin: 5px 0;">The Data tab reads one page of rows at a time, wherever it is in the file, so large files open quickly.</p>
                         </div>
                         <div class="info-box">
                             <h3 style="margin: 0 0 10px 0; font-size: 1.1em;">🔒 Safe & Secure</h3>
@@ -485,7 +504,7 @@ class AboutPanel {
                         <li>View QVD files created by Qlik Sense or QlikView directly in VS Code</li>
                         <li>Display comprehensive metadata including file creation info, table creator, and record counts</li>
                         <li>View detailed field information with data types, symbols, and technical details</li>
-                        <li>Data preview with configurable row limits (100-100,000 rows, default: 5,000)</li>
+                        <li>Data preview that reads one page at a time: 100 rows a page by default, from 10 to 1,000</li>
                         <li>Efficient pagination controls for navigating through large datasets</li>
                         <li>Safe read-only access to QVD files - no risk of modifying original data</li>
                     </ul>
@@ -553,15 +572,13 @@ class AboutPanel {
                     <div class="info-box">
                         <p><strong>Customize your viewing experience:</strong></p>
                         <ul style="margin-left: 20px; line-height: 1.8;">
-                            <li><strong>Max Preview Rows</strong> - Control how many rows to load for preview and pagination
-                                <ul style="margin-left: 20px; margin-top: 5px;">
-                                    <li>Default: 5,000 rows</li>
-                                    <li>Range: 100 - 100,000 rows</li>
-                                    <li>Access via: Settings → Search "Ctrl-Q QVD Viewer"</li>
-                                </ul>
-                            </li>
+                            <li><strong>Page Size</strong> - Rows a page of the Data tab shows when a QVD opens: 100 by default, from 10 to 1,000. You can also pick another page size below the table.</li>
+                            <li><strong>Qlik Inline Delimiter</strong> - The delimiter Qlik inline script exports offer first</li>
+                            <li><strong>CSV Escape Formulas</strong> - Put an apostrophe before CSV text a spreadsheet would run as a formula (on by default)</li>
+                            <li><strong>CSV Byte Order Mark</strong> - Start CSV files with a UTF-8 byte order mark, which Excel on Windows needs for non-ASCII text (off by default)</li>
+                            <li><strong>Export Time Zone</strong> - The time zone a QVD's timestamps were read in, offered first when an export asks for one</li>
                         </ul>
-                        <p style="margin-top: 10px;"><em>Tip: Lower values improve performance for very large files, while higher values provide more data visibility.</em></p>
+                        <p style="margin-top: 10px;">Open them with the viewer's ⚙️ Settings button, or in Settings, search for "Ctrl-Q QVD".</p>
                     </div>
                 </div>
                 
@@ -585,22 +602,37 @@ class AboutPanel {
                     </ol>
                     
                     <div class="info-box" style="margin-top: 15px;">
-                        <p><strong>💡 Pro Tip:</strong> Adjust the preview row limit in Settings (search for "Ctrl-Q QVD") to balance between performance and data visibility. Default is 5,000 rows.</p>
+                        <p><strong>💡 Pro Tip:</strong> The ❓ Help button in the viewer opens the user guide.</p>
                     </div>
                 </div>
                 
                 <div class="section">
-                    <h2>Part of the Butler & Ctrl-Q Suite</h2>
+                    <h2>Part of the Ptarmigan Labs Tools</h2>
                     <div class="info-box">
-                        <p>This extension is part of the <strong>Butler and Ctrl-Q suite</strong> of tools for Qlik Sense developers and administrators.</p>
-                        <p>The Butler family includes tools for automation, monitoring, DevOps, and data management for Qlik Sense environments.</p>
-                        <p><strong>Explore the suite:</strong></p>
+                        <p>Ctrl-Q QVD Viewer is one of a set of free, open source tools for Qlik Sense and QlikView developers and admins, all MIT licensed and all sponsored by Ptarmigan Labs. See them all at <a href="#" data-url="https://ptarmiganlabs.com/products/" style="color: var(--vscode-textLink-foreground); text-decoration: none;">ptarmiganlabs.com/products</a>.</p>
+                        <h3 style="font-size: 1.05em; margin: 15px 0 5px 0;">The Butler family</h3>
                         <ul style="margin-left: 20px; line-height: 1.8;">
-                            <li><strong><a href="#" data-url="https://github.com/ptarmiganlabs/ctrl-q" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Ctrl-Q CLI</a></strong> - Command-line tool for automating tedious and error prone Qlik Sense admin tasks</li>
-                            <li><strong><a href="#" data-url="https://github.com/ptarmiganlabs/butler" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler</a></strong> - Adding superpowers to Qlik Sense. Real-time task alerts, Windows service monitoring, key-value store and much more</li>
-                            <li><strong><a href="#" data-url="https://github.com/ptarmiganlabs/butler-sos" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler SOS</a></strong> - Monitor real-time operational Qlik Sense metrics in Grafana</li>
-                            <li><strong><a href="#" data-url="https://github.com/ptarmiganlabs/butler-sheet-icons" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler Sheet Icons</a></strong> - Automatic thumbnail management for Qlik Sense sheets</li>
-                            <li><strong><a href="#" data-url="https://ptarmiganlabs.com/the-butler-family/" style="color: var(--vscode-textLink-foreground); text-decoration: none;">And more...</a></strong> - Explore the full range of Butler tools and features</li>
+                            <li><strong><a href="#" data-url="https://butler.ptarmiganlabs.com" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler</a></strong> - Reload failure alerts, task scheduling, a key-value store and more for Qlik Sense Enterprise on Windows</li>
+                            <li><strong><a href="#" data-url="https://butler-sos.ptarmiganlabs.com" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler SOS</a></strong> - Real-time operational metrics for client-managed Qlik Sense, for dashboards in Grafana and elsewhere</li>
+                            <li><strong><a href="#" data-url="https://butler-sheet-icons.ptarmiganlabs.com" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler Sheet Icons</a></strong> - Automatic sheet icons (thumbnails) for client-managed Qlik Sense and Qlik Cloud</li>
+                        </ul>
+                        <h3 style="font-size: 1.05em; margin: 15px 0 5px 0;">Ctrl-Q</h3>
+                        <ul style="margin-left: 20px; line-height: 1.8;">
+                            <li><strong><a href="#" data-url="https://ctrl-q.ptarmiganlabs.com" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Ctrl-Q</a></strong> - Automate Qlik Sense Enterprise on Windows admin tasks from the command line</li>
+                        </ul>
+                        <h3 style="font-size: 1.05em; margin: 15px 0 5px 0;">The .qs library: Qlik Sense extensions</h3>
+                        <p style="margin: 5px 0;">Extensions for both client-managed Qlik Sense and Qlik Cloud:</p>
+                        <ul style="margin-left: 20px; line-height: 1.8;">
+                            <li><strong><a href="#" data-url="https://ptarmiganlabs.com/products/onboard-qs/" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Onboard.qs</a></strong> - Interactive onboarding tours for Qlik Sense apps, no coding required</li>
+                            <li><strong><a href="#" data-url="https://ptarmiganlabs.com/products/helpbutton-qs/" style="color: var(--vscode-textLink-foreground); text-decoration: none;">HelpButton.qs</a></strong> - A configurable, context-aware help button in the Qlik Sense app toolbar</li>
+                            <li><strong><a href="#" data-url="https://ptarmiganlabs.com/products/chatbox-qs/" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Chatbox.qs</a></strong> - Chat-style conversations from the Qlik Sense data model (pre-release)</li>
+                            <li><strong><a href="#" data-url="https://ptarmiganlabs.com/products/qvsview-qs/" style="color: var(--vscode-textLink-foreground); text-decoration: none;">QvsView.qs</a></strong> - A read-only Qlik load script viewer with syntax highlighting (pre-release)</li>
+                        </ul>
+                        <h3 style="font-size: 1.05em; margin: 15px 0 5px 0;">More tools</h3>
+                        <ul style="margin-left: 20px; line-height: 1.8;">
+                            <li><strong><a href="#" data-url="https://ptarmiganlabs.com/products/qvdjs/" style="color: var(--vscode-textLink-foreground); text-decoration: none;">qvdjs</a></strong> - Read and write QVD files from Node.js. This extension reads QVD files with it</li>
+                            <li><strong><a href="#" data-url="https://qs-jwt.ptarmiganlabs.com" style="color: var(--vscode-textLink-foreground); text-decoration: none;">qs-jwt</a></strong> - Create JWTs for Qlik Sense Enterprise on Windows and Qlik Cloud</li>
+                            <li><strong><a href="#" data-url="https://ptarmiganlabs.com/products/qs-log-scanner/" style="color: var(--vscode-textLink-foreground); text-decoration: none;">qs-log-scanner</a></strong> - A terminal UI for exploring Qlik Sense log events sent over UDP</li>
                         </ul>
                     </div>
                 </div>
@@ -614,11 +646,8 @@ class AboutPanel {
                             </svg>
                             GitHub Repository
                         </button>
-                        <button class="link-button" data-url="https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues">
-                            🐛 Report Issue
-                        </button>
-                        <button class="link-button" data-url="https://ptarmiganlabs.com/the-butler-family/">
-                            🛠️ Butler Suite
+                        <button class="link-button" data-url="https://ptarmiganlabs.com/products/">
+                            🛠️ All Ptarmigan Labs Tools
                         </button>
                         <button class="link-button" data-url="https://ptarmiganlabs.com">
                             🌐 Ptarmigan Labs
@@ -635,13 +664,20 @@ class AboutPanel {
                 
                 <div class="footer">
                     <p>Made with ❤️ by <a href="#" data-url="https://ptarmiganlabs.com" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Ptarmigan Labs</a></p>
-                    <p style="margin-top: 10px; font-size: 0.9em;">© 2025 Ptarmigan Labs. All rights reserved.</p>
+                    <p style="margin-top: 10px; font-size: 0.9em;">© 2025–2026 Ptarmigan Labs. All rights reserved.</p>
                 </div>
             </div>
             `}
             
             <script nonce="${nonce}">
                 const vscode = acquireVsCodeApi();
+
+                // Each button with a data-command asks the extension to do it
+                document.querySelectorAll('[data-command]').forEach((button) => {
+                    button.addEventListener('click', () => {
+                        vscode.postMessage({ command: button.dataset.command });
+                    });
+                });
 
                 // Each link and button with a data-url opens its page in the browser
                 document.querySelectorAll('[data-url]').forEach((link) => {

@@ -67,7 +67,8 @@ Open source with a permissive MIT license.</h4>
   - **XML** - Extensible markup language for enterprise systems
   - **YAML** - Human-readable structured data format
 - **Configurable Page Size**: Choose how many rows a page shows (default: 100, range: 10-1,000), in Settings or below the table
-- **About Panel**: Version information, a feature overview and links to the other Ptarmigan Labs tools
+- **About Panel**: Version information, a feature overview, help links and links to the other Ptarmigan Labs tools
+- **Help from Inside VS Code**: A **❓ Help** button in the viewer, and commands that open this guide, ask a question or report a bug. See [Getting Help](#getting-help)
 - **Extension Logs**: An output channel that shows what the extension did, for troubleshooting
 - **Read-Only Access**: Safe viewing without modifying original QVD files
 
@@ -130,7 +131,7 @@ VS Code 1.101 and 1.102 can't install this version. The Marketplace offers them 
 3. **Start Viewing**
    - The QVD file will open and automatically show a data preview, with schema, metadata and lineage information in separate tabs
 
-That's it! You're ready to view QVD files in VS Code.
+That's it! You're ready to view QVD files in VS Code. If you get stuck, see [Getting Help](#getting-help).
 
 ### First-Time Setup: Setting Default Editor
 
@@ -213,6 +214,9 @@ The extension adds these commands to the Command Palette:
 - **QVD: Open QVD File**: Pick a QVD file and open it in the viewer
 - **QVD: About**: Show the About panel, also opened by the **ℹ️ About** button in the viewer
 - **QVD: Show Extension Logs**: Show the extension's output channel, which helps when something goes wrong
+- **QVD: Open Documentation**: Open this guide in the browser, as the **❓ Help** button in the viewer does
+- **QVD: Ask a Question**: Open [GitHub Discussions](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/discussions)
+- **QVD: Report Issue**: Report a bug with VS Code's issue reporter, which adds the VS Code, OS and extension versions itself
 
 The viewer's **⚙️ Settings** button opens the extension's settings.
 
@@ -346,6 +350,14 @@ To change these settings:
 2. Search for "Ctrl-Q QVD"
 3. Adjust the value you want to change
 
+## Getting Help
+
+- **This guide**: the viewer's ❓ **Help** button opens it, as does **QVD: Open Documentation** in the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P` on Mac)
+- **Questions**: ask in [GitHub Discussions](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/discussions), or run **QVD: Ask a Question**
+- **Bugs**: run **QVD: Report Issue**. It opens VS Code's issue reporter with this extension picked, which adds the VS Code, OS and extension versions itself. You can also open an issue in [GitHub Issues](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues). A page that says why a file couldn't be shown has a **Report Issue** button too, when the cause may be a bug
+- **Logs**: **QVD: Show Extension Logs** shows what the extension did. Lines from it around the problem help a bug report. Issues and discussions are public, so leave out data, file names and paths you can't share
+- **About**: the viewer's ℹ️ **About** button, or **QVD: About**, has the same links and the extension's version
+
 ## Development
 
 This section provides a quick overview for developers. For detailed information, see the following documentation:
@@ -374,7 +386,7 @@ For more details on building, testing, and packaging, see **[BUILD.md](docs/BUIL
 
 ## Contributing
 
-Contributions are welcome! Please feel free to [open an issue](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues) or submit a pull request.
+Contributions are welcome! Report bugs in [GitHub Issues](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues), ask questions in [GitHub Discussions](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/discussions), and send pull requests.
 
 ## Sponsorship
 
