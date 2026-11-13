@@ -227,6 +227,9 @@ export function setupMessageHandler(
             bytesPerCell: cost.bytesPerCell,
             // A CSV export builds from a chunk of rows at a time
             chunkRows: cost.chunkRows ?? 0,
+            // An Arrow export holds its text fields' distinct values to the end
+            bytesPerDistinctText: cost.bytesPerDistinctText ?? 0,
+            bytesPerSymbolByte: cost.bytesPerSymbolByte ?? 0,
             holdCallerBytes: false,
             // A format with date types gets a QVD's dates as dates
             dates: DataExporter.writesDates(format),
@@ -244,6 +247,11 @@ export function setupMessageHandler(
           const workspaceFolder =
             vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
           const columnCount = result.columns.length;
+          // Each field's distinct values and the bytes they take, which bound what an
+          // export holding them needs
+          const fields = new Map(
+            (result.metadata?.fields ?? []).map((field) => [field.name, { symbols: field.noOfSymbols, bytes: field.length }])
+          );
           // What reading the timestamps in a time zone did, when the export named one
           let timeShifts = null;
           const savedPath = await DataExporter.exportData(
@@ -261,7 +269,7 @@ export function setupMessageHandler(
               reserve: async (rows, limit) => {
                 // A read already running was priced without this export: it goes first
                 await qvdReader.afterLargeReads({ signal });
-                const needed = await exportHeapBytes(cost, rows, columnCount, limit);
+                const needed = await exportHeapBytes(cost, rows, columnCount, limit, { fields });
                 const booking = tryBookHeap(needed.bytes);
                 if (!booking.release) {
                   throw new Error(exportRefusal(format, needed.rows, needed.bytes, booking.leftBytes));

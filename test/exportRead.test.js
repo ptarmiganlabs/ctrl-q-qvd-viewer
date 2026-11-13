@@ -8,23 +8,25 @@ let setupMessageHandler;
 let DataExporter;
 
 /**
- * Export rows to Parquet through the message handler, with VS Code's dialogs and
- * messages answered here, and put back afterwards
+ * Export rows through the message handler, with VS Code's dialogs and messages
+ * answered here, and put back afterwards
  * @param {Array<Object>} rows - The rows the read gives
  * @param {object} answers
  * @param {function(Array): *} answers.pick - Answers each QuickPick, given its items
  * @param {string} [answers.timeZone] - What the exportTimeZone setting holds
+ * @param {string} [answers.format] - The format to export to
+ * @param {object} [answers.metadata] - The metadata the read gives, its fields' among them
  * @returns {Promise<{filePath: string, messages: Array<string>, errors: Array<{message: string, items: Array<string>}>}>}
  *   Where the export was saved, as VS Code names it, and the messages and errors it showed
  */
-async function exportThroughHandler(rows, { pick, timeZone = "" }) {
+async function exportThroughHandler(rows, { pick, timeZone = "", format = "parquet", metadata = null }) {
   // The API as the handler imports it: on some VS Code versions, 1.103.0 among them, a module's
   // import of vscode gets another object than require() does
   const vscode = await import("vscode");
   const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qvd-viewer-export-read-"));
   // Where the save dialog answers. The export names it by its fsPath, which on
   // Windows has its drive letter in lower case: c:\Users, not C:\Users
-  const saveUri = vscode.Uri.file(path.join(outputDir, "zoned.parquet"));
+  const saveUri = vscode.Uri.file(path.join(outputDir, `zoned.${format}`));
   const messages = [];
   const errors = [];
   const saved = {
@@ -37,7 +39,7 @@ async function exportThroughHandler(rows, { pick, timeZone = "" }) {
   let onMessage;
   const panel = { webview: { onDidReceiveMessage: (listener) => (onMessage = listener) } };
   const reader = {
-    read: async () => ({ data: rows, columns: Object.keys(rows[0]), release: () => {}, error: null, errorReason: null }),
+    read: async () => ({ metadata, data: rows, columns: Object.keys(rows[0]), release: () => {}, error: null, errorReason: null }),
     afterLargeReads: async () => {},
   };
   try {
@@ -55,7 +57,7 @@ async function exportThroughHandler(rows, { pick, timeZone = "" }) {
       get: (key, fallback) => (key === "exportTimeZone" ? timeZone : fallback),
     });
     setupMessageHandler(panel, "zoned.qvd", reader, {}, async () => {}, 25);
-    await onMessage({ command: "exportData", format: "parquet" });
+    await onMessage({ command: "exportData", format });
     return { filePath: saveUri.fsPath, messages, errors };
   } finally {
     Object.assign(vscode.window, {
@@ -132,6 +134,28 @@ suite("Export Read Test Suite", () => {
         "back, and were taken as the first. A clock there never shows a skipped time, so check that they " +
         "were read in America/Chicago.",
     ]);
+  });
+
+  test("An Arrow export is priced for the QVD's distinct values of its text, not one a row", async () => {
+    const guard = await import("../src/memoryGuard.mjs");
+    // 20,000 rows of a text field with three distinct values. Priced one a row, its
+    // dictionary would need 20,000 times 84 bytes, 1.6 MiB
+    const rows = Array.from({ length: 20000 }, (_, i) => ({ code: `c${i % 3}` }));
+    const metadata = { fields: [{ name: "code", noOfSymbols: 3, length: 9 }] };
+    const budget = guard.knownBudget();
+    // 1 MiB left: room for a dictionary of three, not of 20,000
+    guard.rememberBudget({ bytes: guard.bookedBytes() + 2 ** 20, factor: 1 });
+    try {
+      const { filePath, messages, errors } = await exportThroughHandler(rows, {
+        format: "arrow",
+        metadata,
+        pick: () => assert.fail("An export without timestamps shouldn't ask anything"),
+      });
+      assert.deepStrictEqual(errors, []);
+      assert.deepStrictEqual(messages, [`Data exported to ${filePath}`]);
+    } finally {
+      guard.rememberBudget(budget);
+    }
   });
 
   test("An export refused for the time zone in the settings offers to open them", async () => {

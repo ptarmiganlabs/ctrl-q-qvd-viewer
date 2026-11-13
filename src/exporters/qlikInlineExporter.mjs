@@ -1,4 +1,4 @@
-import { CELLS_PER_YIELD, rowsPerChunk } from "../memoryGuard.mjs";
+import { CELLS_PER_YIELD, nextTurn, rowsPerChunk } from "../memoryGuard.mjs";
 import { writeChunks, writeFileAtomically } from "./atomicWrite.mjs";
 
 // Rows turned into script text at a time, so a large export never holds the whole
@@ -86,7 +86,7 @@ async function autoDetectDelimiter(data) {
 
   for (let i = 0; i < data.length; i++) {
     if (i > 0 && i % rowsPerYield === 0) {
-      await new Promise((resolve) => setImmediate(resolve));
+      await nextTurn();
     }
     for (const value of Object.values(data[i])) {
       if (typeof value === "string") {
