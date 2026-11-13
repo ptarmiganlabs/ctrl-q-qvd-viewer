@@ -521,7 +521,7 @@ class AboutPanel {
                         <li><strong>Statistics</strong> - Total rows, unique values, and NULL counts for each field</li>
                         <li><strong>Export to QVS</strong> - Generate Qlik scripts with customizable delimiters and row limits</li>
                         <li><strong>Multiple Views</strong> - Open results as Markdown (text) or Visual Analysis (interactive charts/tables)</li>
-                        <li><strong>Smart Warnings</strong> - Automatic alerts for large files (>100k rows) before loading all data</li>
+                        <li><strong>Any Size</strong> - Only the fields profiled are read, a chunk of rows at a time, so memory follows their distinct values, not the file's size</li>
                     </ul>
                     
                     <div class="info-box" style="margin-top: 15px;">

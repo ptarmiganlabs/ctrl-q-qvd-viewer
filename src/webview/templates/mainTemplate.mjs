@@ -1346,12 +1346,11 @@ export function getHtmlForWebview(header, webview, context) {
                         <button class="header-button" id="export-qvs-btn" style="display: none;">💾 Export to QVS Script</button>
                     </div>
                     ${
-                      totalRows > 100000
+                      totalRows > 10000000
                         ? html`
                     <div class="info-banner warning-banner">
-                        ⚠️ <strong>Large File Warning:</strong> This QVD contains ${totalRows.toLocaleString()} rows. 
-                        Profiling will load all data into memory, which may take some time and use significant resources.
-                        <br/>Click "Run Profiling" below to proceed.
+                        ⏱️ <strong>Large file:</strong> This QVD contains ${totalRows.toLocaleString()} rows.
+                        Profiling reads every row of the fields you select, two or three times each, which takes a while on a file this size.
                     </div>
                     `
                         : ""

@@ -304,11 +304,11 @@ Analyze value distributions for selected fields to understand data patterns and 
 - **Automatic Analysis Type Detection**: The extension automatically applies the appropriate analysis based on field content (numeric, temporal, or string)
 - **Visual Analysis**: Interactive charts powered by Chart.js for clear data visualization
 - **Export to QVS**: The **💾 Export to QVS Script** button generates a Qlik .qvs script with the frequency tables, to load into Qlik Sense for further analysis. You choose the delimiter and how many values per field to include (top 20, 100, 1,000, 10,000 or all)
-- **Large File Warning**: Automatic warning when profiling files with more than 100,000 rows, as all data must be loaded into memory
+- **Any File Size**: Only the fields profiled are read, a chunk of rows at a time, so profiling's memory follows their distinct values, not the file's size
 
 **Note:**
 
-- Profiling loads the entire QVD file into memory. For very large files (>100,000 rows), you'll receive a warning before proceeding.
+- Profiling reads every row of the fields you select, two or three times. On a file of tens of millions of rows that takes minutes, and a field with tens of millions of distinct values needs a few GB of the computer's memory: profiling says so, and doesn't start, where it isn't there.
 - All analysis features (statistical, temporal, string) are in beta and subject to change and refinement based on user feedback.
 
 ### Exporting Data
@@ -402,7 +402,7 @@ For more details on building, testing, and packaging, see **[BUILD.md](docs/BUIL
 
 ## Known Issues
 
-- Profiling and exports still read the whole file. On very large QVDs they can be refused for memory, with a message that says so
+- Exports still read the whole file. On very large QVDs they can be refused for memory, with a message that says so
 - The extension currently provides read-only access to QVD files
 
 ## Contributing

@@ -35,17 +35,15 @@ The profiling tab presents all fields in the QVD as checkboxes with their unique
 - Select a maximum of 3 fields (for comparison)
 - Attempting to select more than 3 fields shows a warning and prevents selection
 
-## Large File Warning
+## Large Files
 
-For QVD files with more than 100,000 rows, a warning banner appears before profiling:
+Profiling reads only the fields you select, a chunk of rows at a time, so it works on a QVD of any size. For QVD files with more than 10,000,000 rows, a banner says that profiling will take a while:
 
-> ⚠️ **Large File Warning:** This QVD contains 580,251 rows. Profiling will load all data into memory, which may take some time and use significant resources. Click "Run Profiling" below to proceed.
-
-This ensures you're aware of potential performance impacts when profiling large datasets.
+> ⏱️ **Large file:** This QVD contains 46,900,000 rows. Profiling reads every row of the fields you select, two or three times each, which takes a while on a file this size.
 
 ## Profiling Results
 
-After clicking "Run Profiling", the extension loads all data from the QVD and computes value distributions. Results are displayed for each selected field:
+After clicking "Run Profiling", the extension reads the selected fields from the QVD and computes value distributions. Results are displayed for each selected field:
 
 ### Statistics Card
 
@@ -300,9 +298,9 @@ The quality assessment provides context-specific recommendations based on the fi
 
 ### Truncation Notice
 
-If a field has more than 1,000 unique values, the distribution is truncated for performance:
+If a field has more than 1,000 unique values, the distribution shows the 1,000 most frequent. Values as frequent come in the order they first occur in the file. Every value is still counted: the unique values, cardinality, duplicates and evenness are those of the whole field.
 
-> Distribution truncated to top 1,000 values
+> Showing top 1,000 unique values
 
 ## Opening Results in New Windows
 
@@ -541,16 +539,28 @@ Export profiling results for:
 
 ## Performance Considerations
 
-### Memory Usage
+### How a Field Is Read
 
-- Profiling loads **all data** from the QVD into memory
-- The extension truncates at 1,000 unique values per field
-- Large files (>100k rows) trigger a warning
+Profiling reads only the fields selected, one after another, through the QVD's columns, a chunk of rows at a time. It never holds the rows. For each field it keeps a few numbers per distinct value: how many rows hold it, its number, its date, a hash of its text. Those take about 60 bytes per distinct value, in memory outside VS Code's extension heap, and up to about 1 GB of the heap whatever the field. So the memory profiling needs depends on the largest selected field's distinct values, not on how many rows the file has: a field with a value of its own in each of 50 million rows needs about 3 GB of the computer's memory.
+
+A field is read two or three times:
+
+1. Each distinct value's rows are counted. The sum of the numbers is taken, and the rows that tell the field's kind are looked at.
+2. Each distinct value is analyzed once, at its first row, now that its rows are known: the distribution, duplicates and evenness, string analysis and dates. Each row adds to the variance.
+3. For a numeric field, each row adds to the skewness and kurtosis.
+
+The results are the same, number for number, as profiling every row held in memory.
+
+Before profiling starts, the memory it needs is worked out from the QVD's header. If it doesn't fit in what is left on the computer, or in what VS Code gives its extensions, profiling is refused, and the message names the field.
+
+Profiling lets VS Code and its other extensions run between chunks of its work, and between the steps of the work between passes, such as sorting tens of millions of distinct numbers. On a 50-million-row QVD, the longest wait it caused was about a quarter of a second.
+
+Text fields with more than 500,000 distinct prefixes or suffixes have their common prefixes and suffixes estimated rather than counted, and the results say so.
 
 ### Best Practices
 
 1. Profile smaller QVDs first to understand the feature
-2. Heed large file warnings before profiling
+2. On a very large QVD, profile the fields you need, one at a time: each is read in full
 3. Select only the fields you need (1-3 max)
 4. Use row limits when exporting to QVS for performance
 5. Consider the "Top 100" or "Top 1,000" options for large distributions
@@ -569,8 +579,8 @@ The profiling feature provides similar insights to Qlik Sense's field profiling,
 **Limitations:**
 
 - Maximum of 3 fields at once (Qlik Sense handles more)
-- Truncated at 1,000 unique values per field
-- All data must fit in memory
+- The distribution shows the 1,000 most frequent values per field
+- A field's distinct values must fit in memory: about 60 bytes each, outside VS Code's extension heap
 - No associative model or filtering capabilities
 
 ## Interpreting Data Quality Metrics
@@ -702,9 +712,8 @@ The temporal analysis automatically detects and parses these date formats:
 
 ### Profiling Takes Too Long
 
-- Check the file size (number of rows)
+- Check the file size (number of rows): each selected field's rows are read two or three times
 - Select fewer fields (1 instead of 3)
-- Ensure you have enough available memory
 
 ### "Maximum of 3 fields" Warning
 
@@ -717,11 +726,11 @@ The temporal analysis automatically detects and parses these date formats:
 - Use the "All values" export option if you need the complete distribution
 - Consider if you really need all values for your analysis
 
-### Memory Issues
+### Profiling Refused for Memory
 
-- Close other applications to free up memory
-- Profile smaller QVDs first
-- Select fewer fields simultaneously
+- The message names the field whose distinct values don't fit: a field of an ID per row, in a file of tens of millions of rows
+- Fields are profiled one after another, so leaving that field out lets the others be profiled
+- Close other QVD editors whose searches or sorts hold memory
 
 ## Related Features
 
