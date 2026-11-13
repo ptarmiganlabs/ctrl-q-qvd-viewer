@@ -370,6 +370,54 @@ suite("String Analysis Test Suite", () => {
       assert.ok(analysis.formatDetection.url.count >= 2); // At least https and http
       assert.ok(analysis.formatDetection.url.samples.length > 0);
     });
+
+    test("Says which values are URLs, as it always has", () => {
+      const urls = [
+        "https://example.com",
+        "http://test.org",
+        "www.google.com",
+        "example.com/path/to/a-b_c.d",
+        "https://sub.example.co.uk/",
+        ".a.com",
+        "a..bc",
+        "EXAMPLE.COM",
+      ];
+      // An IP address isn't one: what follows the host's dot must be letters
+      const others = ["not a url", "http://", "ftp://x.com", "a.b", "a.com/x!", "x@y.com", "...", "1.2.3.4"];
+      const data = [...urls, ...others].map((url) => ({ url }));
+      const analysis = qvdStringAnalysis.calculateStringAnalysis(data, "url");
+      assert.strictEqual(analysis.formatDetection.url.count, urls.length);
+    });
+  });
+
+  suite("Format Detection - Long Values", () => {
+    // A value that made the URL pattern backtrack: 30 spaces after an address took
+    // it a minute, and each space more twice as long. A long value with many dots
+    // made the email and URL patterns take seconds. Now each is a few milliseconds.
+    test("A value that almost matches a URL or an email doesn't stall the analysis", () => {
+      const data = [
+        `a.com/${" ".repeat(40)}!`,
+        `${"a.".repeat(50000)}!`,
+        `a@${"a.".repeat(50000)}@`,
+        `http://${"-.".repeat(50000)}!`,
+        "plain text",
+      ].map((value) => ({ value }));
+      const started = performance.now();
+      const analysis = qvdStringAnalysis.calculateStringAnalysis(data, "value");
+      const elapsed = performance.now() - started;
+      assert.strictEqual(analysis.formatDetection.url.count, 0);
+      assert.strictEqual(analysis.formatDetection.email.count, 0);
+      assert.ok(elapsed < 2000, `the analysis took ${Math.round(elapsed)} ms`);
+    });
+
+    test("A long URL and a long email address are still found", () => {
+      const data = [`https://example.com/${"a/".repeat(50000)}`, `${"a".repeat(50000)}@example.com`].map(
+        (value) => ({ value })
+      );
+      const analysis = qvdStringAnalysis.calculateStringAnalysis(data, "value");
+      assert.strictEqual(analysis.formatDetection.url.count, 1);
+      assert.strictEqual(analysis.formatDetection.email.count, 1);
+    });
   });
 
   suite("Format Detection - Phone", () => {
