@@ -95,10 +95,22 @@ const ALL_FORMATS = (1 << FORMATS.length) - 1;
 const SAMPLES = 5;
 
 // Which UTF-16 code units /\s/ matches, as this JavaScript engine's own regular
-// expressions say: a character's whitespace is looked up rather than tested
-const WHITESPACE = new Uint8Array(65536);
-for (let unit = 0; unit < 65536; unit++) {
-  WHITESPACE[unit] = /\s/.test(String.fromCharCode(unit)) ? 1 : 0;
+// expressions say: a character's whitespace is looked up rather than tested. Made the
+// first time a text is analyzed, not when the extension starts
+let whitespace = null;
+
+/**
+ * The whitespace table, made the first time it is asked for
+ * @returns {Uint8Array} 1 for each code unit /\s/ matches, by code unit
+ */
+function whitespaceTable() {
+  if (!whitespace) {
+    whitespace = new Uint8Array(65536);
+    for (let unit = 0; unit < 65536; unit++) {
+      whitespace[unit] = /\s/.test(String.fromCharCode(unit)) ? 1 : 0;
+    }
+  }
+  return whitespace;
 }
 
 /**
@@ -323,6 +335,7 @@ export class StringStats {
     // Each character, as for...of takes them: a surrogate pair is one, a lone surrogate
     // one too. Only ASCII letters and digits are alphanumeric, and every character
     // outside the Basic Multilingual Plane is special, so a pair's first unit says it
+    const space = whitespaceTable();
     for (let i = 0; i < value.length; i++) {
       const unit = value.charCodeAt(i);
       if (unit >= 48 && unit <= 57) {
@@ -331,7 +344,7 @@ export class StringStats {
       } else if ((unit >= 65 && unit <= 90) || (unit >= 97 && unit <= 122)) {
         this.#alphanumeric += count;
         this.#alphabetic += count;
-      } else if (WHITESPACE[unit] === 1) {
+      } else if (space[unit] === 1) {
         this.#whitespace += count;
       } else {
         this.#special += count;

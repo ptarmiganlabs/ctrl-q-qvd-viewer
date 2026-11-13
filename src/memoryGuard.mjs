@@ -438,23 +438,6 @@ export function describeExportRefusal(
 }
 
 /**
- * Say why profiling is refused for memory
- * @param {number} fieldCount - Fields to profile
- * @param {number} rows - Rows profiled
- * @param {number} neededBytes - Heap profiling needs
- * @param {number} leftBytes - Heap left for it
- * @returns {string} The message
- */
-export function describeProfileRefusal(fieldCount, rows, neededBytes, leftBytes) {
-  const fields = fieldCount === 1 ? "a field" : `${fieldCount.toLocaleString()} fields`;
-  return (
-    `Profiling ${fields} over ${rows.toLocaleString()} rows needs about ${size(neededBytes)} of memory, ` +
-    `and about ${size(leftBytes)} is left in what VS Code gives its extensions.` +
-    (fieldCount > 1 ? " Profile fewer fields at a time." : "")
-  );
-}
-
-/**
  * A read refused for memory, as QvdReader reports it
  * @typedef {object} Refusal
  * @property {number} rows - Rows asked for

@@ -116,7 +116,8 @@ export async function scanColumn({ filePath, allowedDir, heldBytes, ...scan }) {
   try {
     return await scanner.scan(scan);
   } finally {
-    await scanner.close();
+    // A failure to close mustn't hide what went wrong, or spoil a scan that is done
+    await scanner.close().catch(() => {});
   }
 }
 
@@ -139,12 +140,21 @@ export function openColumnScanner({ filePath, allowedDir, heldBytes = SCAN_HELD_
   // Each field's codes whose values the open file holds already, as far as the scans have seen
   let seenByField = new Map();
   let busy = false;
+  // Files whose close failed, tried again when the scanner is closed: an open handle
+  // keeps Windows from replacing the file
+  const unclosed = [];
 
   const reopen = async () => {
-    await file?.close();
+    const closing = file;
     file = null;
     held = 0;
     seenByField = new Map();
+    try {
+      await closing?.close();
+    } catch (error) {
+      unclosed.push(closing);
+      throw error;
+    }
   };
 
   return {
@@ -193,8 +203,9 @@ export function openColumnScanner({ filePath, allowedDir, heldBytes = SCAN_HELD_
         signal?.throwIfAborted();
         return { reopened };
       } catch (error) {
-        // A scan given up may have left the file in the middle of a page
-        await reopen();
+        // A scan given up may have left the file in the middle of a page. Closing it
+        // may fail too, which mustn't hide why the scan stopped
+        await reopen().catch(() => {});
         throw error;
       } finally {
         busy = false;
@@ -202,6 +213,9 @@ export function openColumnScanner({ filePath, allowedDir, heldBytes = SCAN_HELD_
     },
     async close() {
       await reopen();
+      while (unclosed.length > 0) {
+        await unclosed.shift().close();
+      }
     },
   };
 }

@@ -26,6 +26,10 @@ import { nextTurn } from "./memoryGuard.mjs";
  * 3. For a numeric field, the skewness and kurtosis, about the standard deviation
  *    pass 2 found, in the order the rows come in.
  *
+ * A field of few distinct values that wants nothing in row order from pass 2, being
+ * neither numeric nor text, has its distinct values kept by pass 1, in the order
+ * they first occur, and pass 2's work done from them without reading the rows again.
+ *
  * The work between passes, such as sorting tens of millions of distinct numbers,
  * is done in steps that let the event loop run between them (sortedNumbers.mjs).
  *
@@ -33,7 +37,8 @@ import { nextTurn } from "./memoryGuard.mjs";
  * to a Map of the rows' texts: a dual and a number, "1.50" and 1.5. They are told
  * apart by a 64-bit hash of their text, checked against the text itself in pass
  * 2. Two different texts with one hash are as good as never met; if they are, the
- * field is read again with other seeds.
+ * field is read again with other seeds, and if they meet again, with its texts
+ * told apart by a Map of them, which takes more memory but can't be wrong.
  */
 
 // What a value is to each part of profiling, as the bits of its tag
@@ -84,7 +89,7 @@ export const BYTES_PER_DISTINCT_VALUE = 88;
 
 /**
  * Heap profiling holds at most, whatever the field: what its scan's open file holds,
- * up to PROFILE_HELD_BYTES by the scan's count, which counts a dual's value short;
+ * up to SCAN_HELD_BYTES by the scan's count, which counts a dual's value short;
  * the samples, the most frequent values and their texts; and string analysis's
  * lengths and prefixes, which stop at PREFIXES_COUNTED. About 1.5 times the most
  * measured, 959 MiB, on a text field of 6.25 million distinct values.
@@ -92,21 +97,69 @@ export const BYTES_PER_DISTINCT_VALUE = 88;
 export const HEAP_BYTES = 1.4 * 1024 * 1024 * 1024;
 
 /**
- * A 32-bit hash of a text: MurmurHash3's mixing over its UTF-16 code units
- * @param {string} text - The text
- * @param {number} seed - The seed
- * @returns {number} The hash, unsigned
+ * The heap a profile needs whatever its field: the samples, the most frequent values
+ * and the code around them. About 1.5 times the most measured on a field of a few
+ * thousand values, 71 MiB with the process's own.
  */
-export function hash32(text, seed) {
-  let h = seed >>> 0;
+export const BASE_HEAP_BYTES = 96 * 1024 * 1024;
+
+/**
+ * Heap per distinct value of the field, and per byte of its symbols, held by the
+ * scan's open file and string analysis, up to HEAP_BYTES: 1.5 times the 400 bytes and
+ * two per byte of text the scan counts a value at
+ */
+export const HEAP_BYTES_PER_DISTINCT_VALUE = 600;
+export const HEAP_BYTES_PER_SYMBOL_BYTE = 3;
+
+/**
+ * Times a field is read again with other seeds after two of its texts had one hash,
+ * before its texts are told apart by a Map of them instead
+ */
+const SEED_TRIES = 2;
+
+/**
+ * Most distinct values whose values pass 1 keeps, so that a field that needs nothing
+ * in row order from pass 2 doesn't need pass 2
+ */
+const RETAINED_VALUES = 1 << 16;
+
+/**
+ * Most rows a field may have: rows are counted in 32 bits
+ */
+export const MAX_ROWS = 0xffffffff;
+
+/**
+ * Two 32-bit hashes of a text, for two seeds, in one walk of it: MurmurHash3's mixing
+ * over its UTF-16 code units for the first, FNV-1a's for the second, so that texts
+ * made to collide in one, whatever its seed, don't collide in the other too
+ * @param {string} text - The text
+ * @param {number} seedA - The first seed
+ * @param {number} seedB - The second seed
+ * @param {Uint32Array} out - Takes the two hashes
+ */
+export function hashPair(text, seedA, seedB, out) {
+  let a = seedA >>> 0;
+  let b = seedB >>> 0;
   for (let i = 0; i < text.length; i++) {
     let k = Math.imul(text.charCodeAt(i), 0xcc9e2d51);
-    k = (k << 15) | (k >>> 17);
-    h ^= Math.imul(k, 0x1b873593);
-    h = (h << 13) | (h >>> 19);
-    h = (Math.imul(h, 5) + 0xe6546b64) | 0;
+    k = Math.imul((k << 15) | (k >>> 17), 0x1b873593);
+    a ^= k;
+    a = (a << 13) | (a >>> 19);
+    a = (Math.imul(a, 5) + 0xe6546b64) | 0;
+    b = Math.imul(b ^ text.charCodeAt(i), 0x01000193);
   }
-  h ^= text.length;
+  out[0] = finish32(a, text.length);
+  out[1] = finish32(b, text.length);
+}
+
+/**
+ * MurmurHash3's finish: the length mixed in, and the bits avalanched
+ * @param {number} h - The running hash
+ * @param {number} length - The text's length
+ * @returns {number} The hash, unsigned
+ */
+function finish32(h, length) {
+  h ^= length;
   h ^= h >>> 16;
   h = Math.imul(h, 0x85ebca6b);
   h ^= h >>> 13;
@@ -259,10 +312,17 @@ export class FieldSummarizer {
   #decideKinds;
   #kinds;
   #seeds;
-  #hashText;
+  #hashPair;
+  #hashed = new Uint32Array(2);
+  #exactText;
+  #texts = null;
+  #retainedCodes = [];
+  #retainedValues = [];
   #pass = 0;
   #sights = 0;
   #sliceStart = 0;
+  // Whether pass 2 read the rows, rather than its distinct values being replayed
+  #readPass2 = true;
 
   // Per code
   #counts;
@@ -345,7 +405,10 @@ export class FieldSummarizer {
    * @param {Kinds} [options.kinds] - The kinds of analysis, whatever the rows
    * @param {number} [options.maxUniqueValues] - Entries the distribution keeps
    * @param {Array<number>} [options.seeds] - The text hash's seeds
-   * @param {function(string, number): number} [options.hashText] - The text hash, hash32() unless a test says otherwise
+   * @param {function(string, number, number, Uint32Array): void} [options.hashPair] - The text hash,
+   *   hashPair() unless a test says otherwise
+   * @param {boolean} [options.exactText] - Whether to tell texts apart by a Map of them,
+   *   rather than by their hash
    */
   constructor({
     totalRows,
@@ -355,15 +418,23 @@ export class FieldSummarizer {
     kinds,
     maxUniqueValues = 1000,
     seeds = SEEDS,
-    hashText = hash32,
+    hashPair: hashTexts = hashPair,
+    exactText = false,
   }) {
+    if (totalRows > MAX_ROWS) {
+      throw new RangeError(
+        `Profiling counts rows in 32 bits, and this field has ${totalRows.toLocaleString()} rows, ` +
+          `more than ${MAX_ROWS.toLocaleString()}`
+      );
+    }
     this.#totalRows = totalRows;
     this.#symbolCount = Math.max(0, symbolCount);
     this.#toValue = toValue;
     this.#decideKinds = decideKinds;
     this.#kinds = kinds ?? null;
     this.#seeds = seeds;
-    this.#hashText = hashText;
+    this.#hashPair = hashTexts;
+    this.#exactText = exactText;
     this.#step = sampleStep(totalRows);
     this.#top = new TopEntries(maxUniqueValues);
     this.#counts = new Uint32Array(this.#symbolCount);
@@ -399,14 +470,25 @@ export class FieldSummarizer {
   *#advance() {
     if (this.#pass === 1) {
       yield* this.#endPass1();
-    } else if (this.#pass === 2) {
+      // Nothing in row order wanted from pass 2: its distinct values, kept in the order
+      // they first occurred, do it
+      if (this.#retainedCodes && !this.#statistics && !this.#strings) {
+        yield* this.#replayFirstSights();
+        this.#pass = 2;
+      } else {
+        // Pass 2 reads the rows: the values kept for it aren't needed
+        this.#retainedCodes = null;
+        this.#retainedValues = null;
+      }
+    }
+    if (this.#pass === 2) {
       yield* this.#endPass2();
     }
     if (this.#pass === 0) {
       this.#pass = 1;
     } else if (this.#pass === 1) {
       this.#pass = 2;
-    } else if (this.#pass === 2 && !this.#collided && this.#statistics && this.#numericRows >= 3 && this.#stdDev !== 0) {
+    } else if (this.#pass === 2 && this.#readPass2 && !this.#collided && this.#statistics && this.#numericRows >= 3 && this.#stdDev !== 0) {
       this.#pass = 3;
     } else {
       this.#pass = -1;
@@ -455,6 +537,25 @@ export class FieldSummarizer {
     while (!steps.next().done) {
       await nextTurn();
       signal?.throwIfAborted();
+    }
+  }
+
+  /**
+   * Take rows that are all null, in row order, for the pass nextPass() named: in time
+   * for the rows the kind is told from, not for every row
+   * @param {number} count - Rows
+   * @param {number} offset - The first of them
+   */
+  takeNulls(count, offset) {
+    if (this.#pass !== 1) {
+      // Nulls add nothing to the later passes
+      return;
+    }
+    this.#nullRows += count;
+    this.#statNullRows += count;
+    const step = this.#step;
+    for (let row = Math.ceil(offset / step) * step; row < offset + count; row += step) {
+      this.#sample.push(null);
     }
   }
 
@@ -546,6 +647,15 @@ export class FieldSummarizer {
     }
     this.#tags[code] = tag;
     if (tag & VALUE) {
+      if (this.#retainedCodes) {
+        if (this.#retainedCodes.length < RETAINED_VALUES) {
+          this.#retainedCodes.push(code);
+          this.#retainedValues.push(symbol);
+        } else {
+          this.#retainedCodes = null;
+          this.#retainedValues = null;
+        }
+      }
       this.#valueCodes++;
       // A field of numbers alone is grouped by number: two numbers show one text when they are equal
       if (!this.#hashing && !(typeof value === "number" && tag & NUMERIC)) {
@@ -559,14 +669,11 @@ export class FieldSummarizer {
 
   #startHashing(except) {
     this.#hashing = true;
-    this.#h1 = new Uint32Array(this.#symbolCount);
-    this.#h2 = new Uint32Array(this.#symbolCount);
-    let size = 16;
-    while (size * 0.7 < this.#symbolCount) {
-      size *= 2;
+    if (this.#exactText) {
+      this.#texts = new Map();
+    } else {
+      this.#startTable();
     }
-    this.#table = new Int32Array(size);
-    this.#mask = size - 1;
     // The numbers seen so far, by the text they show
     for (let code = 0; code < this.#symbolCount; code++) {
       if (code !== except && this.#counts[code] > 0 && this.#tags[code] & VALUE) {
@@ -575,9 +682,30 @@ export class FieldSummarizer {
     }
   }
 
+  #startTable() {
+    this.#h1 = new Uint32Array(this.#symbolCount);
+    this.#h2 = new Uint32Array(this.#symbolCount);
+    let size = 16;
+    while (size * 0.7 < this.#symbolCount) {
+      size *= 2;
+    }
+    this.#table = new Int32Array(size);
+    this.#mask = size - 1;
+  }
+
   #addText(code, text) {
-    const a = this.#hashText(text, this.#seeds[0]);
-    const b = this.#hashText(text, this.#seeds[1]);
+    if (this.#texts) {
+      const rep = this.#texts.get(text);
+      if (rep === undefined) {
+        this.#texts.set(text, code);
+      } else {
+        this.#mergedInto.set(code, rep);
+      }
+      return;
+    }
+    this.#hashPair(text, this.#seeds[0], this.#seeds[1], this.#hashed);
+    const a = this.#hashed[0];
+    const b = this.#hashed[1];
     this.#h1[code] = a;
     this.#h2[code] = b;
     const table = this.#table;
@@ -607,6 +735,7 @@ export class FieldSummarizer {
       this.#h1 = null;
       this.#h2 = null;
       this.#table = null;
+      this.#texts = null;
     }
 
     // The distinct numbers: the distribution's values when the field holds nothing
@@ -680,6 +809,22 @@ export class FieldSummarizer {
     }
   }
 
+  // Pass 2's work at each distinct value's first row, from the values pass 1 kept
+  *#replayFirstSights() {
+    this.#readPass2 = false;
+    const codes = this.#retainedCodes;
+    const symbols = this.#retainedValues;
+    this.#retainedCodes = null;
+    this.#retainedValues = null;
+    for (let i = 0; i < codes.length; i++) {
+      this.#marks[codes[i]] |= CODE_SEEN;
+      this.#firstSight2(codes[i], symbols[i]);
+      if ((i & 4095) === 4095) {
+        yield;
+      }
+    }
+  }
+
   *#take2(codes, symbols) {
     const marks = this.#marks;
     const tags = this.#tags;
@@ -688,6 +833,9 @@ export class FieldSummarizer {
       const code = codes[i];
       if (code < 0) {
         continue;
+      }
+      if (code >= this.#symbolCount) {
+        throw unknownCode(code, this.#symbolCount);
       }
       if ((marks[code] & CODE_SEEN) === 0) {
         marks[code] |= CODE_SEEN;
@@ -810,6 +958,9 @@ export class FieldSummarizer {
     const stdDev = this.#stdDev;
     for (let i = 0; i < codes.length; i++) {
       const code = codes[i];
+      if (code >= this.#symbolCount) {
+        throw unknownCode(code, this.#symbolCount);
+      }
       if (code >= 0 && tags[code] & NUMERIC) {
         const standardized = (numbers[code] - mean) / stdDev;
         this.#skewSum += Math.pow(standardized, 3);
@@ -915,7 +1066,7 @@ export class FieldSummarizer {
  */
 export function summarize(options, readPass) {
   let summarizer = new FieldSummarizer(options);
-  for (;;) {
+  for (let tries = 1; ; tries++) {
     let pass;
     while ((pass = summarizer.nextPass()) !== 0) {
       readPass(summarizer, pass);
@@ -923,8 +1074,20 @@ export function summarize(options, readPass) {
     if (!summarizer.collided) {
       return summarizer.summary();
     }
-    summarizer = new FieldSummarizer({ ...options, seeds: summarizer.nextSeeds });
+    summarizer = new FieldSummarizer(againOptions(options, summarizer, tries));
   }
+}
+
+/**
+ * The options for reading a field again after two of its texts had one hash: other
+ * seeds, and after SEED_TRIES of them, a Map of the texts, which can't collide
+ * @param {object} options - The options it was read with
+ * @param {FieldSummarizer} summarizer - The summarizer that found the texts
+ * @param {number} tries - Reads so far
+ * @returns {object} The options
+ */
+function againOptions(options, summarizer, tries) {
+  return tries >= SEED_TRIES ? { ...options, exactText: true } : { ...options, seeds: summarizer.nextSeeds };
 }
 
 /**
@@ -937,7 +1100,7 @@ export function summarize(options, readPass) {
  */
 export async function summarizeAsync(options, readPass, signal) {
   let summarizer = new FieldSummarizer(options);
-  for (;;) {
+  for (let tries = 1; ; tries++) {
     let pass;
     while ((pass = await summarizer.nextPassAsync(signal)) !== 0) {
       await readPass(summarizer, pass);
@@ -945,7 +1108,7 @@ export async function summarizeAsync(options, readPass, signal) {
     if (!summarizer.collided) {
       return summarizer.summary();
     }
-    summarizer = new FieldSummarizer({ ...options, seeds: summarizer.nextSeeds });
+    summarizer = new FieldSummarizer(againOptions(options, summarizer, tries));
   }
 }
 

@@ -14,24 +14,18 @@ import { isNumericSample, statisticsFrom } from "./qvdStatistics.mjs";
 import { qualityMetricsFrom } from "./qvdDataQuality.mjs";
 import { isDateSample, temporalFrom } from "./qvdTemporalAnalysis.mjs";
 import { isStringSample } from "./qvdStringAnalysis.mjs";
-import { BYTES_PER_DISTINCT_VALUE, HEAP_BYTES, summarize, summarizeAsync, summarizeRows } from "./fieldSummary.mjs";
+import {
+  BASE_HEAP_BYTES,
+  BYTES_PER_DISTINCT_VALUE,
+  HEAP_BYTES,
+  HEAP_BYTES_PER_DISTINCT_VALUE,
+  HEAP_BYTES_PER_SYMBOL_BYTE,
+  summarizeAsync,
+  summarizeRows,
+} from "./fieldSummary.mjs";
 import { chunkRowsFor, openColumnScanner, shownValue } from "./columnScan.mjs";
-import { budgetFor, headerOf } from "./qvdReader.mjs";
+import { budgetFor, fileVersion, headerOf } from "./qvdReader.mjs";
 import { describeViewRefusal, memoryLeftOutsideHeap, tryBookHeap } from "./memoryGuard.mjs";
-
-/**
- * Heap profiling built per value of each profiled field, when it read every row of
- * the file: about one and a half times the most measured, on 1,000,000 rows of
- * chicago_taxi_rides_2016_03.qvd. Profiling no longer reads the rows, and doesn't use it.
- */
-export const PROFILE_BYTES_PER_VALUE = 288;
-
-/**
- * What a profiling scan's open file may hold before it is opened afresh, as for a
- * view's scan. Opening the file again walks the field's symbols again: on a field of
- * 50 million values, a budget a quarter of this made profiling four times slower.
- */
-export const PROFILE_HELD_BYTES = 512 * 1024 * 1024;
 
 /**
  * New values a profiling chunk decodes at most. qvdjs decodes a chunk's values in
@@ -124,58 +118,88 @@ export function profileFields(data, fieldNames, maxUniqueValues = 1000) {
 }
 
 /**
- * The largest of the fields to profile, by its distinct values: fields are profiled
- * one at a time, so it sets what profiling needs
- * @param {import('./qvdReader.mjs').Header} header - The file's header
- * @param {Array<string>} fieldNames - The fields to profile
- * @returns {{name: string, symbols: number}|null} The field, null for none the file has
- */
-function largestField(header, fieldNames) {
-  let largest = null;
-  for (const field of header.fields) {
-    if (fieldNames.includes(field.name) && (!largest || field.symbols > largest.symbols)) {
-      largest = field;
-    }
-  }
-  return largest;
-}
-
-/**
- * What profiling fields of a QVD needs at most. In the heap: what a scan's open file
- * holds, and what profiling holds whatever the field. Outside it, in typed arrays: a
- * few numbers per distinct value of the largest field, about 3 GB for 50 million.
- * @param {import('./qvdReader.mjs').Header} header - The file's header
- * @param {Array<string>} fieldNames - The fields to profile
+ * What profiling one field needs at most. In the heap: what a scan's open file holds
+ * of its values, and what profiling holds whatever the field, up to HEAP_BYTES, which
+ * a scan's open file stays within. Outside it, in typed arrays: a few numbers per
+ * distinct value, about 4.4 GB for 50 million.
+ * @param {{symbols: number, bytes: number}} field - The field, as the header has it
  * @returns {{heapBytes: number, outsideBytes: number}} Bytes
  */
-export function profileMemory(header, fieldNames) {
+function fieldMemory(field) {
   return {
-    heapBytes: HEAP_BYTES,
-    outsideBytes: (largestField(header, fieldNames)?.symbols ?? 0) * BYTES_PER_DISTINCT_VALUE,
+    heapBytes: Math.min(
+      HEAP_BYTES,
+      BASE_HEAP_BYTES + field.symbols * HEAP_BYTES_PER_DISTINCT_VALUE + field.bytes * HEAP_BYTES_PER_SYMBOL_BYTE
+    ),
+    outsideBytes: field.symbols * BYTES_PER_DISTINCT_VALUE,
   };
 }
 
 /**
- * The refusal of a profile that doesn't fit in the memory left
+ * What profiling fields of a QVD needs at most: fields are profiled one at a time, so
+ * the most any one of them needs, and which field that is
  * @param {import('./qvdReader.mjs').Header} header - The file's header
  * @param {Array<string>} fieldNames - The fields to profile
+ * @returns {{heapBytes: number, outsideBytes: number, heapField: object|null, outsideField: object|null}}
+ *   Bytes, and the field needing the most of each: null for none the file has
+ */
+export function profileMemory(header, fieldNames) {
+  const needs = { heapBytes: fieldMemory({ symbols: 0, bytes: 0 }).heapBytes, outsideBytes: 0, heapField: null, outsideField: null };
+  for (const field of header.fields) {
+    if (!fieldNames.includes(field.name)) {
+      continue;
+    }
+    const { heapBytes, outsideBytes } = fieldMemory(field);
+    if (!needs.heapField || heapBytes > needs.heapBytes) {
+      needs.heapBytes = heapBytes;
+      needs.heapField = field;
+    }
+    if (!needs.outsideField || outsideBytes > needs.outsideBytes) {
+      needs.outsideBytes = outsideBytes;
+      needs.outsideField = field;
+    }
+  }
+  return needs;
+}
+
+/**
+ * The refusal of a profile that doesn't fit in the memory left
+ * @param {object|null} field - The field that needs the memory, as the header has it;
+ *   null for none
  * @param {number} neededBytes - Memory it needs
  * @param {number} leftBytes - Memory left
  * @param {{onComputer?: boolean}} [options] - onComputer: whether it is the computer's
  *   memory, outside the heap, that is short
- * @returns {Error} The error, with the message to show as profileRefusal
+ * @returns {Error} The error, with the message to show as profileMessage
  */
-function profileRefusal(header, fieldNames, neededBytes, leftBytes, { onComputer = false } = {}) {
-  const largest = largestField(header, fieldNames);
-  const what = `Profiling ${largest.name}, a field of ${largest.symbols.toLocaleString()} distinct values,`;
+function profileRefusal(field, neededBytes, leftBytes, { onComputer = false } = {}) {
+  const what = field
+    ? `Profiling ${field.name}, a field of ${field.symbols.toLocaleString()} distinct values,`
+    : "Profiling";
   const message = describeViewRefusal({ what, neededBytes, leftBytes }, { onComputer });
   return Object.assign(new Error(message), {
     name: "QvdValidationError",
     context: { reason: "memory" },
     pricing: { forCaller: true, neededBytes, leftBytes },
-    profileRefusal: message,
+    profileMessage: message,
   });
 }
+
+/**
+ * The error for a file that changed on disk while its fields were read: rows of
+ * both versions would give numbers of neither
+ * @returns {Error} The error, with the message to show as profileMessage
+ */
+function changedWhileProfiled() {
+  const message =
+    "The file changed on disk while it was profiled, so its results would mix two versions of it. Profile it again.";
+  return Object.assign(new Error(message), {
+    name: "QvdValidationError",
+    context: { reason: "changed" },
+    profileMessage: message,
+  });
+}
+
 
 /**
  * Profile fields of a QVD, reading only those fields, a chunk of rows at a time
@@ -190,7 +214,8 @@ function profileRefusal(header, fieldNames, neededBytes, leftBytes, { onComputer
  * @param {number} [options.chunkRows] - Rows a chunk holds, for tests
  * @returns {Promise<Object>} Profiling results, as profileFields() gives them
  * @throws {Error} What reading the file throws; an AbortError when given up; and,
- *   when the memory left is too little, an error whose profileRefusal says so
+ *   when the memory left is too little or the file changes while it is read, an
+ *   error whose profileMessage says so
  */
 export async function profileFile(filePath, fieldNames, { maxUniqueValues = 1000, signal, onProgress, heldBytes, chunkRows } = {}) {
   // As QvdReader.read() does: qvdjs resolves links before it checks the file is in
@@ -207,17 +232,23 @@ export async function profileFile(filePath, fieldNames, { maxUniqueValues = 1000
   }
 
   const budget = await budgetFor(filePath, allowedDir, header, signal);
-  const { heapBytes, outsideBytes } = profileMemory(header, fieldNames);
+  const { heapBytes, outsideBytes, heapField, outsideField } = profileMemory(header, fieldNames);
   const outsideLeft = memoryLeftOutsideHeap();
   if (outsideBytes > outsideLeft) {
-    throw profileRefusal(header, fieldNames, outsideBytes, outsideLeft, { onComputer: true });
+    throw profileRefusal(outsideField, outsideBytes, outsideLeft, { onComputer: true });
   }
   const booked = tryBookHeap(heapBytes, budget ?? undefined);
   if (!("release" in booked)) {
-    throw profileRefusal(header, fieldNames, heapBytes, booked.leftBytes);
+    throw profileRefusal(heapField, heapBytes, booked.leftBytes);
   }
 
-  const scanner = openColumnScanner({ filePath, allowedDir, heldBytes: heldBytes ?? PROFILE_HELD_BYTES });
+  const scanner = openColumnScanner({ filePath, allowedDir, heldBytes });
+  // A file rewritten between passes, as a reload storing it again would, gives rows of both
+  const unchanged = async () => {
+    if (header.key && (await fileVersion(realFilePath)) !== header.key) {
+      throw changedWhileProfiled();
+    }
+  };
   try {
     const fields = [];
     for (const [fieldIndex, fieldName] of fieldNames.entries()) {
@@ -240,17 +271,17 @@ export async function profileFile(filePath, fieldNames, { maxUniqueValues = 1000
               onChunk: ({ codes, symbols, offset }) => summarizer.takeAsync(codes, symbols, offset, signal),
               onRows: (rows) => progress(pass, rows),
             });
+            await unchanged();
           },
           signal
         );
       } else {
         // A field the file doesn't have: no value in any row, as a row object without it
-        summary = summarize({ ...options, symbolCount: 0 }, (summarizer) => {
-          const nulls = new Int32Array(Math.min(totalRows, 1 << 20)).fill(-1);
-          for (let offset = 0; offset < totalRows; offset += nulls.length) {
-            summarizer.take(nulls.subarray(0, Math.min(nulls.length, totalRows - offset)), [], offset);
-          }
-        });
+        summary = await summarizeAsync(
+          { ...options, symbolCount: 0 },
+          async (summarizer) => summarizer.takeNulls(totalRows, 0),
+          signal
+        );
       }
       fields.push(fieldResultOf(fieldName, summary, maxUniqueValues));
     }
@@ -259,7 +290,8 @@ export async function profileFile(filePath, fieldNames, { maxUniqueValues = 1000
       fields,
     };
   } finally {
-    await scanner.close();
+    // A failure to close mustn't hide what went wrong, or spoil results already read
+    await scanner.close().catch(() => {});
     booked.release();
   }
 }
