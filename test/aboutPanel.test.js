@@ -102,7 +102,10 @@ suite("About Panel Test Suite", () => {
       // An event handler in the markup is a script the CSP won't run
       assert.ok(!/\son[a-z]+\s*=/i.test(html), "no event handlers in the markup");
       const urls = [...html.matchAll(/data-url="([^"]*)"/g)].map(([, url]) => url);
-      assert.strictEqual(urls.length, 12);
+      assert.strictEqual(urls.length, 19);
+      // The page that listed the Butler family now redirects to the products page
+      assert.ok(!urls.some((url) => url.includes("/the-butler-family/")), urls.join(" "));
+      assert.ok(urls.includes("https://ptarmiganlabs.com/products/"), urls.join(" "));
       // The help links: the user guide and the place for questions
       assert.ok(urls.includes("https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer#readme"), urls.join(" "));
       assert.ok(urls.includes("https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/discussions"), urls.join(" "));

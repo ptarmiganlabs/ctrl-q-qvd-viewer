@@ -607,17 +607,32 @@ class AboutPanel {
                 </div>
                 
                 <div class="section">
-                    <h2>Part of the Butler & Ctrl-Q Suite</h2>
+                    <h2>Part of the Ptarmigan Labs Tools</h2>
                     <div class="info-box">
-                        <p>This extension is part of the <strong>Butler and Ctrl-Q suite</strong> of tools for Qlik Sense developers and administrators.</p>
-                        <p>The Butler family includes tools for automation, monitoring, DevOps, and data management for Qlik Sense environments.</p>
-                        <p><strong>Explore the suite:</strong></p>
+                        <p>Ctrl-Q QVD Viewer is one of a set of free, open source tools for Qlik Sense and QlikView developers and admins, all MIT licensed and all sponsored by Ptarmigan Labs. See them all at <a href="#" data-url="https://ptarmiganlabs.com/products/" style="color: var(--vscode-textLink-foreground); text-decoration: none;">ptarmiganlabs.com/products</a>.</p>
+                        <h3 style="font-size: 1.05em; margin: 15px 0 5px 0;">The Butler family</h3>
                         <ul style="margin-left: 20px; line-height: 1.8;">
-                            <li><strong><a href="#" data-url="https://github.com/ptarmiganlabs/ctrl-q" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Ctrl-Q CLI</a></strong> - Command-line tool for automating tedious and error prone Qlik Sense admin tasks</li>
-                            <li><strong><a href="#" data-url="https://github.com/ptarmiganlabs/butler" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler</a></strong> - Adding superpowers to Qlik Sense. Real-time task alerts, Windows service monitoring, key-value store and much more</li>
-                            <li><strong><a href="#" data-url="https://github.com/ptarmiganlabs/butler-sos" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler SOS</a></strong> - Monitor real-time operational Qlik Sense metrics in Grafana</li>
-                            <li><strong><a href="#" data-url="https://github.com/ptarmiganlabs/butler-sheet-icons" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler Sheet Icons</a></strong> - Automatic thumbnail management for Qlik Sense sheets</li>
-                            <li><strong><a href="#" data-url="https://ptarmiganlabs.com/the-butler-family/" style="color: var(--vscode-textLink-foreground); text-decoration: none;">And more...</a></strong> - Explore the full range of Butler tools and features</li>
+                            <li><strong><a href="#" data-url="https://butler.ptarmiganlabs.com" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler</a></strong> - Reload failure alerts, task scheduling, a key-value store and more for Qlik Sense Enterprise on Windows</li>
+                            <li><strong><a href="#" data-url="https://butler-sos.ptarmiganlabs.com" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler SOS</a></strong> - Real-time operational metrics for client-managed Qlik Sense, for dashboards in Grafana and elsewhere</li>
+                            <li><strong><a href="#" data-url="https://butler-sheet-icons.ptarmiganlabs.com" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Butler Sheet Icons</a></strong> - Automatic sheet icons (thumbnails) for client-managed Qlik Sense and Qlik Cloud</li>
+                        </ul>
+                        <h3 style="font-size: 1.05em; margin: 15px 0 5px 0;">Ctrl-Q</h3>
+                        <ul style="margin-left: 20px; line-height: 1.8;">
+                            <li><strong><a href="#" data-url="https://ctrl-q.ptarmiganlabs.com" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Ctrl-Q</a></strong> - Automate Qlik Sense Enterprise on Windows admin tasks from the command line</li>
+                        </ul>
+                        <h3 style="font-size: 1.05em; margin: 15px 0 5px 0;">The .qs library: Qlik Sense extensions</h3>
+                        <p style="margin: 5px 0;">Extensions for both client-managed Qlik Sense and Qlik Cloud:</p>
+                        <ul style="margin-left: 20px; line-height: 1.8;">
+                            <li><strong><a href="#" data-url="https://ptarmiganlabs.com/products/onboard-qs/" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Onboard.qs</a></strong> - Interactive onboarding tours for Qlik Sense apps, no coding required</li>
+                            <li><strong><a href="#" data-url="https://ptarmiganlabs.com/products/helpbutton-qs/" style="color: var(--vscode-textLink-foreground); text-decoration: none;">HelpButton.qs</a></strong> - A configurable, context-aware help button in the Qlik Sense app toolbar</li>
+                            <li><strong><a href="#" data-url="https://ptarmiganlabs.com/products/chatbox-qs/" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Chatbox.qs</a></strong> - Chat-style conversations from the Qlik Sense data model (pre-release)</li>
+                            <li><strong><a href="#" data-url="https://ptarmiganlabs.com/products/qvsview-qs/" style="color: var(--vscode-textLink-foreground); text-decoration: none;">QvsView.qs</a></strong> - A read-only Qlik load script viewer with syntax highlighting (pre-release)</li>
+                        </ul>
+                        <h3 style="font-size: 1.05em; margin: 15px 0 5px 0;">More tools</h3>
+                        <ul style="margin-left: 20px; line-height: 1.8;">
+                            <li><strong><a href="#" data-url="https://ptarmiganlabs.com/products/qvdjs/" style="color: var(--vscode-textLink-foreground); text-decoration: none;">qvdjs</a></strong> - Read and write QVD files from Node.js. This extension reads QVD files with it</li>
+                            <li><strong><a href="#" data-url="https://qs-jwt.ptarmiganlabs.com" style="color: var(--vscode-textLink-foreground); text-decoration: none;">qs-jwt</a></strong> - Create JWTs for Qlik Sense Enterprise on Windows and Qlik Cloud</li>
+                            <li><strong><a href="#" data-url="https://ptarmiganlabs.com/products/qs-log-scanner/" style="color: var(--vscode-textLink-foreground); text-decoration: none;">qs-log-scanner</a></strong> - A terminal UI for exploring Qlik Sense log events sent over UDP</li>
                         </ul>
                     </div>
                 </div>
@@ -631,8 +646,8 @@ class AboutPanel {
                             </svg>
                             GitHub Repository
                         </button>
-                        <button class="link-button" data-url="https://ptarmiganlabs.com/the-butler-family/">
-                            🛠️ Butler Suite
+                        <button class="link-button" data-url="https://ptarmiganlabs.com/products/">
+                            🛠️ All Ptarmigan Labs Tools
                         </button>
                         <button class="link-button" data-url="https://ptarmiganlabs.com">
                             🌐 Ptarmigan Labs
@@ -649,7 +664,7 @@ class AboutPanel {
                 
                 <div class="footer">
                     <p>Made with ❤️ by <a href="#" data-url="https://ptarmiganlabs.com" style="color: var(--vscode-textLink-foreground); text-decoration: none;">Ptarmigan Labs</a></p>
-                    <p style="margin-top: 10px; font-size: 0.9em;">© 2025 Ptarmigan Labs. All rights reserved.</p>
+                    <p style="margin-top: 10px; font-size: 0.9em;">© 2025–2026 Ptarmigan Labs. All rights reserved.</p>
                 </div>
             </div>
             `}
