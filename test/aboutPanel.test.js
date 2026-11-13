@@ -103,12 +103,14 @@ suite("About Panel Test Suite", () => {
       assert.ok(!/\son[a-z]+\s*=/i.test(html), "no event handlers in the markup");
       const urls = [...html.matchAll(/data-url="([^"]*)"/g)].map(([, url]) => url);
       assert.strictEqual(urls.length, 19);
+      // Each link, by exact address: how many of the page's links are it
+      const linksTo = (address) => urls.filter((url) => url === address).length;
       // The page that listed the Butler family now redirects to the products page
-      assert.ok(!urls.some((url) => url.includes("/the-butler-family/")), urls.join(" "));
-      assert.ok(urls.includes("https://ptarmiganlabs.com/products/"), urls.join(" "));
+      assert.ok(!urls.some((url) => new URL(url).pathname === "/the-butler-family/"), urls.join(" "));
+      assert.ok(linksTo("https://ptarmiganlabs.com/products/") > 0, urls.join(" "));
       // The help links: the user guide and the place for questions
-      assert.ok(urls.includes("https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer#readme"), urls.join(" "));
-      assert.ok(urls.includes("https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/discussions"), urls.join(" "));
+      assert.strictEqual(linksTo("https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer#readme"), 1, urls.join(" "));
+      assert.strictEqual(linksTo("https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/discussions"), 1, urls.join(" "));
       // Its buttons that aren't links ask the extension to do something
       const buttons = [...html.matchAll(/data-command="([^"]*)"/g)].map(([, command]) => command);
       assert.deepStrictEqual(buttons, ["reportIssue", "showLogs"]);
