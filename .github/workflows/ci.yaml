@@ -6,6 +6,11 @@ on:
     branches:
       - main
 
+# A job's GITHUB_TOKEN can only read the repository, unless the job asks for more:
+# release-please, publish and sbom do, in their own permissions blocks
+permissions:
+  contents: read
+
 jobs:
   # Run tests and linting on all pushes and PRs
   test:

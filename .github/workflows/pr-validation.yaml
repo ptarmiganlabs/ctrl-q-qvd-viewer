@@ -4,6 +4,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+# The jobs check out, build, test and package the pull request, and write nothing to
+# GitHub, so their GITHUB_TOKEN can only read the repository
+permissions:
+  contents: read
+
 jobs:
   # On Windows too, where a file another program holds, such as a QVD a Qlik reload
   # is storing, can't be opened. The package is built and checked on Linux only,
