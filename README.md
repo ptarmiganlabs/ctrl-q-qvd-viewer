@@ -25,7 +25,7 @@ Open source with a permissive MIT license.<br>
   - Total number of records
   - Field definitions with types, symbols, and technical details
   - Lineage information (if available in the QVD file)
-- **Data Preview**: View sample data from QVD files in a formatted table with pagination
+- **Data Browsing**: Page through every row of a QVD, however large, in a formatted table. The viewer reads one page at a time, wherever it is in the file, so a file of 30 million rows opens as quickly as a small one
 - **Data Profiling**: Analyze value distributions in your QVD fields ([detailed documentation](docs/PROFILING.md))
   - Select 1-3 fields for comparison
   - View frequency distributions in interactive bar charts
@@ -64,7 +64,7 @@ Open source with a permissive MIT license.<br>
   - **SQLite** - Portable database file with SQL query support (Beta)
   - **XML** - Extensible markup language for enterprise systems
   - **YAML** - Human-readable structured data format
-- **Configurable Display**: Customize the number of rows to load (default: 5,000, range: 100-100,000)
+- **Configurable Page Size**: Choose how many rows a page shows (default: 100, range: 10-1,000), in Settings or below the table
 - **About Panel**: Access information about the Butler family of tools
 - **Read-Only Access**: Safe viewing without modifying original QVD files
 
@@ -152,12 +152,12 @@ Choose one of these options:
 
 ### Changing Settings (Optional)
 
-By default, the extension loads 5,000 rows of data for preview and pagination. To change this:
+By default, a page of the Data tab shows 100 rows. Pick another page size below the table, or change the default:
 
 1. Open Settings: File → Preferences → Settings (or `Ctrl+,`)
 2. Search for "Ctrl-Q QVD"
-3. Find "Ctrl-Q QVD Viewer: Max Preview Rows"
-4. Adjust the value (100-100,000 rows)
+3. Find "Ctrl-Q QVD Viewer: Page Size"
+4. Adjust the value (10-1,000 rows)
 
 ## Installation
 
@@ -188,9 +188,11 @@ There are two ways to open a QVD file:
 
 The extension displays QVD files in five tabs:
 
-#### 1. Data Preview
+#### 1. Data
 
-A formatted table with pagination controls showing the loaded rows with all columns from the QVD file.
+A table of the file's rows, with all its columns in file order, a page at a time. Go to any page of the file, the last one included: only the rows of the page shown are read.
+
+The first page of a large file takes a few seconds, because the viewer reads each field's values once. A bar below the tabs shows how far it has got, with a Cancel button. Later pages take milliseconds.
 
 #### 2. Field Information / Schema
 
@@ -294,16 +296,17 @@ The Ctrl-Q QVD Viewer allows you to export QVD data to various formats for furth
 
 This extension contributes the following settings:
 
-- `ctrl-q-qvd-viewer.maxPreviewRows`: Maximum number of rows to load from the QVD file for preview and pagination (default: 5000, min: 100, max: 100000)
+- `ctrl-q-qvd-viewer.pageSize`: Rows a page of the Data tab shows when a QVD opens (default: 100, min: 10, max: 1000). The page size can also be changed below the table
+- `ctrl-q-qvd-viewer.maxPreviewRows`: No longer used, since the Data tab reads one page at a time. Use `pageSize` instead
 - `ctrl-q-qvd-viewer.csvEscapeFormulas`: Put an apostrophe before CSV text that a spreadsheet would run as a formula (default: true). Turn it off if the files are only read by programs
 - `ctrl-q-qvd-viewer.csvByteOrderMark`: Start CSV files with a UTF-8 byte order mark, which Excel on Windows needs to show å, ä, ö and other non-ASCII text (default: false). Python's `csv` module then reads the mark as part of the first column name, unless the file is opened with `encoding="utf-8-sig"`
 - `ctrl-q-qvd-viewer.exportTimeZone`: The time zone a QVD's timestamps were read in, offered first when an export asks for one: an IANA zone such as `America/Chicago`, `UTC`, an alias such as `US/Central`, or an offset such as `-06:00` (default: empty, for no time zone). An export that would use a zone VS Code doesn't know is refused
 
-To change this setting:
+To change these settings:
 
 1. Go to File → Preferences → Settings (or `Ctrl+,`)
 2. Search for "Ctrl-Q QVD"
-3. Adjust the "Max Preview Rows" value
+3. Adjust the value you want to change
 
 ## Development
 
@@ -322,7 +325,7 @@ For more details on building, testing, and packaging, see **[BUILD.md](docs/BUIL
 
 ## Known Issues
 
-- Large QVD files may take long to load; use the maxPreviewRows setting to limit display
+- Profiling and exports still read the whole file. On very large QVDs they can be refused for memory, with a message that says so
 - The extension currently provides read-only access to QVD files
 
 ## Contributing
