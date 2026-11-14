@@ -509,8 +509,12 @@ suite("Profiling Identity Test Suite", function () {
       };
       setupMessageHandler(panel, file, null, {}, async () => {}, null);
       await onMessage({ command: "profileFields", fieldNames, maxUniqueValues: 1000 });
-      assert.strictEqual(answers.length, 1);
-      return answers[0];
+      // Besides its answer, the page is told its buttons are busy, and then free again
+      const states = answers.filter((answer) => answer.command === "jobState").map((answer) => answer.busy);
+      assert.deepStrictEqual(states, ["profile", null]);
+      const others = answers.filter((answer) => answer.command !== "jobState");
+      assert.strictEqual(others.length, 1);
+      return others[0];
     }
 
     test("Profiling the file's fields answers with their results", async () => {

@@ -283,6 +283,15 @@ export function getHtmlForWebview(header, webview, context) {
         .header-button:hover {
             background-color: var(--vscode-button-hoverBackground);
         }
+
+        .header-button:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        .header-button:disabled:hover {
+            background-color: var(--vscode-button-background);
+        }
         
         /* Tab styles */
         .tab-container {
@@ -3237,8 +3246,32 @@ export function getHtmlForWebview(header, webview, context) {
                 case 'profilingError':
                     showProfilingStatus('❌ ' + message.error, 'warning');
                     break;
+                case 'profilingCancelled':
+                    showProfilingStatus('Profiling cancelled.', 'info');
+                    break;
+                case 'jobState':
+                    showJobState(message.busy);
+                    break;
             }
         });
+
+        // An export or profiling run that is still going: its buttons wait for it to end
+        function showJobState(busy) {
+            const title = busy === 'export'
+                ? 'An export of this file is running'
+                : busy === 'profile' ? 'Profiling of this file is running' : '';
+            ['export-btn', 'run-profiling-btn'].forEach(id => {
+                const button = document.getElementById(id);
+                if (button) {
+                    button.disabled = Boolean(busy);
+                    button.title = title;
+                }
+            });
+            if (busy) {
+                document.getElementById('export-dropdown')?.classList.remove('show');
+            }
+        }
+        vscode.postMessage({ command: 'jobState' });
     </script>
 </body>
 </html>`;

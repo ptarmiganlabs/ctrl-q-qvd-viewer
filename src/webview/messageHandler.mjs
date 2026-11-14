@@ -10,6 +10,7 @@ import { markdownText } from "./templates/escaping.mjs";
 import { describeReadRefusal } from "../memoryGuard.mjs";
 import { runExport } from "../exportRun.mjs";
 import { readFailureOf } from "../exportSource.mjs";
+import { createJobSlot, describeExportProgress, describeProfileProgress, withJobProgress } from "../editorJobs.mjs";
 import logger from "../logger.mjs";
 
 /**
@@ -60,8 +61,45 @@ export function setupMessageHandler(
   pages,
   signal
 ) {
+  // One export or profiling run at a time in this editor, which the page shows as busy
+  const jobs = createJobSlot();
+  const postJobState = () => {
+    if (signal?.aborted) {
+      return;
+    }
+    try {
+      Promise.resolve(webviewPanel.webview.postMessage?.({ command: "jobState", busy: jobs.busy() })).catch(() => {});
+    } catch {
+      // The editor's page is gone: there is nothing to tell
+    }
+  };
+  const takeJob = (kind) => {
+    const release = jobs.take(kind);
+    if (!release) {
+      return null;
+    }
+    postJobState();
+    return () => {
+      release();
+      postJobState();
+    };
+  };
+  const stillRunning = () =>
+    `${jobs.busy() === "export" ? "An export" : "Profiling"} of this file is still running. ` +
+    "Wait for it to finish, or cancel it, before you start another.";
+  const progressOf = (title) => ({
+    window: vscode.window,
+    location: vscode.ProgressLocation.Notification,
+    title,
+    signal,
+  });
+
   webviewPanel.webview.onDidReceiveMessage(async (message) => {
     switch (message.command) {
+      case "jobState":
+        // The page asks once it loads, as it may load again while a job runs
+        postJobState();
+        break;
       case "log":
         // Handle logging from webview
         const level = message.level || "log";
@@ -121,6 +159,11 @@ export function setupMessageHandler(
         const format = message.format;
         // Qlik inline script and PostgreSQL export as many rows as the user chooses
         const rowsChosen = format === "qlik" || format === "postgres";
+        const releaseJob = takeJob("export");
+        if (!releaseJob) {
+          vscode.window.showWarningMessage(stillRunning());
+          break;
+        }
         try {
           let maxRows = 0; // Default: export all rows
 
@@ -192,19 +235,32 @@ export function setupMessageHandler(
           // The rows are read a chunk at a time as they are written, in the lane of
           // large reads; what the export holds is booked once its questions are answered
           let timeShifts = null;
-          const savedPath = await runExport({
-            filePath,
-            format,
-            maxRows,
-            vscode,
-            workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-            signal,
-            lane: readLanes.large,
-            report: (shifts) => {
-              timeShifts = shifts;
-            },
-            warn: (message) => logger.warn(message),
-          });
+          const job = await withJobProgress(
+            progressOf(`Exporting ${basename(filePath)} to ${DataExporter.formatLabel(format)}`),
+            ({ signal: jobSignal, report }) =>
+              runExport({
+                filePath,
+                format,
+                maxRows,
+                vscode,
+                workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+                signal: jobSignal,
+                lane: readLanes.large,
+                report: (shifts) => {
+                  timeShifts = shifts;
+                },
+                warn: (message) => logger.warn(message),
+                // A pass's start shows at once, so the notification says which pass it is in
+                onProgress: (progress) => report(describeExportProgress(progress), progress.rows === 0),
+              })
+          );
+          if (job.cancelled) {
+            // Its file was removed, and any file it was to replace left as it was
+            logger.log(`Export cancelled: ${filePath}`);
+            vscode.window.showInformationMessage("Export cancelled. No file was written or changed.");
+            break;
+          }
+          const savedPath = job.value;
 
           if (savedPath) {
             // Timestamps DST moved or left ambiguous are told, and the first few logged
@@ -247,6 +303,8 @@ export function setupMessageHandler(
             const readError = readFailureOf(error);
             vscode.window.showErrorMessage(readError ? readError.message : `Export failed: ${error.message}`);
           }
+        } finally {
+          releaseJob();
         }
         break;
       }
@@ -254,14 +312,34 @@ export function setupMessageHandler(
         // Profile selected fields and return distribution data. Only those fields
         // are read, a chunk of rows at a time, one field after another.
         const fieldNames = Array.isArray(message.fieldNames) ? message.fieldNames : [];
+        const releaseJob = takeJob("profile");
+        if (!releaseJob) {
+          webviewPanel.webview.postMessage({ command: "profilingError", error: stillRunning() });
+          break;
+        }
         try {
-          const profilingResults = await readLanes.large.run(
-            () => profileFile(filePath, fieldNames, { maxUniqueValues: message.maxUniqueValues || 1000, signal }),
-            { signal }
-          );
+          const job = await withJobProgress(progressOf(`Profiling ${basename(filePath)}`), ({ signal: jobSignal, report }) => {
+            // Shown at once, and Cancel with it, as profiling asks nothing first and may
+            // wait for another large read to finish
+            report("Starting…");
+            return readLanes.large.run(
+              () =>
+                profileFile(filePath, fieldNames, {
+                  maxUniqueValues: message.maxUniqueValues || 1000,
+                  signal: jobSignal,
+                  onProgress: (progress) => report(describeProfileProgress(progress), progress.rows === 0),
+                }),
+              { signal: jobSignal }
+            );
+          });
+          if (job.cancelled) {
+            logger.log(`Profiling cancelled: ${filePath}`);
+            webviewPanel.webview.postMessage({ command: "profilingCancelled" });
+            break;
+          }
           webviewPanel.webview.postMessage({
             command: "profilingResults",
-            results: profilingResults,
+            results: job.value,
           });
         } catch (error) {
           if (error?.name === "AbortError" && signal?.aborted) {
@@ -273,6 +351,8 @@ export function setupMessageHandler(
               error: profilingFailure(error),
             });
           }
+        } finally {
+          releaseJob();
         }
         break;
       }
