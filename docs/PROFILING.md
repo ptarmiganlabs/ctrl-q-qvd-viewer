@@ -41,6 +41,8 @@ Profiling reads only the fields you select, a chunk of rows at a time, so it wor
 
 > ⏱️ **Large file:** This QVD contains 46,900,000 rows. Profiling reads every row of the fields you select, two or three times each, which takes a while on a file this size.
 
+While profiling runs, a notification says how far it has got, such as "Profiling Amount (2 of 3): pass 2, 10,000,000 of 46,900,000 rows". Its **Cancel** button stops profiling, and the Profiling tab says it was cancelled. An editor profiles or exports one thing at a time: while profiling runs, its **Run Profiling** and **Export** buttons are greyed out.
+
 ## Profiling Results
 
 After clicking "Run Profiling", the extension reads the selected fields from the QVD and computes value distributions. Results are displayed for each selected field:
