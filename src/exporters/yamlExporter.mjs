@@ -1,6 +1,7 @@
 import * as yaml from "js-yaml";
 import { rowsPerChunk } from "../memoryGuard.mjs";
 import { writeChunks, writeFileAtomically } from "./atomicWrite.mjs";
+import { sourceOf } from "../exportSource.mjs";
 
 // Rows turned into YAML text at a time, so a large export never holds the whole
 // file as one string
@@ -25,7 +26,6 @@ export const memoryCost = {
   bytesPerTextChar: 9,
   chunkRows: CHUNK_ROWS,
   chunkCells: CHUNK_CELLS,
-  writesAsItGoes: true,
 };
 
 // Text that YAML 1.2's core schema reads as a float
@@ -69,7 +69,7 @@ const DOCUMENT_END = "...\n";
  *
  * The file is the header comment, then what js-yaml dumps for every row, written a
  * chunk of rows at a time.
- * @param {Array<Object>} data - Array of row objects
+ * @param {Array<Object>|import("../exportSource.mjs").ExportSource} data - Row objects, or a source of them
  * @param {string} filePath - Destination file path
  * @param {object} [options]
  * @param {number} [options.chunkRows] - Rows turned into text at a time: a whole number
@@ -77,8 +77,9 @@ const DOCUMENT_END = "...\n";
  * @returns {Promise<void>}
  */
 export async function exportToYAML(data, filePath, { chunkRows: rowsOption } = {}) {
+  const source = sourceOf(data);
   try {
-    const chunkRows = rowsPerChunk(memoryCost, data.length > 0 ? Object.keys(data[0]).length : 0, rowsOption);
+    const chunkRows = rowsPerChunk(memoryCost, source.length > 0 ? source.columns.length : 0, rowsOption);
     // Add header comment
     const header = [
       "# YAML Data Export",
@@ -86,22 +87,23 @@ export async function exportToYAML(data, filePath, { chunkRows: rowsOption } = {
       "# VS Code Extension: https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer",
       "# GitHub: https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer",
       `# Generated: ${new Date().toISOString()}`,
-      `# Rows: ${data.length}`,
+      `# Rows: ${source.length}`,
       "",
     ].join("\n");
 
     await writeFileAtomically(filePath, async (file) => {
       await file.writeFile(header);
-      if (data.length === 0) {
-        await file.writeFile(yaml.dump(data, DUMP_OPTIONS));
+      if (source.length === 0) {
+        await file.writeFile(yaml.dump([], DUMP_OPTIONS));
         return;
       }
-      await writeChunks(file, data.length, chunkRows, (start, end) => {
-        const text = yaml.dump(data.slice(start, end), DUMP_OPTIONS);
+      await writeChunks(file, source, chunkRows, (rows, start) => {
+        const end = start + rows.length;
+        const text = yaml.dump(rows, DUMP_OPTIONS);
         // Within the file the next chunk's rows follow, so the document doesn't end here.
         // In a list of rows every line starts with "- " or spaces, so only the end marker
         // is "..." alone at a line's start
-        return end < data.length && text.endsWith(`\n${DOCUMENT_END}`)
+        return end < source.length && text.endsWith(`\n${DOCUMENT_END}`)
           ? text.slice(0, -DOCUMENT_END.length)
           : text;
       });

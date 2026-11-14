@@ -709,9 +709,14 @@ suite("Exporter Test Suite", () => {
       }
       return reads;
     };
-    const slices = [perYield, perYield, count - 2 * perYield];
-    assert.deepStrictEqual(readsPerTurn(readTurns.slice(count, 2 * count)), slices);
+    // The dictionary's pass reads a batch's rows a turn
+    const batch = arrowExporter.CHUNK_ROWS;
+    assert.deepStrictEqual(
+      readsPerTurn(readTurns.slice(count, 2 * count)),
+      Array.from({ length: count / batch }, () => batch)
+    );
     // Its vector looks at each of its values twice, a slice a turn
+    const slices = [perYield, perYield, count - 2 * perYield];
     assert.deepStrictEqual(readsPerTurn(sizedTurns), slices);
     assert.deepStrictEqual(readsPerTurn(writtenTurns), slices);
     const { rows: written } = readArrow(filePath);

@@ -119,15 +119,18 @@ export function fileWriter(file) {
 /**
  * Write rows' text a chunk of rows at a time, each chunk in the file before the next is made
  * @param {import("fs").promises.FileHandle} file - The open file
- * @param {number} count - Rows to write, from the first
+ * @param {import("../exportSource.mjs").ExportSource} source - The rows to write
  * @param {number} chunkRows - Rows a chunk, as rowsPerChunk() gives it
- * @param {(start: number, end: number) => string} render - The text of rows start to end, end excluded
+ * @param {(rows: Array<Object>, start: number) => string} render - The text of a chunk's
+ *   rows, the first of which is the source's row start
  * @returns {Promise<void>}
  * @throws {RangeError} For a chunkRows that isn't a whole number of 1 or more
  */
-export async function writeChunks(file, count, chunkRows, render) {
+export async function writeChunks(file, source, chunkRows, render) {
   requireChunkRows(chunkRows);
-  for (let start = 0; start < count; start += chunkRows) {
-    await file.writeFile(render(start, Math.min(start + chunkRows, count)));
+  let start = 0;
+  for await (const rows of source.chunks(chunkRows)) {
+    await file.writeFile(render(rows, start));
+    start += rows.length;
   }
 }

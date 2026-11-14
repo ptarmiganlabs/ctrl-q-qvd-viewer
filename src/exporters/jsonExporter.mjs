@@ -1,5 +1,6 @@
 import { rowsPerChunk } from "../memoryGuard.mjs";
 import { writeChunks, writeFileAtomically } from "./atomicWrite.mjs";
+import { sourceOf } from "../exportSource.mjs";
 
 // Rows turned into JSON text at a time, so a large export never holds the whole
 // file as one string, which V8 caps at about 537 million characters
@@ -29,7 +30,6 @@ export const memoryCost = {
   bytesPerTextChar: 5,
   chunkRows: CHUNK_ROWS,
   chunkCells: CHUNK_CELLS,
-  writesAsItGoes: true,
 };
 
 /**
@@ -37,7 +37,7 @@ export const memoryCost = {
  *
  * The file is what JSON.stringify gives for the metadata and every row, indented
  * by two spaces, written a chunk of rows at a time.
- * @param {Array<Object>} data - Array of row objects
+ * @param {Array<Object>|import("../exportSource.mjs").ExportSource} data - Row objects, or a source of them
  * @param {string} filePath - Destination file path
  * @param {object} [options]
  * @param {number} [options.chunkRows] - Rows turned into text at a time: a whole number
@@ -45,8 +45,9 @@ export const memoryCost = {
  * @returns {Promise<void>}
  */
 export async function exportToJSON(data, filePath, { chunkRows: rowsOption } = {}) {
+  const source = sourceOf(data);
   try {
-    const chunkRows = rowsPerChunk(memoryCost, data.length > 0 ? Object.keys(data[0]).length : 0, rowsOption);
+    const chunkRows = rowsPerChunk(memoryCost, source.length > 0 ? source.columns.length : 0, rowsOption);
     const metadata = {
       description: "JSON Data Export",
       createdBy: "Ctrl-Q QVD Viewer for VS Code",
@@ -54,21 +55,21 @@ export async function exportToJSON(data, filePath, { chunkRows: rowsOption } = {
         "https://marketplace.visualstudio.com/items?itemName=ptarmiganlabs.ctrl-q-qvd-viewer",
       github: "https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer",
       generated: new Date().toISOString(),
-      rows: data.length,
+      rows: source.length,
     };
 
     await writeFileAtomically(filePath, async (file) => {
       // The file with no rows, up to the data array's opening bracket
       const empty = JSON.stringify({ _metadata: metadata, data: [] }, null, 2);
       await file.writeFile(empty.slice(0, -"]\n}".length));
-      if (data.length === 0) {
+      if (source.length === 0) {
         await file.writeFile("]\n}");
         return;
       }
-      await writeChunks(file, data.length, chunkRows, (start, end) => {
+      await writeChunks(file, source, chunkRows, (chunk, start) => {
         // The chunk's rows in a data array of their own, at the depth the file has
         // them, without that array's brackets
-        const rows = JSON.stringify({ data: data.slice(start, end) }, null, 2).slice(
+        const rows = JSON.stringify({ data: chunk }, null, 2).slice(
           CHUNK_HEAD.length,
           -CHUNK_TAIL.length
         );

@@ -3,7 +3,7 @@ import { once } from "events";
 import { isBlank } from "../cellValue.mjs";
 import { fileWriter, writeFileAtomically } from "./atomicWrite.mjs";
 import { nextTurn, rowsPerChunk } from "../memoryGuard.mjs";
-import { scanColumnTypes } from "./columnTypes.mjs";
+import { sourceOf } from "../exportSource.mjs";
 import { naiveDateText } from "./naiveDates.mjs";
 
 // The first date Excel shows as itself: it can't show earlier ones, and its 1900 leap
@@ -36,7 +36,6 @@ export const memoryCost = {
   bytesPerTextChar: 21,
   chunkRows: CHUNK_ROWS,
   chunkCells: CHUNK_CELLS,
-  writesAsItGoes: true,
 };
 
 /**
@@ -87,7 +86,7 @@ async function sheetTaken(worksheet, signal) {
  *
  * The workbook is written as it goes, a chunk of rows at a time: a sheet named Data,
  * and past the rows a sheet holds, Data 2, Data 3 and so on, each with the header row.
- * @param {Array<Object>} data - Array of row objects
+ * @param {Array<Object>|import("../exportSource.mjs").ExportSource} data - Row objects, or a source of them
  * @param {string} filePath - Destination file path
  * @param {object} [options]
  * @param {number} [options.chunkRows] - Rows added at a time
@@ -97,8 +96,9 @@ async function sheetTaken(worksheet, signal) {
  * @returns {Promise<void>}
  */
 export async function exportToExcel(data, filePath, { chunkRows: rowsOption, sheetRows = SHEET_ROWS, warn = console.warn } = {}) {
+  const source = sourceOf(data);
   try {
-    const columnNames = data.length > 0 ? Object.keys(data[0]) : [];
+    const columnNames = source.length > 0 ? source.columns : [];
     const chunkRows = rowsPerChunk(memoryCost, columnNames.length, rowsOption);
     if (!Number.isInteger(sheetRows) || sheetRows < 2 || sheetRows > SHEET_ROWS) {
       throw new RangeError(`sheetRows must be a whole number from 2 to ${SHEET_ROWS}, not ${String(sheetRows)}`);
@@ -136,13 +136,13 @@ export async function exportToExcel(data, filePath, { chunkRows: rowsOption, she
         workbook[property] = "";
       }
 
-      if (data.length === 0) {
+      if (source.length === 0) {
         workbook.addWorksheet("Data").commit();
         await Promise.race([workbook.commit(), failed]);
         return;
       }
 
-      const columnTypes = await scanColumnTypes(data, columnNames);
+      const columnTypes = await source.columnTypes();
 
       // Each column as ExcelJS takes it, and what its values need. A column of dates
       // shows them as dates, and one of timestamps with their time, to the millisecond
@@ -182,8 +182,16 @@ export async function exportToExcel(data, filePath, { chunkRows: rowsOption, she
       // the sheet's XML may pile up outside the heap: the log says so, once
       let warned = false;
       const sheetDataRows = sheetRows - 1;
-      for (let first = 0, sheet = 1; first < data.length; first += sheetDataRows, sheet++) {
-        const worksheet = workbook.addWorksheet(sheet === 1 ? "Data" : `Data ${sheet}`);
+      let worksheet = null;
+      let sheet = 0;
+      let rowsInSheet = 0;
+      // A sheet's rows, below its header row, a chunk at a time: a chunk that runs past
+      // the sheet's last row goes on in the next sheet
+      const addSheet = () => {
+        worksheet?.commit();
+        sheet++;
+        rowsInSheet = 0;
+        worksheet = workbook.addWorksheet(sheet === 1 ? "Data" : `Data ${sheet}`);
         // Columns of its own, since a sheet takes its columns' headers as its first row
         worksheet.columns = columns.map((column) => ({ ...column }));
 
@@ -195,20 +203,27 @@ export async function exportToExcel(data, filePath, { chunkRows: rowsOption, she
           pattern: "solid",
           fgColor: { argb: "FFD3D3D3" },
         };
-
-        const last = Math.min(first + sheetDataRows, data.length);
-        for (let start = first; start < last; start += chunkRows) {
-          const end = Math.min(start + chunkRows, last);
-          for (let i = start; i < end; i++) {
-            worksheet.addRow(cellsOf(data[i])).commit();
-          }
-          if (!(await sheetTaken(worksheet, signal)) && !warned) {
-            warned = true;
-            warn("Excel export: ExcelJS's sheet stream isn't where expected, so a sheet's XML may be held in memory until the zip takes it");
-          }
+      };
+      const taken = async () => {
+        if (!(await sheetTaken(worksheet, signal)) && !warned) {
+          warned = true;
+          warn("Excel export: ExcelJS's sheet stream isn't where expected, so a sheet's XML may be held in memory until the zip takes it");
         }
-        worksheet.commit();
+      };
+      for await (const rows of source.chunks(chunkRows)) {
+        for (const row of rows) {
+          if (worksheet === null || rowsInSheet === sheetDataRows) {
+            if (worksheet !== null) {
+              await taken();
+            }
+            addSheet();
+          }
+          worksheet.addRow(cellsOf(row)).commit();
+          rowsInSheet++;
+        }
+        await taken();
       }
+      worksheet?.commit();
 
       await Promise.race([workbook.commit(), failed]);
     });

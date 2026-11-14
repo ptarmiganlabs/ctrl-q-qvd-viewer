@@ -7,51 +7,10 @@ import { profileFile, generateQvsScript } from "../qvdProfiler.mjs";
 import { failedRead, isReadError, readLanes } from "../qvdReader.mjs";
 import { getVisualAnalysisHtml } from "./templates/visualAnalysisTemplate.mjs";
 import { markdownText } from "./templates/escaping.mjs";
-import {
-  describeExportRefusal,
-  describeReadRefusal,
-  exportHeapBytes,
-  memoryLeftOutsideHeap,
-  tryBookHeap,
-} from "../memoryGuard.mjs";
+import { describeReadRefusal } from "../memoryGuard.mjs";
+import { runExport } from "../exportRun.mjs";
+import { readFailureOf } from "../exportSource.mjs";
 import logger from "../logger.mjs";
-
-/**
- * Say why an export is refused for memory, suggesting the formats that need much less
- * @param {string} format - The export format refused
- * @param {number} rows - Rows to export
- * @param {number} neededBytes - Heap the export needs
- * @param {number} leftBytes - Heap left for it
- * @param {{onComputer?: boolean}} [options] - onComputer: whether these are the memory
- *   outside the heap it needs, and what is left of the computer's
- * @returns {string} The message
- */
-function exportRefusal(format, rows, neededBytes, leftBytes, { onComputer = false } = {}) {
-  const { labels, everyOther } = DataExporter.leanerFormats(format);
-  return describeExportRefusal(DataExporter.formatLabel(format), rows, neededBytes, leftBytes, labels, {
-    everyOther,
-    onComputer,
-  });
-}
-
-/**
- * Say why the read for an export failed
- * A refusal of what the export would build is the export's, with the formats
- * that need less suggested. One of the rows themselves is the read's, with a row
- * count only where the user chooses how many rows to export.
- * @param {object} result - The failed read, as QvdReader.read() gives it
- * @param {string} format - The export format
- * @param {boolean} rowsChosen - Whether the user chose how many rows to export
- * @returns {string} The message
- */
-export function exportReadFailure(result, format, rowsChosen) {
-  const refusal = result.refusal;
-  if (refusal?.forCaller) {
-    return exportRefusal(format, refusal.rows, refusal.neededBytes, refusal.leftBytes);
-  }
-  const why = refusal ? describeReadRefusal(refusal, { offerRows: rowsChosen }) : result.error;
-  return `Failed to read QVD for export: ${why}`;
-}
 
 /**
  * Say why reading a file for profiling failed
@@ -160,10 +119,8 @@ export function setupMessageHandler(
       case "exportData": {
         // Export data to selected format
         const format = message.format;
-        const cost = DataExporter.memoryCost(format) ?? { bytesPerCell: 0, bytesPerTextChar: 0 };
         // Qlik inline script and PostgreSQL export as many rows as the user chooses
         const rowsChosen = format === "qlik" || format === "postgres";
-        let releaseExportedRows = () => {};
         try {
           let maxRows = 0; // Default: export all rows
 
@@ -232,79 +189,22 @@ export function setupMessageHandler(
             }
           }
 
-          // What the exporter builds per cell is priced into the read, so that an
-          // export too large for memory is refused before its rows are read. It is
-          // booked only once the dialogs are answered and the export begins.
-          let result = await qvdReader.read(filePath, maxRows, {
-            signal,
-            bytesPerCell: cost.bytesPerCell,
-            // A CSV export builds from a chunk of rows at a time
-            chunkRows: cost.chunkRows ?? 0,
-            // An Arrow export holds its text fields' distinct values to the end
-            bytesPerDistinctText: cost.bytesPerDistinctText ?? 0,
-            bytesPerSymbolByte: cost.bytesPerSymbolByte ?? 0,
-            holdCallerBytes: false,
-            // A format with date types gets a QVD's dates as dates
-            dates: DataExporter.writesDates(format),
-          });
-          releaseExportedRows = result.release;
-          if (result.errorReason === "aborted") {
-            break;
-          }
-          if (result.error) {
-            vscode.window.showErrorMessage(exportReadFailure(result, format, rowsChosen));
-            break;
-          }
-
-          const fileName = basename(filePath, extname(filePath));
-          const workspaceFolder =
-            vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-          const columnCount = result.columns.length;
-          // Each field's distinct values and the bytes they take, which bound what an
-          // export holding them needs
-          const fields = new Map(
-            (result.metadata?.fields ?? []).map((field) => [field.name, { symbols: field.noOfSymbols, bytes: field.length }])
-          );
-          // What reading the timestamps in a time zone did, when the export named one
+          // The rows are read a chunk at a time as they are written, in the lane of
+          // large reads; what the export holds is booked once its questions are answered
           let timeShifts = null;
-          const savedPath = await DataExporter.exportData(
-            result.data,
+          const savedPath = await runExport({
+            filePath,
             format,
-            fileName,
-            vscode,
-            workspaceFolder,
             maxRows,
-            result.columns,
-            {
-              // Priced from the rows to be written, their text included, once
-              // every dialog is answered: an export that won't fit is refused
-              // before anything is written
-              reserve: async (rows, limit) => {
-                // A read already running was priced without this export: it goes first
-                await qvdReader.afterLargeReads({ signal });
-                const needed = await exportHeapBytes(cost, rows, columnCount, limit, { fields });
-                // A SQLite export builds its database in memory, outside the heap
-                if (needed.outsideBytes > 0) {
-                  const left = memoryLeftOutsideHeap();
-                  if (needed.outsideBytes > left) {
-                    throw new Error(exportRefusal(format, needed.rows, needed.outsideBytes, left, { onComputer: true }));
-                  }
-                }
-                const booking = tryBookHeap(needed.bytes);
-                if (!booking.release) {
-                  throw new Error(exportRefusal(format, needed.rows, needed.bytes, booking.leftBytes));
-                }
-                return booking.release;
-              },
-              report: (shifts) => {
-                timeShifts = shifts;
-              },
-              warn: (message) => logger.warn(message),
-            }
-          );
-          // The rows, and the exporter's copy, are done with: later reads may have the heap
-          result = null;
-          releaseExportedRows();
+            vscode,
+            workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+            signal,
+            lane: readLanes.large,
+            report: (shifts) => {
+              timeShifts = shifts;
+            },
+            warn: (message) => logger.warn(message),
+          });
 
           if (savedPath) {
             // Timestamps DST moved or left ambiguous are told, and the first few logged
@@ -329,11 +229,12 @@ export function setupMessageHandler(
             }
           }
         } catch (error) {
-          if (error?.name === "AbortError" && signal?.aborted) {
-            // The editor was closed while the export waited for a read to finish
+          if (signal?.aborted) {
+            // The editor was closed: the export stops at its next chunk, and its file is
+            // removed, however its exporter reports that
             logger.log(`Export given up, because its editor was closed: ${filePath}`);
           } else if (error?.setting) {
-            // A setting the export can't use: not awaited, so that the rows are let go
+            // A setting the export can't use: not awaited, so that the export ends
             vscode.window
               .showErrorMessage(`Export failed: ${error.message}`, "Open Settings")
               .then((action) => {
@@ -342,10 +243,10 @@ export function setupMessageHandler(
                 }
               });
           } else {
-            vscode.window.showErrorMessage(`Export failed: ${error.message}`);
+            // A QVD that can't be read says so, rather than which format failed
+            const readError = readFailureOf(error);
+            vscode.window.showErrorMessage(readError ? readError.message : `Export failed: ${error.message}`);
           }
-        } finally {
-          releaseExportedRows();
         }
         break;
       }

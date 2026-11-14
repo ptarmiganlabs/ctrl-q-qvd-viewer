@@ -244,16 +244,14 @@ export function heldTextBytes(fields, rows, shares) {
  * @property {number} [chunkRows] - Rows it builds from at a time, so that only its largest chunk is priced
  * @property {number} [chunkCells] - Cells it builds from at a time, at most, so that a chunk of a QVD
  *   with many fields has fewer rows
- * @property {boolean} [writesAsItGoes] - Whether it writes as it goes, and so needs little
- * @property {function(Array<Object>, Array<string>): Promise<Array<string>>} [dictionaryColumns] -
- *   The columns of these rows whose distinct values it holds from before its first chunk to
- *   the end, as a dictionary of them
+ * @property {function(Object<string, object>, Array<string>): Array<string>} [dictionaryColumns] -
+ *   The columns, of these types, whose distinct values it holds from before its first
+ *   chunk to the end, as a dictionary of them
  * @property {number} [bytesPerDistinctText] - Heap per distinct value of such a column
  * @property {number} [bytesPerSymbolByte] - Memory per byte of such a field's symbols in the
  *   QVD: the text of its distinct values, which is held to the end too, if outside the heap
- * @property {number} [outsideHeapBytesPerCell] - Memory outside the heap per cell of the whole
- *   export, which the heap's budget doesn't bound, such as a database built in memory
- * @property {number} [outsideHeapBytesPerTextChar] - The same per character of the rows' text
+ * @property {number} [rowGroupRows] - Rows it holds beside a chunk's before it writes them,
+ *   as Parquet's row groups, each of which adds to the footer it holds to the end
  */
 
 /**
@@ -311,64 +309,6 @@ export function dictionaryBytes(cost, fields, rows) {
 }
 
 /**
- * Heap an export of these rows builds: per cell, and per character of their text
- * An export that writes a chunk of rows at a time holds one chunk's work at a
- * time, so it is priced by its largest chunk. One that holds some columns' distinct
- * values to the end, as its exporter finds them, is priced for those too, for the
- * whole export, as dictionaryBytes() gives it. Every value is looked at, so this
- * yields to the event loop as it goes.
- * @param {ExportCost} cost - What the export builds, as its exporter declares it
- * @param {Array<Object>} rows - The rows read
- * @param {number} columnCount - Fields per row
- * @param {number} [limit] - Rows to export, from the first; 0 or none for every row
- * @param {object} [options]
- * @param {Map<string, {symbols: number, bytes: number}>} [options.fields] - Each field's
- *   symbols in the QVD, its distinct values, and the bytes they take. A field left out
- *   counts one value a row, and every character of the rows' text at three bytes, as
- *   UTF-8 takes at most
- * @returns {Promise<{bytes: number, rows: number, outsideBytes?: number}>} The heap, and
- *   the rows it is for. outsideBytes, for an export that declares memory outside the heap:
- *   that memory, for the whole export, to be checked against memoryLeftOutsideHeap()
- */
-export async function exportHeapBytes(cost, rows, columnCount, limit = 0, { fields } = {}) {
-  const count = limit > 0 ? Math.min(limit, rows.length) : rows.length;
-  const chunkRows = cost.chunkRows > 0 ? rowsPerChunk(cost, columnCount) : count;
-  const rowsPerYield = Math.max(1, Math.floor(CELLS_PER_YIELD / Math.max(1, columnCount)));
-  let bytes = 0;
-  let allChars = 0;
-  for (let start = 0; start < count; start += chunkRows) {
-    const end = Math.min(start + chunkRows, count);
-    let chars = 0;
-    for (let i = start; i < end; i++) {
-      const row = rows[i];
-      for (const key in row) {
-        const value = row[key];
-        if (typeof value === "string") {
-          chars += value.length;
-        }
-      }
-      if ((i + 1) % rowsPerYield === 0) {
-        await nextTurn();
-      }
-    }
-    bytes = Math.max(bytes, (end - start) * columnCount * cost.bytesPerCell + chars * cost.bytesPerTextChar);
-    allChars += chars;
-  }
-  if (cost.dictionaryColumns && count > 0) {
-    const exported = count < rows.length ? rows.slice(0, count) : rows;
-    const held = await cost.dictionaryColumns(exported, Object.keys(rows[0]));
-    const described = held.map((key) => fields?.get(key) ?? { symbols: count, bytes: 3 * allChars });
-    bytes += dictionaryBytes(cost, described, count);
-  }
-  if (cost.outsideHeapBytesPerCell > 0 || cost.outsideHeapBytesPerTextChar > 0) {
-    const outsideBytes =
-      count * columnCount * (cost.outsideHeapBytesPerCell ?? 0) + allChars * (cost.outsideHeapBytesPerTextChar ?? 0);
-    return { bytes, rows: count, outsideBytes };
-  }
-  return { bytes, rows: count };
-}
-
-/**
  * Memory left on this computer for work outside the heap, such as a database built in
  * memory: the computer's memory, or a container's limit where it is less, less what
  * the extension host already uses
@@ -392,48 +332,20 @@ function size(bytes) {
 }
 
 /**
- * Names in a sentence
- * @param {Array<string>} names - Such as ["CSV", "Parquet", "Avro"]
- * @returns {string} Such as "CSV, Parquet and Avro"
- */
-function listed(names) {
-  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names.join("");
-}
-
-/**
  * Say why an export is refused for memory
  * @param {string} formatLabel - The format, as the user sees it
  * @param {number} rows - Rows to export
- * @param {number} neededBytes - Heap the export needs
- * @param {number} leftBytes - Heap left for it
- * @param {Array<string>} [leaner] - The formats to suggest, which write as they go, as
- *   the user sees them: never the format refused
- * @param {{everyOther?: boolean, onComputer?: boolean}} [options] - everyOther: whether
- *   they are every other format, which is then said instead of naming them; onComputer:
- *   whether what is left is the computer's memory, outside the heap, not VS Code's heap
+ * @param {number} neededBytes - Memory the export needs
+ * @param {number} leftBytes - Memory left for it
+ * @param {{onComputer?: boolean}} [options] - onComputer: whether what is left is the
+ *   computer's memory, outside the heap, not VS Code's heap
  * @returns {string} The message
  */
-export function describeExportRefusal(
-  formatLabel,
-  rows,
-  neededBytes,
-  leftBytes,
-  leaner = [],
-  { everyOther = false, onComputer = false } = {}
-) {
-  const others = leaner.filter((label) => label !== formatLabel);
-  const suggestion =
-    others.length === 0
-      ? ""
-      : everyOther
-        ? " Every other format writes as it goes, and needs much less."
-        : others.length === 1
-          ? ` ${others[0]} writes as it goes, and needs much less.`
-          : ` ${listed(others)} write as they go, and need much less.`;
+export function describeExportRefusal(formatLabel, rows, neededBytes, leftBytes, { onComputer = false } = {}) {
   return (
     `Exporting ${rows.toLocaleString()} rows to ${formatLabel} needs about ${size(neededBytes)} ` +
     `of memory, and about ${size(leftBytes)} is left ` +
-    `${onComputer ? "on this computer" : "in what VS Code gives its extensions"}.${suggestion}`
+    `${onComputer ? "on this computer" : "in what VS Code gives its extensions"}.`
   );
 }
 

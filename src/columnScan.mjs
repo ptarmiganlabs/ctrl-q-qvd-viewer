@@ -46,6 +46,27 @@ const BYTES_PER_VALUE = 400;
 export const SCAN_PEAK_BYTES = SCAN_HELD_BYTES + FRESH_VALUES_PER_CHUNK * BYTES_PER_VALUE + 16 * CHUNK_ROWS;
 
 /**
+ * The most heap a scan of some fields' rows holds, at most SCAN_PEAK_BYTES: no more
+ * than all their distinct values decoded, if that is less
+ * @param {Array<{symbols: number, bytes: number}>} fields - Each field's distinct values,
+ *   and the bytes they take in the file
+ * @param {number} rows - Rows scanned
+ * @returns {number} Bytes
+ */
+export function scanBytesFor(fields, rows) {
+  let values = 0;
+  let held = 0;
+  for (const { symbols, bytes } of fields) {
+    const decoded = Math.min(Math.max(0, symbols), rows);
+    values += decoded;
+    // Each decoded value, and its text at two bytes a character at most
+    held += decoded * BYTES_PER_VALUE + (symbols > 0 ? 2 * bytes * (decoded / symbols) : 0);
+  }
+  const fresh = Math.min(FRESH_VALUES_PER_CHUNK, values) * BYTES_PER_VALUE;
+  return Math.ceil(Math.min(SCAN_HELD_BYTES, held) + fresh);
+}
+
+/**
  * Rows a chunk of a field holds: fewer where most rows hold a value of their own
  * @param {number} symbols - The field's distinct values
  * @param {number} totalRows - Rows in the file
@@ -59,6 +80,29 @@ export function chunkRowsFor(symbols, totalRows, freshValues = FRESH_VALUES_PER_
     return CHUNK_ROWS;
   }
   return Math.max(freshValues, Math.min(CHUNK_ROWS, Math.floor(freshValues / freshPerRow)));
+}
+
+/**
+ * Most codes a page of several fields holds, over all of them: 4 bytes each
+ */
+export const PAGE_CODES = 4_000_000;
+
+/**
+ * Rows a page of several fields holds: fewer where their rows hold many values of
+ * their own, and where there are many fields
+ * @param {Array<{symbols: number}>} fields - Each field's distinct values
+ * @param {number} totalRows - Rows in the file
+ * @param {number} [freshValues] - New values a page decodes at most, FRESH_VALUES_PER_CHUNK unless said
+ * @returns {number} Rows, 1 at least
+ */
+export function pageRowsFor(fields, totalRows, freshValues = FRESH_VALUES_PER_CHUNK) {
+  let freshPerRow = 0;
+  for (const { symbols } of fields) {
+    freshPerRow += Math.min(1, Math.max(0, symbols) / Math.max(1, totalRows));
+  }
+  const byCodes = Math.floor(PAGE_CODES / Math.max(1, fields.length));
+  const byFresh = freshPerRow === 0 ? CHUNK_ROWS : Math.floor(freshValues / freshPerRow);
+  return Math.max(1, Math.min(CHUNK_ROWS, byCodes, byFresh));
 }
 
 /**
@@ -130,9 +174,18 @@ export async function scanColumn({ filePath, allowedDir, heldBytes, ...scan }) {
  * @param {string} options.filePath - The QVD file
  * @param {string} options.allowedDir - The directory qvdjs may read in
  * @param {number} [options.heldBytes] - What the open file may hold, SCAN_HELD_BYTES unless a test says otherwise
- * @returns {{scan: function(object): Promise<{reopened: number}>, close: function(): Promise<void>}}
+ * @returns {{scan: function(object): Promise<{reopened: number}>, scanFields: function(object): Promise<{reopened: number}>, pages: function(object): AsyncGenerator<object>, reopened: number, close: function(): Promise<void>}}
  *   scan(): scans a field, taking scanColumn()'s options but filePath, allowedDir and
- *   heldBytes; close(): closes the file, once every scan is done
+ *   heldBytes. scanFields(): scans several fields' rows from..to together, taking
+ *   fields, a list of {name, symbols}; from, the first row, 0 unless said; to, the
+ *   row after the last; chunkRows; onChunk, given {columns, offset} with each field's
+ *   {codes, symbols} as scan() gives them, in the order of fields; onRows, told the
+ *   rows scanned so far; signal; and beforeOpen, awaited before the file is opened,
+ *   first or afresh. pages(): the same pages as an async iterable of {columns,
+ *   offset}, taking scanFields()'s options but onChunk and onRows, and freshCodes:
+ *   whether each column also gives fresh, the codes seen first in its page since the
+ *   file was opened, which it then opens afresh to begin with. reopened: times the
+ *   file was opened afresh so far. close(): closes the file, once every scan is done
  */
 export function openColumnScanner({ filePath, allowedDir, heldBytes = SCAN_HELD_BYTES }) {
   let file = null;
@@ -140,6 +193,8 @@ export function openColumnScanner({ filePath, allowedDir, heldBytes = SCAN_HELD_
   // Each field's codes whose values the open file holds already, as far as the scans have seen
   let seenByField = new Map();
   let busy = false;
+  // Times the file was opened afresh, over every scan
+  let reopened = 0;
   // Files whose close failed, tried again when the scanner is closed: an open handle
   // keeps Windows from replacing the file
   const unclosed = [];
@@ -157,60 +212,108 @@ export function openColumnScanner({ filePath, allowedDir, heldBytes = SCAN_HELD_
     }
   };
 
-  return {
-    async scan({ field, symbols, totalRows, onChunk, onRows, signal, chunkRows = chunkRowsFor(symbols, totalRows) }) {
-      if (busy) {
-        throw new Error("A scan of this file is already running");
+  /**
+   * Some fields of rows from..to, a page at a time, as an async iterable
+   * @param {object} options - As pages() of the scanner takes them
+   * @returns {AsyncGenerator<{columns: Array<{codes: Int32Array, symbols: ReadonlyArray<*>, fresh?: Array<number>}>, offset: number}>} The pages
+   */
+  async function* pages({ fields, from = 0, to, signal, chunkRows, beforeOpen, freshCodes = false }) {
+    if (busy) {
+      throw new Error("A scan of this file is already running");
+    }
+    busy = true;
+    try {
+      // Fresh codes are those the pass hasn't seen: none is seen yet in a file opened afresh
+      if (freshCodes && file) {
+        await reopen();
+        reopened++;
       }
-      busy = true;
-      let reopened = 0;
-      try {
-        for (let offset = 0; offset < totalRows; offset += chunkRows) {
-          signal?.throwIfAborted();
-          if (file && held > heldBytes) {
-            await reopen();
-            reopened++;
-          }
+      for (let offset = from; offset < to; offset += chunkRows) {
+        signal?.throwIfAborted();
+        if (file && held > heldBytes) {
+          await reopen();
+          reopened++;
+        }
+        if (!file) {
+          await beforeOpen?.();
           // Both halves of a dual: its text, which the grid shows, and its number, which sorts it
-          file ??= await QvdDataFrame.open(filePath, { allowedDir, duals: "both" });
-          let seen = seenByField.get(field);
+          file = await QvdDataFrame.open(filePath, { allowedDir, duals: "both" });
+        }
+        const seens = fields.map(({ name, symbols }) => {
+          let seen = seenByField.get(name);
           if (!seen) {
             seen = new Uint8Array(Math.max(0, symbols));
-            seenByField.set(field, seen);
+            seenByField.set(name, seen);
           }
-          const table = await file.columns({
-            fields: [field],
-            offset,
-            limit: Math.min(chunkRows, totalRows - offset),
-            signal,
-          });
-          const column = table.column(field);
+          return seen;
+        });
+        const table = await file.columns({
+          fields: fields.map(({ name }) => name),
+          offset,
+          limit: Math.min(chunkRows, to - offset),
+          signal,
+        });
+        const columns = fields.map(({ name }, index) => {
+          const column = table.column(name);
           const codes = column.codes;
           const values = column.symbols;
+          const seen = seens[index];
+          const fresh = freshCodes ? [] : null;
           for (let i = 0; i < codes.length; i++) {
             const code = codes[i];
             if (code >= 0 && code < seen.length && seen[code] === 0) {
               seen[code] = 1;
               held += heldBytesOf(values[code]);
+              fresh?.push(code);
             }
           }
-          // A chunk may be taken a slice at a time: the arrays are reused for the next
-          await onChunk({ codes, symbols: values, offset });
-          onRows?.(offset + codes.length);
-          // Other extensions run between chunks
-          await new Promise((resolve) => setImmediate(resolve));
-        }
-        signal?.throwIfAborted();
-        return { reopened };
-      } catch (error) {
-        // A scan given up may have left the file in the middle of a page. Closing it
-        // may fail too, which mustn't hide why the scan stopped
-        await reopen().catch(() => {});
-        throw error;
-      } finally {
-        busy = false;
+          return fresh ? { codes, symbols: values, fresh } : { codes, symbols: values };
+        });
+        // A page may be taken a slice at a time: the arrays are reused for the next
+        yield { columns, offset };
+        // Other extensions run between pages
+        await new Promise((resolve) => setImmediate(resolve));
       }
+      signal?.throwIfAborted();
+    } catch (error) {
+      // A scan given up may have left the file in the middle of a page. Closing it
+      // may fail too, which mustn't hide why the scan stopped
+      await reopen().catch(() => {});
+      throw error;
+    } finally {
+      busy = false;
+    }
+  }
+
+  /**
+   * Scan some fields of rows from..to, a chunk at a time
+   * @param {object} options - As scanFields() of the scanner takes them
+   * @returns {Promise<{reopened: number}>} How often the file was opened afresh
+   */
+  const scanFields = async ({ onChunk, onRows, from = 0, ...options }) => {
+    const before = reopened;
+    for await (const page of pages({ ...options, from })) {
+      await onChunk(page);
+      onRows?.(page.offset + (page.columns[0]?.codes.length ?? 0) - from);
+    }
+    return { reopened: reopened - before };
+  };
+
+  return {
+    get reopened() {
+      return reopened;
     },
+    pages,
+    scan: ({ field, symbols, totalRows, onChunk, signal, onRows, chunkRows = chunkRowsFor(symbols, totalRows) }) =>
+      scanFields({
+        fields: [{ name: field, symbols }],
+        to: totalRows,
+        chunkRows,
+        signal,
+        onRows,
+        onChunk: ({ columns, offset }) => onChunk({ codes: columns[0].codes, symbols: columns[0].symbols, offset }),
+      }),
+    scanFields,
     async close() {
       await reopen();
       while (unclosed.length > 0) {

@@ -30,12 +30,101 @@ export function isTextColumn(typeInfo) {
 }
 
 /**
- * Scan every row for what each column holds
- *
- * Next to numbers, booleans or dates, blank text is a missing value: the column keeps
- * their type, becomes nullable, and its blanks are to be written as null. In a column
- * of text, or of nothing but blanks, blank text is text like any other. Every value
- * is looked at, so this yields to the event loop as it goes.
+ * A column's type information before any value is taken
+ * @returns {ColumnType} Nothing seen yet
+ */
+export function emptyColumnType() {
+  return {
+    hasNull: false,
+    hasBlank: false,
+    hasNumber: false,
+    allIntegers: true,
+    hasString: false,
+    hasBoolean: false,
+    hasDate: false,
+    calendarDates: true,
+    earliestTime: Infinity,
+    hasMilliseconds: false,
+    hasObject: false,
+    blanksAreNull: false,
+  };
+}
+
+/**
+ * Take one value of a column into its type information. Taking a value again changes
+ * nothing, so a source may take each distinct value once rather than every cell.
+ * @param {ColumnType} typeInfo - The column's type information, changed in place
+ * @param {*} value - A cell's value
+ * @returns {void}
+ */
+export function takeColumnValue(typeInfo, value) {
+  if (value === null || value === undefined) {
+    typeInfo.hasNull = true;
+  } else if (isBlank(value)) {
+    typeInfo.hasBlank = true;
+  } else if (typeof value === "number") {
+    typeInfo.hasNumber = true;
+    // Beyond 2^53 an integer may already be rounded, and beyond 2^63 it overflows 64 bits
+    if (!Number.isSafeInteger(value)) {
+      typeInfo.allIntegers = false;
+    }
+  } else if (typeof value === "string") {
+    typeInfo.hasString = true;
+  } else if (typeof value === "boolean") {
+    typeInfo.hasBoolean = true;
+  } else if (value instanceof Date) {
+    takeColumnDate(typeInfo, value.getTime(), value instanceof CalendarDate);
+  } else if (typeof value === "object") {
+    typeInfo.hasObject = true;
+  }
+}
+
+/**
+ * Take one date of a column into its type information, by its time
+ * @param {ColumnType} typeInfo - The column's type information, changed in place
+ * @param {number} time - The Date's time, in milliseconds since 1970
+ * @param {boolean} calendarDate - Whether it is a CalendarDate, a date without a time
+ * @returns {void}
+ */
+export function takeColumnDate(typeInfo, time, calendarDate) {
+  typeInfo.hasDate = true;
+  if (!calendarDate) {
+    typeInfo.calendarDates = false;
+  }
+  if (time < typeInfo.earliestTime) {
+    typeInfo.earliestTime = time;
+  }
+  if (time % 1000 !== 0) {
+    typeInfo.hasMilliseconds = true;
+  }
+}
+
+/**
+ * Decide what a column's blank text is, once every value is taken. Next to numbers,
+ * booleans or dates it is a missing value: the column keeps their type, becomes
+ * nullable, and its blanks are to be written as null. In a column of text, or of
+ * nothing but blanks, blank text is text like any other.
+ * @param {ColumnType} typeInfo - The column's type information, changed in place
+ * @returns {ColumnType} The same
+ */
+export function finishColumnType(typeInfo) {
+  if (typeInfo.hasBlank) {
+    typeInfo.blanksAreNull =
+      !isTextColumn(typeInfo) &&
+      !typeInfo.hasObject &&
+      (typeInfo.hasNumber || typeInfo.hasBoolean || typeInfo.hasDate);
+    if (typeInfo.blanksAreNull) {
+      typeInfo.hasNull = true;
+    } else {
+      typeInfo.hasString = true;
+    }
+  }
+  return typeInfo;
+}
+
+/**
+ * Scan every row for what each column holds, as finishColumnType() decides it
+ * Every value is looked at, so this yields to the event loop as it goes.
  * @param {Array<Object>} rows - Array of row objects
  * @param {Array<string>} columnNames - Columns to scan
  * @returns {Promise<Object<string, ColumnType>>} Each column's type information
@@ -43,20 +132,7 @@ export function isTextColumn(typeInfo) {
 export async function scanColumnTypes(rows, columnNames) {
   const columnTypes = {};
   for (const key of columnNames) {
-    columnTypes[key] = {
-      hasNull: false,
-      hasBlank: false,
-      hasNumber: false,
-      allIntegers: true,
-      hasString: false,
-      hasBoolean: false,
-      hasDate: false,
-      calendarDates: true,
-      earliestTime: Infinity,
-      hasMilliseconds: false,
-      hasObject: false,
-      blanksAreNull: false,
-    };
+    columnTypes[key] = emptyColumnType();
   }
 
   const rowsPerYield = Math.max(1, Math.floor(CELLS_PER_YIELD / Math.max(1, columnNames.length)));
@@ -66,56 +142,13 @@ export async function scanColumnTypes(rows, columnNames) {
     }
     const row = rows[i];
     for (const key of columnNames) {
-      const value = row[key];
-      const typeInfo = columnTypes[key];
-
-      if (value === null || value === undefined) {
-        typeInfo.hasNull = true;
-      } else if (isBlank(value)) {
-        typeInfo.hasBlank = true;
-      } else if (typeof value === "number") {
-        typeInfo.hasNumber = true;
-        // Beyond 2^53 an integer may already be rounded, and beyond 2^63 it overflows 64 bits
-        if (!Number.isSafeInteger(value)) {
-          typeInfo.allIntegers = false;
-        }
-      } else if (typeof value === "string") {
-        typeInfo.hasString = true;
-      } else if (typeof value === "boolean") {
-        typeInfo.hasBoolean = true;
-      } else if (value instanceof Date) {
-        typeInfo.hasDate = true;
-        if (!(value instanceof CalendarDate)) {
-          typeInfo.calendarDates = false;
-        }
-        const time = value.getTime();
-        if (time < typeInfo.earliestTime) {
-          typeInfo.earliestTime = time;
-        }
-        if (time % 1000 !== 0) {
-          typeInfo.hasMilliseconds = true;
-        }
-      } else if (typeof value === "object") {
-        typeInfo.hasObject = true;
-      }
+      takeColumnValue(columnTypes[key], row[key]);
     }
   }
 
   for (const key of columnNames) {
-    const typeInfo = columnTypes[key];
-    if (typeInfo.hasBlank) {
-      typeInfo.blanksAreNull =
-        !isTextColumn(typeInfo) &&
-        !typeInfo.hasObject &&
-        (typeInfo.hasNumber || typeInfo.hasBoolean || typeInfo.hasDate);
-      if (typeInfo.blanksAreNull) {
-        typeInfo.hasNull = true;
-      } else {
-        typeInfo.hasString = true;
-      }
-    }
+    finishColumnType(columnTypes[key]);
   }
-
   return columnTypes;
 }
 
