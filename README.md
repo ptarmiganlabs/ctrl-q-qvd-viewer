@@ -17,6 +17,10 @@
 <a href="https://github.com/sponsors/ptarmiganlabs">❤️ Sponsor</a>
 </p>
 
+<p align="center">
+  <img src="docs/img/ctrl-q-qvd-viewer-demo.gif" alt="Ctrl-Q QVD Viewer in VS Code: a QVD of order lines shown as a table, then its schema, the Region field profiled as a bar chart, and the Export menu with eleven formats" width="880">
+</p>
+
 A Visual Studio Code extension for viewing and exporting Qlik Sense and QlikView QVD files. View
 data, metadata, schema, lineage and data profiles directly within VS Code. Designed for Qlik
 developers, admins and data engineers.
