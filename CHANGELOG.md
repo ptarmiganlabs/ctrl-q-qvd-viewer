@@ -4,6 +4,51 @@ All notable changes to the Ctrl-Q QVD Viewer extension will be documented in thi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [1.6.0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.5.0...v1.6.0) (2026-11-14)
+
+
+### Features
+
+* **export:** export a QVD of any size, a chunk of rows at a time ([cadda33](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/cadda3394067f466ac4d9b24fdba5ddfbbe299ee))
+* **profiling:** read only the profiled fields, a chunk at a time ([ccc7ac0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/ccc7ac0cf4c536098f6b13debc00d00e70e19992))
+
+
+### Bug Fixes
+
+* **export:** a failed Parquet or Avro export no longer deletes the file it was to replace ([cadda33](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/cadda3394067f466ac4d9b24fdba5ddfbbe299ee))
+* **export:** book the census before it runs, and say when a QVD can't be read ([56bf756](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/56bf756f391d06524f69660ed6f17af83545c6cd))
+* **export:** write SQLite exports straight to disk with node:sqlite ([65f863d](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/65f863d77bd20d4d454e0c62441b5e9e23711db6)), closes [#218](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/218)
+* **profiling:** count every distinct value, and show the most frequent ([180a52e](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/180a52e70bbaaab29e2f0a48d2b385b06392714a))
+* **profiling:** price each profiled field on its own ([3c7bcd4](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/3c7bcd432df9c089dc9cb8b991ba4177ab9d005b)), closes [#162](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/162)
+* **profiling:** price profiling by its field, and make it finish on any file ([a2f86f2](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/a2f86f2a17c311a6a6b11480cd77035240e54d97)), closes [#162](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/162)
+* **profiling:** stop saying that profiling loads the whole file ([04fa08a](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/04fa08ac523799d46dfbeeed3d09607d4294a25b)), closes [#162](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/162)
+
+
+### Documentation
+
+* add sponsor section to README ([d1d14dd](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/d1d14dd0145205a855dbf19d108e6f6fe79ffd52))
+* how an export reads a QVD a chunk at a time ([1228ef9](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/1228ef970385c91fb501fd06e5c72602902e9836))
+
+
+### Miscellaneous
+
+* add a Sponsor link to the Marketplace page ([b836a7a](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/b836a7a6332c9bede4615e6ea7486dff95b646ec))
+* **release:** list [#216](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/216)'s and [#217](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/217)'s commits in 1.5.0's changelog ([2079d52](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/2079d521b8de855578190acb14e1138418d73e25)), closes [#190](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/190)
+
+
+### Code Refactoring
+
+* scan several fields at once, and take types and dates a value at a time ([032b019](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/032b0198a167d6e2e23d648af930b407322ca65f))
+* **scan:** keep a scan's file open for the next scan of the file ([d84aab4](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/d84aab49ae02a03c94a5433accb40ff63538920b))
+
+
+### Tests
+
+* compare exports with main's, and measure what exporting costs ([7702673](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/77026737c065b474f7e3406572be6e4ef9a6c8a9))
+* **export:** expect the temporary file under the folder's full real path on Windows ([ba4cb22](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/ba4cb22cd95078b8270d2cae05c381312b312663))
+* **profiling:** freeze the profiler as the reference for its results ([a9e77fe](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/a9e77fe39c30e99c7806950fbb5121d5060eb3f9))
+* write QVDs of any size, and measure what profiling them costs ([f170e51](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/commit/f170e51b1d8576c9acb369a4177d698001eca654)), closes [#162](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/issues/162)
+
 ## [1.5.0](https://github.com/ptarmiganlabs/ctrl-q-qvd-viewer/compare/v1.4.3...v1.5.0) (2026-11-13)
 
 
