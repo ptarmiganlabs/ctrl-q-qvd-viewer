@@ -30,7 +30,6 @@ export const memoryCost = {
   chunkRows: CHUNK_ROWS,
   chunkCells: CHUNK_CELLS,
   rowGroupRows: ROW_GROUP_ROWS,
-  writesAsItGoes: true,
 };
 
 /**

@@ -110,7 +110,7 @@ export function exportHeapOf({ cost, fields, rows, dictionaryKeys = [] }) {
 
 /**
  * Memory outside the heap a source's passes hold: a byte a distinct value of each
- * field, for the census and for the reader
+ * field for the reader, and one more for Qlik's count of delimiters
  * @param {Array<{symbols: number}>} fields - The header's fields
  * @returns {number} Bytes
  */
@@ -161,10 +161,51 @@ export async function runExport({
   }
   const label = DataExporter.formatLabel(format);
 
-  // The lane is held from the booking to the end of the export: the census before it,
-  // which may wait on the time zone question, takes a turn of its own
+  let source = null;
+  const realFilePath = await realpath(filePath).catch(() => filePath);
+
+  /**
+   * Refuse the export if what its passes hold outside the heap won't fit
+   * @param {number} rows - Rows exported, for the refusal to say
+   * @returns {Promise<void>}
+   * @throws {Error} The refusal
+   */
+  const checkOutsideHeap = async (rows) => {
+    const { header } = source;
+    // qvdjs's budget, which a read of this file asks once: the heap is booked against it
+    await budgetFor(filePath, dirname(realFilePath), header, signal);
+    const outsideBytes = exportOutsideBytesOf(header.fields);
+    const outsideLeft = memoryLeftOutsideHeap();
+    if (outsideBytes > outsideLeft) {
+      throw new Error(describeExportRefusal(label, rows, outsideBytes, outsideLeft, { onComputer: true }));
+    }
+  };
+
+  // The lane is held from the booking to the end of the export. The census before it,
+  // which may wait on the time zone question, takes a turn of its own, with what the
+  // reader holds booked for it and memory outside the heap checked first
   let letLaneGo = null;
-  const exclusive = (work) => (letLaneGo ? work() : lane.run(work, { signal }));
+  const exclusive = (work) =>
+    letLaneGo
+      ? work()
+      : lane.run(
+          async () => {
+            await checkOutsideHeap(source.length);
+            const bytes = scanBytesFor(source.header.fields, source.length);
+            const booked = tryBookHeap(bytes);
+            if (!booked.release) {
+              throw new Error(describeExportRefusal(label, source.length, bytes, booked.leftBytes));
+            }
+            try {
+              return await work();
+            } finally {
+              // What the open file holds is let go with its booking: the export opens it again
+              await source.close().catch(() => {});
+              booked.release();
+            }
+          },
+          { signal }
+        );
 
   // What is booked so far, and what more a chunk needs
   let booking = null;
@@ -195,7 +236,7 @@ export async function runExport({
     letLaneGo = null;
   };
 
-  const source = await openQvdSource(filePath, {
+  source = await openQvdSource(filePath, {
     rows: maxRows,
     dates: DataExporter.writesDates(format),
     signal,
@@ -220,16 +261,7 @@ export async function runExport({
           try {
             const exported = limit > 0 ? rowsSource.first(limit) : rowsSource;
             const { header } = source;
-            const realFilePath = await realpath(filePath).catch(() => filePath);
-            // qvdjs's budget, which a read of this file asks once
-            await budgetFor(filePath, dirname(realFilePath), header, signal);
-            const outsideBytes = exportOutsideBytesOf(header.fields);
-            const outsideLeft = memoryLeftOutsideHeap();
-            if (outsideBytes > outsideLeft) {
-              throw new Error(
-                describeExportRefusal(label, exported.length, outsideBytes, outsideLeft, { onComputer: true })
-              );
-            }
+            await checkOutsideHeap(exported.length);
             const dictionaryKeys =
               cost.dictionaryColumns && exported.length > 0
                 ? cost.dictionaryColumns(await exported.columnTypes(), exported.columns)

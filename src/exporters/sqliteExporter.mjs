@@ -29,7 +29,6 @@ export const memoryCost = {
   bytesPerTextChar: 1,
   chunkRows: CHUNK_ROWS,
   chunkCells: CHUNK_CELLS,
-  writesAsItGoes: true,
 };
 
 // What SQLite keeps next to a database while it writes: its rollback journal

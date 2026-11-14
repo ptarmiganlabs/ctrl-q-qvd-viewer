@@ -43,7 +43,6 @@ export const memoryCost = {
   bytesPerSymbolByte: 1,
   chunkRows: CHUNK_ROWS,
   chunkCells: CHUNK_CELLS,
-  writesAsItGoes: true,
 };
 
 /**

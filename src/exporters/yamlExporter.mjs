@@ -26,7 +26,6 @@ export const memoryCost = {
   bytesPerTextChar: 9,
   chunkRows: CHUNK_ROWS,
   chunkCells: CHUNK_CELLS,
-  writesAsItGoes: true,
 };
 
 // Text that YAML 1.2's core schema reads as a float

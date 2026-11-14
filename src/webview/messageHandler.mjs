@@ -9,6 +9,7 @@ import { getVisualAnalysisHtml } from "./templates/visualAnalysisTemplate.mjs";
 import { markdownText } from "./templates/escaping.mjs";
 import { describeReadRefusal } from "../memoryGuard.mjs";
 import { runExport } from "../exportRun.mjs";
+import { readFailureOf } from "../exportSource.mjs";
 import logger from "../logger.mjs";
 
 /**
@@ -242,7 +243,9 @@ export function setupMessageHandler(
                 }
               });
           } else {
-            vscode.window.showErrorMessage(`Export failed: ${error.message}`);
+            // A QVD that can't be read says so, rather than which format failed
+            const readError = readFailureOf(error);
+            vscode.window.showErrorMessage(readError ? readError.message : `Export failed: ${error.message}`);
           }
         }
         break;

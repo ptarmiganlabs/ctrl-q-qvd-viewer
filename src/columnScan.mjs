@@ -182,7 +182,9 @@ export async function scanColumn({ filePath, allowedDir, heldBytes, ...scan }) {
  *   {codes, symbols} as scan() gives them, in the order of fields; onRows, told the
  *   rows scanned so far; signal; and beforeOpen, awaited before the file is opened,
  *   first or afresh. pages(): the same pages as an async iterable of {columns,
- *   offset}, taking scanFields()'s options but onChunk and onRows. reopened: times the
+ *   offset}, taking scanFields()'s options but onChunk and onRows, and freshCodes:
+ *   whether each column also gives fresh, the codes seen first in its page since the
+ *   file was opened, which it then opens afresh to begin with. reopened: times the
  *   file was opened afresh so far. close(): closes the file, once every scan is done
  */
 export function openColumnScanner({ filePath, allowedDir, heldBytes = SCAN_HELD_BYTES }) {
@@ -213,14 +215,19 @@ export function openColumnScanner({ filePath, allowedDir, heldBytes = SCAN_HELD_
   /**
    * Some fields of rows from..to, a page at a time, as an async iterable
    * @param {object} options - As pages() of the scanner takes them
-   * @returns {AsyncGenerator<{columns: Array<{codes: Int32Array, symbols: ReadonlyArray<*>}>, offset: number}>} The pages
+   * @returns {AsyncGenerator<{columns: Array<{codes: Int32Array, symbols: ReadonlyArray<*>, fresh?: Array<number>}>, offset: number}>} The pages
    */
-  async function* pages({ fields, from = 0, to, signal, chunkRows, beforeOpen }) {
+  async function* pages({ fields, from = 0, to, signal, chunkRows, beforeOpen, freshCodes = false }) {
     if (busy) {
       throw new Error("A scan of this file is already running");
     }
     busy = true;
     try {
+      // Fresh codes are those the pass hasn't seen: none is seen yet in a file opened afresh
+      if (freshCodes && file) {
+        await reopen();
+        reopened++;
+      }
       for (let offset = from; offset < to; offset += chunkRows) {
         signal?.throwIfAborted();
         if (file && held > heldBytes) {
@@ -251,14 +258,16 @@ export function openColumnScanner({ filePath, allowedDir, heldBytes = SCAN_HELD_
           const codes = column.codes;
           const values = column.symbols;
           const seen = seens[index];
+          const fresh = freshCodes ? [] : null;
           for (let i = 0; i < codes.length; i++) {
             const code = codes[i];
             if (code >= 0 && code < seen.length && seen[code] === 0) {
               seen[code] = 1;
               held += heldBytesOf(values[code]);
+              fresh?.push(code);
             }
           }
-          return { codes, symbols: values };
+          return fresh ? { codes, symbols: values, fresh } : { codes, symbols: values };
         });
         // A page may be taken a slice at a time: the arrays are reused for the next
         yield { columns, offset };

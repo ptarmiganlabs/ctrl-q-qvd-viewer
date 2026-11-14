@@ -356,6 +356,29 @@ suite("Export Source Test Suite", function () {
     }
   });
 
+  test("A QVD that can't be read fails its export as a read, and leaves no file", async () => {
+    const whole = fs.readFileSync(path.join(testData, "lego/sets.qvd"));
+    const broken = path.join(dir, "broken.qvd");
+    fs.writeFileSync(broken, whole.subarray(0, Math.floor(whole.length * 0.7)));
+    const target = path.join(dir, "broken.csv");
+    let error = null;
+    try {
+      const source = await exportSource.openQvdSource(broken);
+      try {
+        await exporters.csv(source, target);
+      } finally {
+        await source.close();
+      }
+    } catch (caught) {
+      error = caught;
+    }
+    assert.ok(error, "the export fails");
+    const read = exportSource.readFailureOf(error);
+    assert.ok(read, error.message);
+    assert.match(read.message, /^Failed to read QVD for export: /);
+    assert.ok(!fs.existsSync(target));
+  });
+
   test("A file rewritten during an export stops it, and leaves nothing behind", async () => {
     const copy = path.join(dir, "changing.qvd");
     fs.copyFileSync(crafted, copy);

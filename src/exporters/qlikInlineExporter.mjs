@@ -1,4 +1,4 @@
-import { nextTurn, rowsPerChunk } from "../memoryGuard.mjs";
+import { rowsPerChunk } from "../memoryGuard.mjs";
 import { writeChunks, writeFileAtomically } from "./atomicWrite.mjs";
 import { sourceOf } from "../exportSource.mjs";
 
@@ -25,7 +25,6 @@ export const memoryCost = {
   bytesPerTextChar: 11,
   chunkRows: CHUNK_ROWS,
   chunkCells: CHUNK_CELLS,
-  writesAsItGoes: true,
 };
 
 /**
@@ -66,12 +65,12 @@ function inlineField(text, char) {
 
 /**
  * Auto-detect the best delimiter for the data
- * Every value is looked at, so this yields to the event loop as it goes.
+ * Every cell of text counts, as the source sums them: from a QVD, each distinct value
+ * once, times the rows it is in.
  * @param {import("../exportSource.mjs").ExportSource} source - The rows to export
- * @param {number} chunkRows - Rows looked at between yields to the event loop
  * @returns {Promise<Object>} Delimiter object with char and escapeChar
  */
-async function autoDetectDelimiter(source, chunkRows) {
+async function autoDetectDelimiter(source) {
   const delimiters = [
     { name: "tab", char: "\t", escapeChar: "\\t", priority: 1 },
     { name: "pipe", char: "|", escapeChar: "|", priority: 2 },
@@ -80,22 +79,14 @@ async function autoDetectDelimiter(source, chunkRows) {
   ];
 
   // Count occurrences of each delimiter in the data
-  const counts = delimiters.map((d) => ({
+  const sums = await source.sumOverText(
+    (text) => delimiters.map((d) => occurrences(text, d.char)),
+    delimiters.length
+  );
+  const counts = delimiters.map((d, index) => ({
     ...d,
-    count: 0,
+    count: sums[index],
   }));
-  for await (const rows of source.chunks(chunkRows)) {
-    for (const row of rows) {
-      for (const value of Object.values(row)) {
-        if (typeof value === "string") {
-          for (const d of counts) {
-            d.count += occurrences(value, d.char);
-          }
-        }
-      }
-    }
-    await nextTurn();
-  }
 
   // Find delimiter with lowest occurrence (best option)
   // If tied, use priority (tab > pipe > semicolon > comma)
@@ -113,10 +104,9 @@ async function autoDetectDelimiter(source, chunkRows) {
  * Get delimiter configuration
  * @param {string} delimiterChoice - User's delimiter choice
  * @param {import("../exportSource.mjs").ExportSource} source - The rows to export (for auto-detect)
- * @param {number} chunkRows - Rows auto-detect looks at between yields to the event loop
  * @returns {Promise<Object>} Delimiter object with char and escapeChar
  */
-async function getDelimiterConfig(delimiterChoice, source, chunkRows) {
+async function getDelimiterConfig(delimiterChoice, source) {
   const delimiters = {
     tab: { char: "\t", escapeChar: "\\t", description: "Tab" },
     pipe: { char: "|", escapeChar: "|", description: "Pipe (|)" },
@@ -125,7 +115,7 @@ async function getDelimiterConfig(delimiterChoice, source, chunkRows) {
   };
 
   if (delimiterChoice === "auto-detect") {
-    return autoDetectDelimiter(source, chunkRows);
+    return autoDetectDelimiter(source);
   }
 
   return delimiters[delimiterChoice] || delimiters.tab;
@@ -164,7 +154,7 @@ export async function exportToQlikInline(
     const columns = exportData.columns;
     const chunkRows = rowsPerChunk(memoryCost, columns.length, rowsOption);
 
-    const delimiterConfig = await getDelimiterConfig(delimiter, exportData, chunkRows);
+    const delimiterConfig = await getDelimiterConfig(delimiter, exportData);
     const delimiterInValue = delimiterPattern(delimiterConfig.char);
 
     // Build the inline load script

@@ -160,7 +160,7 @@ suite("Memory Guard Test Suite", () => {
     const sqliteCost = DataExporter.memoryCost("sqlite");
     assert.ok(sqliteCost.bytesPerCell >= 0.4 * 1.5);
     assert.ok(sqliteCost.bytesPerTextChar >= 0.1 * 2);
-    assert.ok(sqliteCost.chunkRows > 0 && sqliteCost.chunkCells > 0 && sqliteCost.writesAsItGoes);
+    assert.ok(sqliteCost.chunkRows > 0 && sqliteCost.chunkCells > 0);
   });
 
   test("Every export format's exporter declares what it costs", () => {
@@ -176,10 +176,10 @@ suite("Memory Guard Test Suite", () => {
         assert.ok(Number.isInteger(cost.chunkCells) && cost.chunkCells > 0 && cost.chunkRows > 0, name);
       }
     }
-    // Every format takes its rows a chunk at a time, and writes them as it goes
+    // Every format takes its rows a chunk at a time
     for (const { name } of DataExporter.getExportFormats()) {
       const cost = DataExporter.memoryCost(name);
-      assert.ok(cost.writesAsItGoes && cost.chunkRows > 0, name);
+      assert.ok(cost.chunkRows > 0, name);
     }
   });
 

@@ -20,7 +20,6 @@ export const memoryCost = {
   bytesPerCell: 168,
   bytesPerTextChar: 4,
   chunkRows: CHUNK_ROWS,
-  writesAsItGoes: true,
 };
 
 // Text that Excel, LibreOffice and Google Sheets would run as a formula: = or @

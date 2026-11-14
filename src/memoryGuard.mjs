@@ -244,7 +244,6 @@ export function heldTextBytes(fields, rows, shares) {
  * @property {number} [chunkRows] - Rows it builds from at a time, so that only its largest chunk is priced
  * @property {number} [chunkCells] - Cells it builds from at a time, at most, so that a chunk of a QVD
  *   with many fields has fewer rows
- * @property {boolean} [writesAsItGoes] - Whether it writes as it goes, and so needs little
  * @property {function(Object<string, object>, Array<string>): Array<string>} [dictionaryColumns] -
  *   The columns, of these types, whose distinct values it holds from before its first
  *   chunk to the end, as a dictionary of them

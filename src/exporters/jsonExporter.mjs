@@ -30,7 +30,6 @@ export const memoryCost = {
   bytesPerTextChar: 5,
   chunkRows: CHUNK_ROWS,
   chunkCells: CHUNK_CELLS,
-  writesAsItGoes: true,
 };
 
 /**

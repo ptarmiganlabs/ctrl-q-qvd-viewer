@@ -39,6 +39,9 @@ import { fileVersion, headerOf } from "./qvdReader.mjs";
  *   The rows, chunkRows at a time, the last chunk with what is left; keys: the only
  *   columns an exporter looks at, which a source may leave the others out of
  * @property {function(number): ExportSource} first - A source of the first rows alone
+ * @property {function(function(string): Array<number>, number): Promise<Array<number>>} sumOverText -
+ *   What a measure of text gives, summed over every cell of text: measure(text) gives
+ *   size numbers, and the sum is of each
  */
 
 /**
@@ -91,6 +94,23 @@ export function arraySource(rows) {
     first(count) {
       return count >= rows.length ? this : arraySource(rows.slice(0, count));
     },
+    async sumOverText(measure, size) {
+      const sums = new Array(size).fill(0);
+      const rowsPerYield = Math.max(1, Math.floor(CELLS_PER_YIELD / Math.max(1, columns.length)));
+      for (let i = 0; i < rows.length; i++) {
+        for (const value of Object.values(rows[i])) {
+          if (typeof value === "string") {
+            measure(value).forEach((count, d) => {
+              sums[d] += count;
+            });
+          }
+        }
+        if ((i + 1) % rowsPerYield === 0) {
+          await nextTurn();
+        }
+      }
+      return sums;
+    },
   };
 }
 
@@ -111,6 +131,35 @@ export function changedWhileExported() {
   return Object.assign(new Error("The QVD file changed while it was exported. Export it again."), {
     name: "QvdChangedError",
   });
+}
+
+/**
+ * What reading the QVD for an export throws when the file can't be read, as such
+ * @param {Error} error - What reading it threw
+ * @returns {Error} The error, said to be the read's; one that gives the export up, or
+ *   tells of the file changing, as it was
+ */
+function readFailure(error) {
+  if (error?.name === "AbortError" || error?.name === "QvdChangedError") {
+    return error;
+  }
+  return Object.assign(new Error(`Failed to read QVD for export: ${error?.message ?? error}`, { cause: error }), {
+    readFailure: true,
+  });
+}
+
+/**
+ * The read failure an export's error comes of, if it does
+ * @param {*} error - What the export threw
+ * @returns {Error|null} The read's error, as readFailure() makes it, or null
+ */
+export function readFailureOf(error) {
+  for (let cause = error; cause; cause = cause.cause) {
+    if (cause.readFailure) {
+      return cause;
+    }
+  }
+  return null;
 }
 
 /**
@@ -167,7 +216,9 @@ export async function openQvdSource(
   // directory it may read, so that directory is the real path's
   const realFilePath = await realpath(filePath).catch(() => filePath);
   const allowedDir = dirname(realFilePath);
-  const header = await headerOf(filePath, realFilePath, allowedDir, signal);
+  const header = await headerOf(filePath, realFilePath, allowedDir, signal).catch((error) => {
+    throw readFailure(error);
+  });
   const fieldsByName = new Map(header.fields.map((field) => [field.name, field]));
   // The fields in the order the rows hold them, as qvdjs names its columns
   const fields = header.view.columns.map((name) => {
@@ -176,6 +227,32 @@ export async function openQvdSource(
   });
   const keys = Object.keys(Object.fromEntries(fields.map(({ name }) => [name, null])));
   const scanner = openColumnScanner({ filePath, allowedDir, heldBytes });
+
+  /**
+   * The scanner's pages, a failure to read them said to be the read's: what the loop
+   * over them throws stays as it is
+   * @param {object} options - As the scanner's pages() takes them
+   * @returns {AsyncGenerator<object>} The pages
+   */
+  async function* readPages(options) {
+    const pages = scanner.pages(options);
+    try {
+      for (;;) {
+        let step;
+        try {
+          step = await pages.next();
+        } catch (error) {
+          throw readFailure(error);
+        }
+        if (step.done) {
+          return;
+        }
+        yield step.value;
+      }
+    } finally {
+      await pages.return();
+    }
+  }
 
   const unchanged = async () => {
     if (header.key && (await fileVersion(realFilePath)) !== header.key) {
@@ -207,30 +284,31 @@ export async function openQvdSource(
         const asDates = fields.map(() => emptyColumnType());
         const dateColumns = fields.map(({ tags }) => dateColumnOf(tags));
         const datesSeen = fields.map(() => emptyColumnType());
-        const seen = fields.map(({ symbols }) => new Uint8Array(Math.max(0, symbols)));
         const nulls = fields.map(() => false);
         onProgress?.({ pass: "census", rows: 0, totalRows: length });
-        for await (const { columns, offset } of scanner.pages({
+        // Each distinct value is taken at its first sight in the open file: one the file
+        // opened afresh shows again is taken again, which changes nothing
+        for await (const { columns, offset } of readPages({
           fields,
           to: length,
           chunkRows: rowsOf,
           signal,
           beforeOpen: unchanged,
+          freshCodes: true,
         })) {
           for (let f = 0; f < fields.length; f++) {
-            const { codes, symbols } = columns[f];
-            const fieldSeen = seen[f];
+            const { codes, symbols, fresh } = columns[f];
             const dateColumn = dateColumns[f];
-            for (let i = 0; i < codes.length; i++) {
-              const code = codes[i];
-              if (code < 0 || code >= fieldSeen.length) {
-                nulls[f] = true;
-                continue;
+            if (!nulls[f]) {
+              const count = fields[f].symbols;
+              for (let i = 0; i < codes.length; i++) {
+                if (codes[i] < 0 || codes[i] >= count) {
+                  nulls[f] = true;
+                  break;
+                }
               }
-              if (fieldSeen[code] === 1) {
-                continue;
-              }
-              fieldSeen[code] = 1;
+            }
+            for (const code of fresh) {
               const value = symbols[code];
               const shown = shownCell(value);
               takeColumnValue(asShown[f], shown);
@@ -303,6 +381,8 @@ export async function openQvdSource(
           .filter(({ name }) => !wanted || wanted.includes(name));
         const names = picked.map(({ name }) => name);
         const cells = picked.map(({ cell }) => cell);
+        // A code past a field's distinct values is a null, as the census takes it
+        const counts = picked.map(({ symbols }) => symbols);
         let chunk = [];
         let chars = 0;
         const done = async () => {
@@ -313,7 +393,7 @@ export async function openQvdSource(
           return rowsOfChunk;
         };
         onProgress?.({ pass: "rows", rows: 0, totalRows: length });
-        for await (const { columns, offset } of scanner.pages({
+        for await (const { columns, offset } of readPages({
           fields: picked,
           to: length,
           chunkRows: rowsOf,
@@ -326,7 +406,7 @@ export async function openQvdSource(
             for (let f = 0; f < names.length; f++) {
               const { codes, symbols } = columns[f];
               const code = codes[i];
-              const cell = code < 0 ? null : cells[f](symbols[code]);
+              const cell = code < 0 || code >= counts[f] ? null : cells[f](symbols[code]);
               if (typeof cell === "string") {
                 chars += cell.length;
               }
@@ -346,6 +426,52 @@ export async function openQvdSource(
       },
       first(rowCount) {
         return rowCount >= length ? this : sourceOfRows(rowCount);
+      },
+      // From each distinct value once, times the rows it is in, rather than from row
+      // objects: a value's measure is worked out at its first sight in the open file,
+      // and only a value it gives anything for is measured again after
+      async sumOverText(measure, size) {
+        // Each cell as chunks() makes it: the census comes first, in a turn of its own
+        const dateKinds = dates ? (await censusOf()).kinds : fields.map(() => null);
+        const cellsOf = dateKinds.map(cellMaker);
+        return exclusive(async () => {
+          const sums = new Array(size).fill(0);
+          // Each field's values: 1 once measured and found to give nothing, 2 to give something
+          const kinds = fields.map(({ symbols }) => new Uint8Array(Math.max(0, symbols)));
+          onProgress?.({ pass: "census", rows: 0, totalRows: length });
+          for await (const { columns, offset } of readPages({
+            fields,
+            to: length,
+            chunkRows: rowsOf,
+            signal,
+            beforeOpen: unchanged,
+          })) {
+            for (let f = 0; f < fields.length; f++) {
+              const { codes, symbols } = columns[f];
+              const kind = kinds[f];
+              const cellOf = cellsOf[f];
+              for (let i = 0; i < codes.length; i++) {
+                const code = codes[i];
+                if (code < 0 || code >= kind.length || kind[code] === 1) {
+                  continue;
+                }
+                const cell = cellOf(symbols[code]);
+                const counts = typeof cell === "string" ? measure(cell) : null;
+                if (!counts || counts.every((count) => count === 0)) {
+                  kind[code] = 1;
+                  continue;
+                }
+                kind[code] = 2;
+                counts.forEach((count, d) => {
+                  sums[d] += count;
+                });
+              }
+            }
+            onProgress?.({ pass: "census", rows: offset + (columns[0]?.codes.length ?? 0), totalRows: length });
+          }
+          await unchanged();
+          return sums;
+        });
       },
       close: () => scanner.close(),
     };
