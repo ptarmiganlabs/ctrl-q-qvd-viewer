@@ -247,14 +247,32 @@ function assertStrictCsp(html) {
  * @returns {object} The page
  */
 function fakePage() {
-  const page = { written: [], untagged: [], created: [], tables: [], posted: [], listeners: {}, elements: new Map() };
+  const page = {
+    written: [],
+    untagged: [],
+    created: [],
+    tables: [],
+    posted: [],
+    listeners: {},
+    elements: new Map(),
+    // What document.querySelectorAll() finds, by selector: nothing unless a test says
+    queries: new Map(),
+  };
   const element = (tagName = "div") => {
     let html = "";
+    const classes = new Set();
     const el = {
       tagName: tagName.toUpperCase(),
       style: {},
       dataset: {},
-      classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+      // An element's own listeners, by type, for a test to click it
+      listeners: {},
+      classList: {
+        add: (name) => classes.add(name),
+        remove: (name) => classes.delete(name),
+        toggle: (name) => (classes.has(name) ? classes.delete(name) : classes.add(name)),
+        contains: (name) => classes.has(name),
+      },
       children: [],
       textContent: "",
       value: "",
@@ -268,7 +286,9 @@ function fakePage() {
       replaceChildren(...children) {
         this.children = children;
       },
-      addEventListener() {},
+      addEventListener(type, listener) {
+        (this.listeners[type] ??= []).push(listener);
+      },
       querySelector: () => element(),
       querySelectorAll: () => [],
       getContext: () => ({}),
@@ -299,7 +319,7 @@ function fakePage() {
     },
     createElement: element,
     createTextNode: (data) => ({ nodeType: 3, data }),
-    querySelectorAll: () => [],
+    querySelectorAll: (selector) => page.queries.get(selector) ?? [],
     addEventListener() {},
   };
   const context = vm.createContext({
@@ -337,6 +357,11 @@ function fakePage() {
     }
   };
   page.dispatch = (type, event = {}) => (page.listeners[type] ?? []).forEach((listener) => listener(event));
+  // An element by its id, as the page's script gets it
+  page.byId = (id) => document.getElementById(id);
+  // A click on an element, as its own listeners take it
+  page.click = (target) =>
+    (target.listeners?.click ?? []).forEach((listener) => listener.call(target, { stopPropagation() {} }));
   // A value of the page's script, as it reads it
   page.read = (name) => JSON.parse(vm.runInContext(`JSON.stringify(${name})`, context));
   return page;
@@ -815,5 +840,63 @@ suite("Page Escaping Test Suite", () => {
         await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor");
       }
     }
+  });
+
+  test("The editor page greys out Export and Run Profiling while a job runs, and says profiling was cancelled", async () => {
+    const { html: pageHtml } = await openPage(crafted);
+    const page = fakePage();
+    // A field ticked to profile, and the CSV item of the Export menu
+    page.queries.set('input[name="field-checkbox"]:checked', [{ value: "Id" }]);
+    const csvItem = {
+      listeners: {},
+      getAttribute: (name) => (name === "data-format" ? "csv" : null),
+      addEventListener(type, listener) {
+        (this.listeners[type] ??= []).push(listener);
+      },
+    };
+    page.queries.set(".export-dropdown-item", [csvItem]);
+    page.load(pageHtml);
+    page.dispatch("DOMContentLoaded");
+    const byId = page.byId;
+    // What the page posted, as plain objects: its own are of its script's realm
+    const postedAs = (message) => JSON.parse(JSON.stringify(message));
+    const exportButton = byId("export-btn");
+    const profileButton = byId("run-profiling-btn");
+    const buttons = () => [exportButton, profileButton].map(({ disabled, title }) => ({ disabled: Boolean(disabled), title }));
+    // It asks, once loaded, whether a job runs
+    assert.deepStrictEqual(
+      postedAs(page.posted.filter((message) => message.command === "jobState")),
+      [{ command: "jobState" }]
+    );
+
+    // A job that runs greys both out, says why, and closes the Export menu
+    byId("export-dropdown").classList.add("show");
+    const text = "An export of this file is still running";
+    page.dispatch("message", { data: { command: "jobState", busy: "export", text } });
+    assert.deepStrictEqual(buttons(), [
+      { disabled: true, title: text },
+      { disabled: true, title: text },
+    ]);
+    assert.ok(!byId("export-dropdown").classList.contains("show"), "The Export menu is closed");
+    page.dispatch("message", { data: { command: "jobState", busy: null, text: "" } });
+    assert.deepStrictEqual(buttons(), [
+      { disabled: false, title: "" },
+      { disabled: false, title: "" },
+    ]);
+
+    // A click greys both out at once, before the extension says the job runs
+    page.click(profileButton);
+    assert.deepStrictEqual(postedAs(page.posted.at(-1)), {
+      command: "profileFields",
+      fieldNames: ["Id"],
+      maxUniqueValues: 1000,
+    });
+    assert.deepStrictEqual(buttons().map(({ disabled }) => disabled), [true, true]);
+    page.dispatch("message", { data: { command: "profilingCancelled" } });
+    assert.strictEqual(byId("profiling-status").textContent, "Profiling cancelled.");
+    page.dispatch("message", { data: { command: "jobState", busy: null, text: "" } });
+    page.click(csvItem);
+    assert.deepStrictEqual(postedAs(page.posted.at(-1)), { command: "exportData", format: "csv" });
+    assert.deepStrictEqual(buttons().map(({ disabled }) => disabled), [true, true]);
   });
 });

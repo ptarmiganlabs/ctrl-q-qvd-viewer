@@ -10,7 +10,13 @@ import { markdownText } from "./templates/escaping.mjs";
 import { describeReadRefusal } from "../memoryGuard.mjs";
 import { runExport } from "../exportRun.mjs";
 import { readFailureOf } from "../exportSource.mjs";
-import { createJobSlot, describeExportProgress, describeProfileProgress, withJobProgress } from "../editorJobs.mjs";
+import {
+  createJobSlot,
+  describeExportProgress,
+  describeProfileProgress,
+  describeRunningJob,
+  withJobProgress,
+} from "../editorJobs.mjs";
 import logger from "../logger.mjs";
 
 /**
@@ -68,7 +74,10 @@ export function setupMessageHandler(
       return;
     }
     try {
-      Promise.resolve(webviewPanel.webview.postMessage?.({ command: "jobState", busy: jobs.busy() })).catch(() => {});
+      const busy = jobs.busy();
+      Promise.resolve(
+        webviewPanel.webview.postMessage?.({ command: "jobState", busy, text: describeRunningJob(busy) })
+      ).catch(() => {});
     } catch {
       // The editor's page is gone: there is nothing to tell
     }
@@ -85,8 +94,7 @@ export function setupMessageHandler(
     };
   };
   const stillRunning = () =>
-    `${jobs.busy() === "export" ? "An export" : "Profiling"} of this file is still running. ` +
-    "Wait for it to finish, or cancel it, before you start another.";
+    `${describeRunningJob(jobs.busy())}. Wait for it to finish, or cancel it, before you start another.`;
   const progressOf = (title) => ({
     window: vscode.window,
     location: vscode.ProgressLocation.Notification,
@@ -251,7 +259,8 @@ export function setupMessageHandler(
                 },
                 warn: (message) => logger.warn(message),
                 // A pass's start shows at once, so the notification says which pass it is in
-                onProgress: (progress) => report(describeExportProgress(progress), progress.rows === 0),
+                // Its text is made only when it shows: most chunks' are dropped by the throttle
+                onProgress: (progress) => report(() => describeExportProgress(progress), progress.rows === 0),
               })
           );
           if (job.cancelled) {
@@ -327,7 +336,7 @@ export function setupMessageHandler(
                 profileFile(filePath, fieldNames, {
                   maxUniqueValues: message.maxUniqueValues || 1000,
                   signal: jobSignal,
-                  onProgress: (progress) => report(describeProfileProgress(progress), progress.rows === 0),
+                  onProgress: (progress) => report(() => describeProfileProgress(progress), progress.rows === 0),
                 }),
               { signal: jobSignal }
             );

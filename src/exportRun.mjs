@@ -134,7 +134,8 @@ export function exportOutsideBytesOf(fields) {
  *   As DataExporter.exportData() takes it
  * @param {function(string): void} [options.warn] - As DataExporter.exportData() takes it
  * @param {function({pass: string, rows: number, totalRows: number}): void} [options.onProgress] -
- *   Told the rows read so far, as openQvdSource() tells it
+ *   Told "start" once the questions are answered, before the export waits for its turn,
+ *   then the rows read so far, as openQvdSource() tells it
  * @param {number} [options.heldBytes] - What the reader's open file may hold, for a test
  * @param {number} [options.pageRows] - Rows a page of the reader holds, for a test
  * @returns {Promise<string|null>} The file written, or null when the user cancelled
@@ -181,31 +182,44 @@ export async function runExport({
     }
   };
 
+  // Told once its questions are answered, before it first waits for its turn to read,
+  // so that an export waiting for another large read says so, and can be cancelled
+  let started = false;
+  const starting = () => {
+    if (!started) {
+      started = true;
+      onProgress?.({ pass: "start", rows: 0, totalRows: source.length });
+    }
+  };
+
   // The lane is held from the booking to the end of the export. The census before it,
   // which may wait on the time zone question, takes a turn of its own, with what the
   // reader holds booked for it and memory outside the heap checked first
   let letLaneGo = null;
-  const exclusive = (work) =>
-    letLaneGo
-      ? work()
-      : lane.run(
-          async () => {
-            await checkOutsideHeap(source.length);
-            const bytes = scanBytesFor(source.header.fields, source.length);
-            const booked = tryBookHeap(bytes);
-            if (!booked.release) {
-              throw new Error(describeExportRefusal(label, source.length, bytes, booked.leftBytes));
-            }
-            try {
-              return await work();
-            } finally {
-              // What the open file holds is let go with its booking: the export opens it again
-              await source.close().catch(() => {});
-              booked.release();
-            }
-          },
-          { signal }
-        );
+  const exclusive = (work) => {
+    if (letLaneGo) {
+      return work();
+    }
+    starting();
+    return lane.run(
+      async () => {
+        await checkOutsideHeap(source.length);
+        const bytes = scanBytesFor(source.header.fields, source.length);
+        const booked = tryBookHeap(bytes);
+        if (!booked.release) {
+          throw new Error(describeExportRefusal(label, source.length, bytes, booked.leftBytes));
+        }
+        try {
+          return await work();
+        } finally {
+          // What the open file holds is let go with its booking: the export opens it again
+          await source.close().catch(() => {});
+          booked.release();
+        }
+      },
+      { signal }
+    );
+  };
 
   // What is booked so far, and what more a chunk needs
   let booking = null;
@@ -257,6 +271,7 @@ export async function runExport({
       source.fields,
       {
         reserve: async (rowsSource, limit) => {
+          starting();
           letLaneGo = await holdLane(lane, signal);
           try {
             const exported = limit > 0 ? rowsSource.first(limit) : rowsSource;

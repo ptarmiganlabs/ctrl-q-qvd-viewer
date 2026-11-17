@@ -2043,6 +2043,9 @@ export function getHtmlForWebview(header, webview, context) {
         }
         
         function exportData(format) {
+            // Greyed out at once, before the extension says the job runs, so a second
+            // click can't send another
+            showJobState('export', '');
             vscode.postMessage({ 
                 command: 'exportData',
                 format: format
@@ -2091,6 +2094,9 @@ export function getHtmlForWebview(header, webview, context) {
             }
             
             showProfilingStatus('⏳ Reading the selected fields and computing value distributions...', 'info');
+            // Greyed out at once, before the extension says the job runs, so a second
+            // click can't send another and have its refusal replace this status
+            showJobState('profile', '');
             
             // Send message to extension to compute profiling
             vscode.postMessage({
@@ -3250,21 +3256,19 @@ export function getHtmlForWebview(header, webview, context) {
                     showProfilingStatus('Profiling cancelled.', 'info');
                     break;
                 case 'jobState':
-                    showJobState(message.busy);
+                    showJobState(message.busy, message.text);
                     break;
             }
         });
 
-        // An export or profiling run that is still going: its buttons wait for it to end
-        function showJobState(busy) {
-            const title = busy === 'export'
-                ? 'An export of this file is running'
-                : busy === 'profile' ? 'Profiling of this file is running' : '';
+        // An export or profiling run that is still going: its buttons wait for it to end,
+        // and say why with the extension's text
+        function showJobState(busy, text) {
             ['export-btn', 'run-profiling-btn'].forEach(id => {
                 const button = document.getElementById(id);
                 if (button) {
                     button.disabled = Boolean(busy);
-                    button.title = title;
+                    button.title = busy ? (text || '') : '';
                 }
             });
             if (busy) {

@@ -10,25 +10,29 @@ let createJobSlot;
 let withJobProgress;
 let describeExportProgress;
 let describeProfileProgress;
+let describeRunningJob;
+let readLanes;
 
 const testData = path.join(__dirname, "..", "test-data");
 
 /**
  * A window whose notifications are recorded, and whose Cancel is pressed when asked
  * @param {function(string): boolean} [cancelAt] - Presses Cancel once a report says this
- * @returns {{window: {withProgress: Function}, titles: Array<string>, reports: Array<string>}}
+ * @returns {{window: {withProgress: Function}, titles: Array<string>, reports: Array<string>, cancel: function(): void}}
+ *   cancel() presses the Cancel of the notification showing
  */
 function progressWindow(cancelAt = () => false) {
   const titles = [];
   const reports = [];
+  let cancel = () => {};
   return {
     titles,
     reports,
+    cancel: () => cancel(),
     window: {
       withProgress: (options, task) => {
         assert.strictEqual(options.cancellable, true, "A job's notification can be cancelled");
         titles.push(options.title);
-        let cancel = () => {};
         const token = {
           onCancellationRequested: (listener) => {
             cancel = listener;
@@ -125,9 +129,9 @@ suite("Editor Jobs Test Suite", () => {
   suiteSetup(async () => {
     ({ setupMessageHandler } = await import("../src/webview/messageHandler.mjs"));
     ({ default: QvdReader } = await import("../src/qvdReader.mjs"));
-    ({ createJobSlot, withJobProgress, describeExportProgress, describeProfileProgress } = await import(
-      "../src/editorJobs.mjs"
-    ));
+    ({ readLanes } = await import("../src/qvdReader.mjs"));
+    ({ createJobSlot, withJobProgress, describeExportProgress, describeProfileProgress, describeRunningJob } =
+      await import("../src/editorJobs.mjs"));
   });
 
   test("Progress says which pass it is in, and how many rows it has read", () => {
@@ -140,9 +144,40 @@ suite("Editor Jobs Test Suite", () => {
       "Writing 3,400,000 of 46,900,000 rows"
     );
     assert.strictEqual(
-      describeProfileProgress({ field: "Amount", fieldIndex: 1, fields: 3, pass: 2, rows: 1e7, totalRows: 46900000 }),
-      "Profiling Amount (2 of 3): pass 2, 10,000,000 of 46,900,000 rows"
+      describeExportProgress({ pass: "delimiters", rows: 5000, totalRows: 11673 }),
+      "Counting delimiters: 5,000 of 11,673 rows"
     );
+    assert.strictEqual(describeExportProgress({ pass: "start", rows: 0, totalRows: 11673 }), "Starting…");
+    // A pass that may not be the last says so, until the passes before it have shown it
+    const amount = { field: "Amount", fieldIndex: 1, fields: 3, rows: 1e7, totalRows: 46900000 };
+    assert.strictEqual(
+      describeProfileProgress({ ...amount, pass: 2, passes: 3 }),
+      "Profiling Amount (2 of 3): pass 2 of up to 3, 10,000,000 of 46,900,000 rows"
+    );
+    assert.strictEqual(
+      describeProfileProgress({ ...amount, pass: 2, passes: 2 }),
+      "Profiling Amount (2 of 3): pass 2 of 2, 10,000,000 of 46,900,000 rows"
+    );
+    assert.strictEqual(describeRunningJob("export"), "An export of this file is still running");
+    assert.strictEqual(describeRunningJob("profile"), "Profiling of this file is still running");
+    assert.strictEqual(describeRunningJob(null), "");
+  });
+
+  test("A job's message may be made only when it shows", async () => {
+    const { window, reports } = progressWindow();
+    let made = 0;
+    const make = (text) => () => {
+      made++;
+      return text;
+    };
+    await withJobProgress({ window, location: 15, title: "Job" }, async ({ report }) => {
+      for (let i = 0; i < 1000; i++) {
+        report(make(`step ${i}`));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    });
+    assert.deepStrictEqual(reports, ["step 0", "step 999"]);
+    assert.strictEqual(made, 2, "Only the messages that showed were made");
   });
 
   test("A slot holds one job at a time, and a release lets it go once", () => {
@@ -208,7 +243,9 @@ suite("Editor Jobs Test Suite", () => {
           assert.deepStrictEqual(errors, []);
           assert.ok(fs.existsSync(target), `The ${format} export is written`);
           assert.deepStrictEqual(progress.titles, [`Exporting sets.qvd to ${format === "csv" ? "CSV" : "Parquet"}`]);
-          assert.match(progress.reports[0], first);
+          // Started once its questions are answered, then in its first pass
+          assert.strictEqual(progress.reports[0], "Starting…");
+          assert.match(progress.reports[1], first);
           // The page's buttons were busy for the export, and are free again
           const states = posted.filter((message) => message.command === "jobState").map((message) => message.busy);
           assert.deepStrictEqual(states, ["export", null]);
@@ -281,12 +318,16 @@ suite("Editor Jobs Test Suite", () => {
         ]);
         // The page that loads again while the export runs is told so
         await send({ command: "jobState" });
-        assert.deepStrictEqual(posted.at(-1), { command: "jobState", busy: "export" });
+        assert.deepStrictEqual(posted.at(-1), {
+          command: "jobState",
+          busy: "export",
+          text: "An export of this file is still running",
+        });
 
         // Its save dialog cancelled, the export ends, and profiling may run
         answer(undefined);
         await first;
-        assert.deepStrictEqual(posted.at(-1), { command: "jobState", busy: null });
+        assert.deepStrictEqual(posted.at(-1), { command: "jobState", busy: null, text: "" });
         await send({ command: "profileFields", fieldNames: ["name"] });
         const results = posted.find((message) => message.command === "profilingResults");
         assert.ok(results, "Profiling runs once the export is done");
@@ -306,9 +347,41 @@ suite("Editor Jobs Test Suite", () => {
           assert.strictEqual(progress.reports[0], "Starting…");
           assert.ok(posted.some((message) => message.command === "profilingCancelled"));
           assert.ok(!posted.some((message) => message.command === "profilingResults"));
-          assert.deepStrictEqual(posted.at(-1), { command: "jobState", busy: null });
+          assert.deepStrictEqual(posted.at(-1), { command: "jobState", busy: null, text: "" });
         }
       );
+    });
+  });
+
+  test("An export waiting for another large read shows that it has started, and can be cancelled", async () => {
+    const vscode = await import("vscode");
+    await withCopy(async (qvdPath) => {
+      const dir = path.dirname(qvdPath);
+      const target = path.join(dir, "sets.csv");
+      // Another editor's large read holds the lane
+      let letGo;
+      const held = readLanes.large.run(
+        () =>
+          new Promise((resolve) => {
+            letGo = resolve;
+          })
+      );
+      try {
+        await withHandler(qvdPath, { save: async () => vscode.Uri.file(target) }, async ({ send, infos, progress }) => {
+          const exported = send({ command: "exportData", format: "csv" });
+          for (let turn = 0; turn < 100 && progress.reports.length === 0; turn++) {
+            await new Promise((resolve) => setImmediate(resolve));
+          }
+          assert.deepStrictEqual(progress.reports, ["Starting…"], "It shows while it waits");
+          progress.cancel();
+          await exported;
+          assert.deepStrictEqual(infos, ["Export cancelled. No file was written or changed."]);
+        });
+      } finally {
+        letGo();
+        await held;
+      }
+      assert.deepStrictEqual(filesIn(dir), ["sets.qvd"]);
     });
   });
 });

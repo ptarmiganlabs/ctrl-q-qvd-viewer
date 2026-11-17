@@ -13,27 +13,53 @@
 // Updates a notification takes at most, a second
 const UPDATES_PER_SECOND = 10;
 
+// What each pass of an export says it is doing, before the rows it has read
+const EXPORT_PASSES = {
+  census: "Reading field types: ",
+  delimiters: "Counting delimiters: ",
+  rows: "Writing ",
+};
+
 /**
  * What an export's progress says
- * @param {{pass: string, rows: number, totalRows: number}} progress - As openQvdSource() tells it
+ * @param {{pass: string, rows: number, totalRows: number}} progress - As runExport() tells
+ *   it: "start" once its questions are answered, before it waits for its turn to read,
+ *   then "census", "delimiters" or "rows" with the rows read in that pass
  * @returns {string} Such as "Writing 3,400,000 of 46,900,000 rows"
  */
 export function describeExportProgress({ pass, rows, totalRows }) {
+  if (pass === "start") {
+    return "Starting…";
+  }
   const counted = `${rows.toLocaleString("en-US")} of ${totalRows.toLocaleString("en-US")} rows`;
-  return pass === "census" ? `Reading field types: ${counted}` : `Writing ${counted}`;
+  return `${EXPORT_PASSES[pass] ?? EXPORT_PASSES.rows}${counted}`;
 }
 
 /**
  * What profiling's progress says
- * @param {{field: string, fieldIndex: number, fields: number, pass: number, rows: number, totalRows: number}} progress -
- *   As profileFile() tells it
- * @returns {string} Such as "Profiling Amount (2 of 3): pass 2, 10,000,000 of 46,900,000 rows"
+ * @param {{field: string, fieldIndex: number, fields: number, pass: number, passes: number, rows: number, totalRows: number}} progress -
+ *   As profileFile() tells it, passes being the most the field may take
+ * @returns {string} Such as "Profiling Amount (2 of 3): pass 2 of up to 3, 10,000,000 of 46,900,000 rows"
  */
-export function describeProfileProgress({ field, fieldIndex, fields, pass, rows, totalRows }) {
+export function describeProfileProgress({ field, fieldIndex, fields, pass, passes, rows, totalRows }) {
+  // A later pass may not be needed, which only the passes before it show
+  const of = passes > pass ? ` of up to ${passes}` : passes ? ` of ${passes}` : "";
   return (
-    `Profiling ${field} (${fieldIndex + 1} of ${fields}): pass ${pass}, ` +
+    `Profiling ${field} (${fieldIndex + 1} of ${fields}): pass ${pass}${of}, ` +
     `${rows.toLocaleString("en-US")} of ${totalRows.toLocaleString("en-US")} rows`
   );
+}
+
+/**
+ * What an editor's page and refusals say of the job it is running
+ * @param {string|null} kind - "export" or "profile", or null when none runs
+ * @returns {string} Such as "An export of this file is still running", or "" for none
+ */
+export function describeRunningJob(kind) {
+  if (!kind) {
+    return "";
+  }
+  return `${kind === "export" ? "An export" : "Profiling"} of this file is still running`;
 }
 
 /**
@@ -71,9 +97,10 @@ export function createJobSlot() {
  * @param {*} options.location - Where the notification shows: ProgressLocation.Notification
  * @param {string} options.title - What the notification is about, such as "Exporting sales.qvd to CSV"
  * @param {AbortSignal} [options.signal] - Gives the job up: its editor was closed
- * @param {function({signal: AbortSignal, report: function(string, boolean=): void}): Promise<T>} work -
+ * @param {function({signal: AbortSignal, report: function((string|function(): string), boolean=): void}): Promise<T>} work -
  *   The job, given the signal it stops at, and what tells its progress: report(message,
- *   now), where now shows the message at once, as the start of a pass does
+ *   now), where now shows the message at once, as the start of a pass does. A message
+ *   may be a function that makes it, called only for one that shows
  * @returns {Promise<{value?: T, cancelled: boolean}>} What the job gave, or cancelled when
  *   its notification's Cancel gave it up
  * @throws {Error} What the job throws, an AbortError included when its editor was closed
@@ -94,7 +121,7 @@ export async function withJobProgress({ window, location, title, signal }, work)
   const flush = () => {
     timer = null;
     if (shown && pending !== null) {
-      shown.report({ message: pending });
+      shown.report({ message: typeof pending === "function" ? pending() : pending });
       pending = null;
       lastAt = Date.now();
     }
