@@ -201,7 +201,7 @@ function cellMaker(DateOfKind) {
  *   Told of each chunk built, its rows and the characters of its text, before an
  *   exporter takes it: it may throw to stop the export, as one that won't fit
  * @param {function({pass: string, rows: number, totalRows: number}): void} [options.onProgress] -
- *   Told the rows read so far: pass is "census" or "rows"
+ *   Told the rows read so far: pass is "census", "delimiters" (Qlik's count of them) or "rows"
  * @param {number} [options.heldBytes] - What the open file may hold, SCAN_HELD_BYTES unless a test says otherwise
  * @param {number} [options.pageRows] - Rows a page holds, as pageRowsFor() says unless a test says otherwise
  * @returns {Promise<ExportSource & {fields: Array<string>, header: object, close: function(): Promise<void>}>}
@@ -438,7 +438,7 @@ export async function openQvdSource(
           const sums = new Array(size).fill(0);
           // Each field's values: 1 once measured and found to give nothing, 2 to give something
           const kinds = fields.map(({ symbols }) => new Uint8Array(Math.max(0, symbols)));
-          onProgress?.({ pass: "census", rows: 0, totalRows: length });
+          onProgress?.({ pass: "delimiters", rows: 0, totalRows: length });
           for await (const { columns, offset } of readPages({
             fields,
             to: length,
@@ -467,7 +467,7 @@ export async function openQvdSource(
                 });
               }
             }
-            onProgress?.({ pass: "census", rows: offset + (columns[0]?.codes.length ?? 0), totalRows: length });
+            onProgress?.({ pass: "delimiters", rows: offset + (columns[0]?.codes.length ?? 0), totalRows: length });
           }
           await unchanged();
           return sums;

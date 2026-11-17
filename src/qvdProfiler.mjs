@@ -208,8 +208,9 @@ function changedWhileProfiled() {
  * @param {object} [options]
  * @param {number} [options.maxUniqueValues] - Values the distribution shows at most (default: 1000)
  * @param {AbortSignal} [options.signal] - Gives profiling up between chunks
- * @param {function({field: string, fieldIndex: number, fields: number, pass: number, rows: number, totalRows: number}): void} [options.onProgress] -
- *   Told how far it has got: the field, the pass over its rows, and the rows read in it
+ * @param {function({field: string, fieldIndex: number, fields: number, pass: number, passes: number, rows: number, totalRows: number}): void} [options.onProgress] -
+ *   Told how far it has got: the field, the pass over its rows and the most passes it
+ *   may take, and the rows read in it
  * @param {number} [options.heldBytes] - What a scan's open file may hold, for tests
  * @param {number} [options.chunkRows] - Rows a chunk holds, for tests
  * @returns {Promise<Object>} Profiling results, as profileFields() gives them
@@ -254,14 +255,15 @@ export async function profileFile(filePath, fieldNames, { maxUniqueValues = 1000
     for (const [fieldIndex, fieldName] of fieldNames.entries()) {
       const field = header.fields.find((candidate) => candidate.name === fieldName);
       const options = { maxUniqueValues, decideKinds: kindsOf, totalRows };
-      const progress = (pass, rows) =>
-        onProgress?.({ field: fieldName, fieldIndex, fields: fieldNames.length, pass, rows, totalRows });
+      const progress = (pass, passes, rows) =>
+        onProgress?.({ field: fieldName, fieldIndex, fields: fieldNames.length, pass, passes, rows, totalRows });
       let summary;
       if (field) {
         summary = await summarizeAsync(
           { ...options, symbolCount: field.symbols, toValue: shownValue },
           async (summarizer, pass) => {
-            progress(pass, 0);
+            const passes = summarizer.mostPasses;
+            progress(pass, passes, 0);
             await scanner.scan({
               field: fieldName,
               symbols: field.symbols,
@@ -269,7 +271,7 @@ export async function profileFile(filePath, fieldNames, { maxUniqueValues = 1000
               signal,
               chunkRows: chunkRows ?? chunkRowsFor(field.symbols, totalRows, PROFILE_FRESH_VALUES),
               onChunk: ({ codes, symbols, offset }) => summarizer.takeAsync(codes, symbols, offset, signal),
-              onRows: (rows) => progress(pass, rows),
+              onRows: (rows) => progress(pass, passes, rows),
             });
             await unchanged();
           },

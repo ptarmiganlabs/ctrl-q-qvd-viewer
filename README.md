@@ -309,6 +309,7 @@ Analyze value distributions for selected fields to understand data patterns and 
 - **Visual Analysis**: Interactive charts powered by Chart.js for clear data visualization
 - **Export to QVS**: The **💾 Export to QVS Script** button generates a Qlik .qvs script with the frequency tables, to load into Qlik Sense for further analysis. You choose the delimiter and how many values per field to include (top 20, 100, 1,000, 10,000 or all)
 - **Any File Size**: Only the fields profiled are read, a chunk of rows at a time, so profiling's memory follows their distinct values, not the file's size
+- **Progress and Cancel**: A notification says which field and pass profiling is on, and how many rows it has read. Its **Cancel** button stops profiling
 
 **Note:**
 
@@ -357,7 +358,8 @@ The Ctrl-Q QVD Viewer allows you to export QVD data to various formats for furth
 - **CSV files are safe to open in a spreadsheet**: text that Excel, LibreOffice or Google Sheets would run as a formula, such as `=HYPERLINK(…)`, gets an apostrophe in front. Numbers such as `-5`, and text such as `+46 70 123 45 67` that only looks like one, are left alone. The `csvEscapeFormulas` setting turns this off
 - **Excel files hold every row**: a sheet holds at most 1,048,576 rows, so past 1,048,575 rows below the header row an export continues on sheets named `Data 2`, `Data 3` and so on, each with the header row
 - **Beta formats**: Some export formats are marked as Beta, indicating they are fully functional but may receive additional enhancements based on user feedback
-- **Progress notification**: You'll see a confirmation message with an option to open the folder containing the exported file
+- **Progress and Cancel**: Once the questions are answered, a notification says how far the export has got. It says "Starting…" while it waits for another large read to finish. Then, for a format with column types, it says "Reading field types", for a Qlik script whose delimiter is detected "Counting delimiters", and then "Writing", each with the rows done so far. Its **Cancel** button stops the export, and leaves no file behind: a file it was to replace stays as it was. When the export is done, a message offers to open the folder with the file
+- **One at a time**: An editor runs one export or profiling at a time. While one runs, its **Export** and **Run Profiling** buttons are greyed out, and another is refused until it finishes or is cancelled. Exports and profiling in other editors wait their turn, as large reads do
 
 ## Extension Settings
 
@@ -407,7 +409,6 @@ For more details on building, testing, and packaging, see **[BUILD.md](docs/BUIL
 
 ## Known Issues
 
-- An export or profiling of a very large QVD shows no progress while it runs, and stops only when its editor is closed
 - The extension currently provides read-only access to QVD files
 
 ## Contributing

@@ -442,6 +442,15 @@ export class FieldSummarizer {
   }
 
   /**
+   * The most passes over the rows the field may take: three until pass 1 has shown
+   * whether it gets statistics, whose pass 3 only a field that reads pass 2 can take
+   * @returns {number}
+   */
+  get mostPasses() {
+    return this.#pass <= 1 || (this.#statistics && this.#readPass2) ? 3 : 2;
+  }
+
+  /**
    * Move on to the next pass, at once
    * @returns {number} The pass to read the rows for, from 1, or 0 when there is none
    */

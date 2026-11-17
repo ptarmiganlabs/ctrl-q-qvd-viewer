@@ -283,6 +283,15 @@ export function getHtmlForWebview(header, webview, context) {
         .header-button:hover {
             background-color: var(--vscode-button-hoverBackground);
         }
+
+        .header-button:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        .header-button:disabled:hover {
+            background-color: var(--vscode-button-background);
+        }
         
         /* Tab styles */
         .tab-container {
@@ -2034,6 +2043,9 @@ export function getHtmlForWebview(header, webview, context) {
         }
         
         function exportData(format) {
+            // Greyed out at once, before the extension says the job runs, so a second
+            // click can't send another
+            showJobState('export', '');
             vscode.postMessage({ 
                 command: 'exportData',
                 format: format
@@ -2082,6 +2094,9 @@ export function getHtmlForWebview(header, webview, context) {
             }
             
             showProfilingStatus('⏳ Reading the selected fields and computing value distributions...', 'info');
+            // Greyed out at once, before the extension says the job runs, so a second
+            // click can't send another and have its refusal replace this status
+            showJobState('profile', '');
             
             // Send message to extension to compute profiling
             vscode.postMessage({
@@ -3237,8 +3252,30 @@ export function getHtmlForWebview(header, webview, context) {
                 case 'profilingError':
                     showProfilingStatus('❌ ' + message.error, 'warning');
                     break;
+                case 'profilingCancelled':
+                    showProfilingStatus('Profiling cancelled.', 'info');
+                    break;
+                case 'jobState':
+                    showJobState(message.busy, message.text);
+                    break;
             }
         });
+
+        // An export or profiling run that is still going: its buttons wait for it to end,
+        // and say why with the extension's text
+        function showJobState(busy, text) {
+            ['export-btn', 'run-profiling-btn'].forEach(id => {
+                const button = document.getElementById(id);
+                if (button) {
+                    button.disabled = Boolean(busy);
+                    button.title = busy ? (text || '') : '';
+                }
+            });
+            if (busy) {
+                document.getElementById('export-dropdown')?.classList.remove('show');
+            }
+        }
+        vscode.postMessage({ command: 'jobState' });
     </script>
 </body>
 </html>`;
