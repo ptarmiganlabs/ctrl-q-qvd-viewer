@@ -165,10 +165,10 @@
     "@types/vscode": "^1.105.0",
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.1.0",
-    "@vscode/vsce": "^4.1.0",
+    "@vscode/vsce": "^4.1.1",
     "esbuild": "^0.28.2",
-    "eslint": "^10.14.0",
-    "globals": "^17.13.0"
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0"
   },
   "dependencies": {
     "apache-arrow": "^21.2.0",
